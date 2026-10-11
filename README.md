@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/icon.png" width="128" alt="LayoutKeeper 图标"></p>
+
 # LayoutKeeper
 
 **记住并恢复外接屏窗口布局，支持跨 Mission Control 桌面。**
