@@ -53,7 +53,7 @@
 需要 Xcode 16 或更新（Swift 6 工具链）。本项目在 Swift 6.4 / macOS 27 SDK 上开发。
 
 ```sh
-git clone https://github.com/<你的用户名>/LayoutKeeper.git
+git clone https://github.com/tumingke0/LayoutKeeper.git
 cd LayoutKeeper
 ./scripts/test.sh                 # 可选：运行单元测试
 ./scripts/build.sh                # 生成 build-products/LayoutKeeper.app
@@ -153,7 +153,7 @@ open build-products/LayoutKeeper.app
 **Build from source** (Xcode 16+ / Swift 6):
 
 ```sh
-git clone https://github.com/<you>/LayoutKeeper.git && cd LayoutKeeper
+git clone https://github.com/tumingke0/LayoutKeeper.git && cd LayoutKeeper
 ./scripts/build.sh && open build-products/LayoutKeeper.app
 ```
 
