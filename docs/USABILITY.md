@@ -1,4 +1,4 @@
-# 使用说明（LayoutKeeper 0.5.1 build 12）
+# 使用说明（LayoutKeeper 0.5.2 build 13）
 
 LayoutKeeper 原名 SpacePort。日常只用菜单栏：**保存当前布局 → 恢复布局 → 需要时撤销**。主窗口用来看状态和改屏幕名称。
 

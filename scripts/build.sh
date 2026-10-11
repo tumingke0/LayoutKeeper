@@ -46,6 +46,32 @@ cp "$bin_dir/layoutkeeperctl" "$out_dir/layoutkeeperctl.new" && mv -f "$out_dir/
 ln -sfn layoutkeeperctl "$out_dir/spaceportctl"
 cp "$project_dir/Resources/AppIcon.icns" "$app_dir/Contents/Resources/AppIcon.icns.new" && mv -f "$app_dir/Contents/Resources/AppIcon.icns.new" "$app_dir/Contents/Resources/AppIcon.icns"
 cp "$project_dir/scripts/Info.plist" "$app_dir/Contents/Info.plist.new" && mv -f "$app_dir/Contents/Info.plist.new" "$app_dir/Contents/Info.plist"
+# App icon. AppIcon.icns is the classic icon; macOS 26+ resolves CFBundleIconName from an asset catalog,
+# so also compile Assets.car from the same artwork. Without actool, drop CFBundleIconName so it does not dangle.
+icon_work="$(mktemp -d)"
+if iconutil -c iconset "$project_dir/Resources/AppIcon.icns" -o "$icon_work/AppIcon.iconset" \
+  && mkdir -p "$icon_work/Assets.xcassets/AppIcon.appiconset" "$icon_work/out" \
+  && cp "$icon_work/AppIcon.iconset/"*.png "$icon_work/Assets.xcassets/AppIcon.appiconset/" \
+  && print '{"info":{"author":"xcode","version":1}}' > "$icon_work/Assets.xcassets/Contents.json" \
+  && { print '{"images":['
+       first=1
+       for size in 16 32 128 256 512; do for scale in 1 2; do
+         suffix=""; (( scale == 2 )) && suffix="@2x"
+         (( first )) || print ','
+         first=0
+         print "{\"idiom\":\"mac\",\"size\":\"${size}x${size}\",\"scale\":\"${scale}x\",\"filename\":\"icon_${size}x${size}${suffix}.png\"}"
+       done; done
+       print '],"info":{"author":"xcode","version":1}}'; } > "$icon_work/Assets.xcassets/AppIcon.appiconset/Contents.json" \
+  && xcrun actool --compile "$icon_work/out" --platform macosx --minimum-deployment-target 14.0 --app-icon AppIcon \
+       --output-partial-info-plist "$icon_work/partial.plist" "$icon_work/Assets.xcassets" >/dev/null \
+  && [[ -f "$icon_work/out/Assets.car" ]]; then
+  cp "$icon_work/out/Assets.car" "$app_dir/Contents/Resources/Assets.car.new" && mv -f "$app_dir/Contents/Resources/Assets.car.new" "$app_dir/Contents/Resources/Assets.car"
+else
+  print -u2 "warning: actool unavailable; bundling AppIcon.icns only and removing CFBundleIconName"
+  rm -f "$app_dir/Contents/Resources/Assets.car"
+  /usr/libexec/PlistBuddy -c 'Delete :CFBundleIconName' "$app_dir/Contents/Info.plist" 2>/dev/null || true
+fi
+rm -rf "$icon_work"
 codesign --force --sign "$signing_identity" --timestamp=none --identifier local.layoutkeeper.app "$app_dir"
 codesign --verify --strict "$app_dir"
 print "Built candidate $app_dir${arch:+ ($arch)}"
