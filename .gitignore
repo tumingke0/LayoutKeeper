@@ -1,0 +1,30 @@
+.build/
+dist/
+.DS_Store
+Profiles/
+
+# build artifacts
+build-products/
+*.o
+*.dSYM/
+.swiftpm/
+
+# user layouts and restore journals (contain window titles)
+Layouts/screens/
+Layouts/transactions/
+
+# personal machine diagnostics (moved to ~/LayoutKeeper-private-backup before publishing)
+Diagnostics/
+
+# private signing identity for scripts/install-local.py, and signing material
+scripts/signing.local
+*.p12
+*.cer
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+
+# local archives / release zips, Xcode user data
+*.zip
+xcuserdata/

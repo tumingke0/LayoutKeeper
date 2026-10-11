@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "location": "公司（模拟示例）",
+  "windows": [
+    {
+      "selector": { "bundleID": "demo.editor", "title": "SpacePort 演示项目" },
+      "displayRole": "external",
+      "desktopLabel": "开发",
+      "normalizedFrame": { "x": 0.05, "y": 0.05, "width": 0.8, "height": 0.85 }
+    }
+  ]
+}

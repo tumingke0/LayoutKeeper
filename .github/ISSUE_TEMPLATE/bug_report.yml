@@ -1,0 +1,61 @@
+name: 问题报告 / Bug report
+description: 恢复不对、窗口没找到、崩溃等 / Wrong restore, missing windows, crashes
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请不要粘贴含有窗口标题或个人路径的日志；自检报告不含窗口标题，可以直接附上。
+        Thanks! Please don't paste logs containing window titles or personal paths; self-test reports contain no titles.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS 版本（含 build 号） / macOS version (with build)
+      description: "苹果菜单 → 关于本机（点版本号可显示 build），或在终端运行 `sw_vers`。"
+      placeholder: "macOS 27.0 (26A428)"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: LayoutKeeper 版本 / version
+      description: 设置 → 通用 → 关于
+      placeholder: "0.5.0 (11)"
+    validations:
+      required: true
+  - type: dropdown
+    id: cross-space
+    attributes:
+      label: 设置 → 通用 → 跨桌面恢复 的状态 / Cross-Space status
+      options: ["可用 / available", "可用 · 未自检 / available, untested", "不可用 / unavailable", "不确定 / not sure"]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么？期望是什么？ / What happened, what did you expect?
+      description: 外接屏型号、桌面数量、涉及的应用（不需要窗口标题）。 / Monitor model, number of desktops, apps involved (no window titles needed).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      placeholder: |
+        1. 保存布局 …
+        2. 拔掉 / 接上屏幕 …
+        3. 恢复布局 …
+  - type: textarea
+    id: selftest
+    attributes:
+      label: 一键自检报告 / Self-test report
+      description: |
+        设置 → 诊断 → 一键自检（会临时移动真实窗口，完成后复位）。报告在 `~/Library/Application Support/LayoutKeeper/SelfTest/selftest-*.txt`，请粘贴内容或拖入文件。
+        Settings → 诊断 → 一键自检 (temporarily moves real windows, then restores them). Paste or attach `~/Library/Application Support/LayoutKeeper/SelfTest/selftest-*.txt`.
+      render: text
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 技术信息（可选） / Technical info (optional)
+      description: 设置 → 诊断 → 技术信息与导出（不含窗口标题）。 / Settings → 诊断 → technical info export (no window titles).
+      render: text
