@@ -16,6 +16,8 @@
 cd LayoutKeeper   # 克隆后的项目目录
 ./scripts/test.sh
 ./scripts/build.sh                     # → build-products/LayoutKeeper.app
+./scripts/build.sh --arch arm64        # → build-products/arm64/LayoutKeeper.app（Apple 芯片）
+./scripts/build.sh --arch x86_64       # → build-products/x86_64/LayoutKeeper.app（Intel）
 open build-products/LayoutKeeper.app
 ./build-products/layoutkeeperctl diagnose
 ./build-products/layoutkeeperctl simulate
