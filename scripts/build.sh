@@ -44,6 +44,8 @@ cp "$bin_dir/LayoutKeeper" "$app_dir/Contents/MacOS/LayoutKeeper.new" && mv -f "
 cp "$bin_dir/layoutkeeperctl" "$out_dir/layoutkeeperctl.new" && mv -f "$out_dir/layoutkeeperctl.new" "$out_dir/layoutkeeperctl"
 # Compatibility alias for the old CLI name (a symlink; the old spaceportctl binary, if any, is replaced by the link).
 ln -sfn layoutkeeperctl "$out_dir/spaceportctl"
+# Drop debug-symbol (stab) entries: they embed absolute build paths, which would leak the builder's home folder.
+strip -S "$app_dir/Contents/MacOS/LayoutKeeper" "$out_dir/layoutkeeperctl"
 cp "$project_dir/Resources/AppIcon.icns" "$app_dir/Contents/Resources/AppIcon.icns.new" && mv -f "$app_dir/Contents/Resources/AppIcon.icns.new" "$app_dir/Contents/Resources/AppIcon.icns"
 cp "$project_dir/scripts/Info.plist" "$app_dir/Contents/Info.plist.new" && mv -f "$app_dir/Contents/Info.plist.new" "$app_dir/Contents/Info.plist"
 # App icon. AppIcon.icns is the classic icon; macOS 26+ resolves CFBundleIconName from an asset catalog,
