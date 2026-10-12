@@ -27,8 +27,10 @@ public struct LayoutVersion: Equatable, Identifiable {
     public var isCurrent: Bool
     /// A user label on a history version; labelled versions are never pruned.
     public var label: String?=nil
-    public init(url: URL,savedAt: Date,windowCount: Int,desktopCount: Int,isCurrent: Bool,label: String? = nil) {
-        self.label=label
+    /// The 版式 this version came from (current name, or last-known name if it was deleted); nil = manual save.
+    public var originName: String?=nil
+    public init(url: URL,savedAt: Date,windowCount: Int,desktopCount: Int,isCurrent: Bool,label: String? = nil,originName: String? = nil) {
+        self.label=label; self.originName=originName
         self.url=url; self.savedAt=savedAt; self.windowCount=windowCount; self.desktopCount=desktopCount; self.isCurrent=isCurrent
     }
 }
@@ -93,7 +95,7 @@ public struct ScreenLibrary {
         var result=[LayoutVersion]()
         if let record=try? MonitorLayoutStore.load(from:currentURL(key)) {
             let c=Self.counts(record)
-            result.append(LayoutVersion(url:currentURL(key),savedAt:record.savedAt,windowCount:c.windows,desktopCount:c.desktops,isCurrent:true))
+            result.append(LayoutVersion(url:currentURL(key),savedAt:record.savedAt,windowCount:c.windows,desktopCount:c.desktops,isCurrent:true,originName:originName(key,Self.currentSlot)))
         }
         return result+archived(key)
     }
@@ -103,7 +105,7 @@ public struct ScreenLibrary {
         return files.filter{$0.pathExtension=="json"}.compactMap { url -> LayoutVersion? in
             guard let record=try? MonitorLayoutStore.load(from:url),record.monitor.key==key else { return nil }
             let c=Self.counts(record)
-            return LayoutVersion(url:url,savedAt:record.savedAt,windowCount:c.windows,desktopCount:c.desktops,isCurrent:false,label:labels[url.lastPathComponent])
+            return LayoutVersion(url:url,savedAt:record.savedAt,windowCount:c.windows,desktopCount:c.desktops,isCurrent:false,label:labels[url.lastPathComponent],originName:originName(key,url.lastPathComponent))
         }.sorted { $0.savedAt != $1.savedAt ? $0.savedAt>$1.savedAt : $0.url.lastPathComponent>$1.url.lastPathComponent }
     }
 
@@ -113,6 +115,7 @@ public struct ScreenLibrary {
         importLegacyPrevious(key)
         if FileManager.default.fileExists(atPath:currentURL(key).path) { try archiveCurrent(key) }
         try MonitorLayoutStore.save(record,to:currentURL(key))
+        setOrigin(key,Self.currentSlot,nil)
         prune(key)
     }
 
@@ -122,9 +125,11 @@ public struct ScreenLibrary {
         guard version.deletingLastPathComponent().standardizedFileURL==historyDirectory(key).standardizedFileURL else { throw ScreenLibraryError("不是这块屏幕的历史版本") }
         let record=try MonitorLayoutStore.load(from:version)
         guard record.monitor.key==key else { throw ScreenLibraryError("版本与屏幕不匹配") }
+        let carried=Self.readIndex(historyDirectory(key),Self.originsFile)[version.lastPathComponent]
         var archivedCurrent: URL?
         if FileManager.default.fileExists(atPath:currentURL(key).path) { archivedCurrent=try archiveCurrent(key) }
         try MonitorLayoutStore.save(record,to:currentURL(key))
+        setRawOrigin(key,Self.currentSlot,carried); setRawOrigin(key,version.lastPathComponent,nil)
         try FileManager.default.removeItem(at:version)
         var labels=Self.readIndex(historyDirectory(key)); if labels.removeValue(forKey:version.lastPathComponent) != nil { try? Self.writeIndex(labels,historyDirectory(key)) }
         prune(key,keeping:archivedCurrent)
@@ -248,6 +253,7 @@ public struct ScreenLibrary {
         }
         try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
         try data.write(to:currentURL(key),options:.atomic)
+        setOrigin(key,Self.currentSlot,(source.lastPathComponent,Self.readIndex(namedDirectory(key))[source.lastPathComponent] ?? "未命名"))
         prune(key,keeping:undo)
         return undo
     }
@@ -259,14 +265,30 @@ public struct ScreenLibrary {
         guard let t=s?.trimmingCharacters(in:.whitespacesAndNewlines),!t.isEmpty else { return nil }
         return String(t.prefix(40))
     }
-    static func readIndex(_ dir: URL) -> [String:String] {
-        guard let data=try? Data(contentsOf:dir.appendingPathComponent("names.idx")) else { return [:] }
+    static let originsFile="origins.idx", currentSlot="current"
+    /// Origin of a version: "<named file id>\t<name at the time>". Name shown is the 版式's current name if it still exists.
+    func originName(_ key: String,_ slot: String) -> String? {
+        guard let raw=Self.readIndex(historyDirectory(key),Self.originsFile)[slot] else { return nil }
+        let parts=raw.split(separator:"\t",maxSplits:1).map(String.init)
+        guard parts.count==2 else { return nil }
+        if FileManager.default.fileExists(atPath:namedDirectory(key).appendingPathComponent(parts[0]).path),let now=Self.readIndex(namedDirectory(key))[parts[0]] { return now }
+        return parts[1]
+    }
+    func setOrigin(_ key: String,_ slot: String,_ origin: (id: String,name: String)?) { setRawOrigin(key,slot,origin.map { "\($0.id)\t\($0.name)" }) }
+    func setRawOrigin(_ key: String,_ slot: String,_ raw: String?) {
+        var index=Self.readIndex(historyDirectory(key),Self.originsFile)
+        guard index[slot] != raw else { return }
+        index[slot]=raw
+        try? Self.writeIndex(index,historyDirectory(key),Self.originsFile)
+    }
+    static func readIndex(_ dir: URL,_ file: String = "names.idx") -> [String:String] {
+        guard let data=try? Data(contentsOf:dir.appendingPathComponent(file)) else { return [:] }
         return (try? JSONDecoder().decode([String:String].self,from:data)) ?? [:]
     }
-    static func writeIndex(_ index: [String:String],_ dir: URL) throws {
+    static func writeIndex(_ index: [String:String],_ dir: URL,_ file: String = "names.idx") throws {
         try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true)
         let e=JSONEncoder(); e.outputFormatting=[.prettyPrinted,.sortedKeys]
-        try e.encode(index).write(to:dir.appendingPathComponent("names.idx"),options:.atomic)
+        try e.encode(index).write(to:dir.appendingPathComponent(file),options:.atomic)
     }
 
     // MARK: - internals
@@ -278,18 +300,20 @@ public struct ScreenLibrary {
         var n=2
         while FileManager.default.fileExists(atPath:url.path) { url=historyDirectory(key).appendingPathComponent("\(Self.stamp(record.savedAt))-\(n).json"); n+=1 }
         try data.write(to:url,options:.atomic)
+        setRawOrigin(key,url.lastPathComponent,Self.readIndex(historyDirectory(key),Self.originsFile)[Self.currentSlot])
         return url
     }
     func prune(_ key: String,keeping: URL? = nil) {
         let list=archived(key).filter { $0.label == nil }
         guard list.count>historyLimit else { return }
-        for v in list.dropFirst(historyLimit) where v.url != keeping { try? FileManager.default.removeItem(at:v.url) }
+        for v in list.dropFirst(historyLimit) where v.url != keeping { try? FileManager.default.removeItem(at:v.url); setRawOrigin(key,v.url.lastPathComponent,nil) }
     }
     /// The first time history is used for a screen, the single `.previous.json` kept by older versions becomes its first entry.
     func importLegacyPrevious(_ key: String) {
         let fm=FileManager.default
         let previous=VersionedStore.previousURL(for:currentURL(key))
-        guard !fm.fileExists(atPath:historyDirectory(key).path) else { return }
+        guard Self.readIndex(historyDirectory(key),Self.originsFile)["legacyImported"] == nil,archived(key).isEmpty else { return }
+        defer { if fm.fileExists(atPath:currentURL(key).path) { setRawOrigin(key,"legacyImported","1") } }
         guard fm.fileExists(atPath:previous.path),let record=try? MonitorLayoutStore.load(from:previous),record.monitor.key==key,
               (try? fm.createDirectory(at:historyDirectory(key),withIntermediateDirectories:true)) != nil else { return }
         try? fm.copyItem(at:previous,to:historyDirectory(key).appendingPathComponent("\(Self.stamp(record.savedAt)).json"))

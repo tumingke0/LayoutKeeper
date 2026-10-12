@@ -291,6 +291,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "open": show()
         case "settings": showSettings(.general)
         case "quit": NSApplication.shared.terminate(nil)
+        case let layout where layout.hasPrefix("layout."): if let i=Int(layout.dropFirst(7)),debounce("layout") { model.applyConnectedLayout(at:i) }
         default: break
         }
     }

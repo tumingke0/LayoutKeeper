@@ -62,7 +62,10 @@ enum UISnapshots {
             LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/\(n).json"),savedAt:date,windowCount:w,desktopCount:d,isCurrent:current)
         }
         var labelled=v(3,day(-3,10,12),4,3); labelled.label="季度汇报前"
-        m.screenVersions=[v(0,record.savedAt,record.profile.windows.count,4,current:true),v(1,day(-1,18,3),6,4),v(2,day(-1,9,30),6,3),labelled,v(4,day(-6,14,48),3,2)]
+        var cur=v(0,record.savedAt,record.profile.windows.count,4,current:true); cur.originName="写代码"
+        var meeting=v(1,day(-1,18,3),3,2); meeting.originName="开会"
+        var coding=v(4,day(-6,14,48),7,4); coding.originName="写代码"
+        m.screenVersions=[cur,meeting,v(2,day(-1,9,30),6,3),labelled,coding]
         func n(_ i: Int,_ name: String,_ w: Int,_ d: Int,active: Bool = false) -> NamedLayout {
             NamedLayout(url:URL(fileURLWithPath:"/tmp/lk-sample/n\(i).json"),name:name,savedAt:day(-2,9,0),windowCount:w,desktopCount:d,isActive:active)
         }

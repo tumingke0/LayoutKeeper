@@ -6,8 +6,8 @@
 *Remember and restore your external-monitor window layout — across Mission Control Spaces.*
 
 <p align="center">
-  <img src="docs/images/main-window.png" width="440" alt="主窗口：屏幕卡片、每个桌面的小地图、恢复布局按钮">
-  <img src="docs/images/menu.png" width="440" alt="菜单栏：保存当前布局 ⌃⌥⌘S、恢复布局 ⌃⌥⌘R">
+  <img src="docs/images/main-window.png" width="440" alt="主窗口：左侧已保存的屏幕，右侧屏幕卡片、版式和历史版本">
+  <img src="docs/images/menu.png" width="440" alt="菜单栏：保存、恢复、切换版式">
 </p>
 
 在家和公司之间来回插拔外接显示器，窗口总是挤回内建屏、乱成一团？LayoutKeeper 常驻菜单栏，按屏幕硬件记住每个桌面上的窗口在哪里，接上屏幕时一键（或自动）放回原处：**包括放回原来的第几个桌面**。
@@ -20,6 +20,8 @@
 
 - **按屏幕记住布局**：用显示器的 EDID（厂商/型号/序列号）区分家里和公司的屏幕，各存一份，不用选“场景”。
 - **跨桌面恢复**：保存时记录窗口在外接屏的第几个普通桌面，恢复时把窗口移回对应桌面，再调整位置和大小（macOS 26+）。
+- **版式**：同一块屏幕可以存多套命名布局（如“写代码”“开会”），在主窗口或菜单栏 **切换版式** 一键切换，可撤销。
+- **历史版本**：每块屏幕自动保留最近 5 个旧版本，标明来自哪个版式或手动保存；可预览、恢复、加名字永久保留。
 - **先预览、可撤销**：可以先看每个窗口会怎么动；每次恢复都能一键撤销，回到恢复前的桌面、位置和大小。
 - **逐个回读确认**：每个窗口移动后都重新读取，确认真的到了目标桌面和位置；失败的会回滚，不会“假装成功”。
 - **不猜**：同名窗口分不清时标为“需要确认”，由你选，不会移错窗口。
@@ -72,12 +74,14 @@ open build-products/LayoutKeeper.app
 2. 把外接屏各个桌面上的窗口摆好，菜单栏图标 → **保存当前布局**（⌃⌥⌘S）。
 3. 下次接上这块屏幕：菜单栏 → **恢复布局**（⌃⌥⌘R），或让它自动恢复。按住 Option 是“预览后恢复…”。
 4. 不满意？**撤销上次恢复**（⌃⌥⌘Z），或点提示里的“撤销”。
+5. 同一块屏幕要几套摆法：主窗口 → **另存为版式…**，以后在主窗口点 **应用**，或菜单栏 → **切换版式**。自动恢复总是使用这块屏幕最近一次保存或应用的布局。
+6. 主窗口左侧列出所有保存过的屏幕（没接上的显示“未连接”），右键可重命名或删除（删除可撤销）；右下是 **历史版本**。
 
 **接上屏幕时**（菜单栏或设置 → 通用）：
 
-- **先询问**（默认）：每块屏幕第一次接上时问一次“以后自动恢复？”，记住你的选择。
-- **自动**：屏幕稳定 3 秒、窗口停止移动后自动恢复能唯一确认的窗口；需要确认的、在另一块屏幕上的窗口不会动。
-- **关闭**：只手动恢复。
+- **先询问恢复**（默认）：每块屏幕第一次接上时问一次“以后自动恢复？”，记住你的选择。
+- **自动恢复**：屏幕稳定 3 秒、窗口停止移动后自动恢复能唯一确认的窗口；需要确认的、在另一块屏幕上的窗口不会动。
+- **关闭恢复**：只手动恢复。
 - 可以暂停自动恢复 1 小时或到明天。
 
 <p align="center"><img src="docs/images/toast.png" width="392" alt="自动恢复后的提示：已恢复 6 个窗口 · 1 个需确认，撤销 / 查看"></p>
@@ -147,6 +151,8 @@ open build-products/LayoutKeeper.app
 - **Cross-Space restore** on macOS 26+ (when the required private SkyLight APIs are present; detected at launch). Tested on macOS 27.0 (26A428).
 - **Preview, undo, read-back verification**: every moved window is read back and rolled back on failure; every restore can be undone.
 - **No guessing**: ambiguous windows are marked "needs confirmation" instead of being moved.
+- **Named layouts (版式)**: keep several named layouts per monitor (e.g. "coding", "meeting") and switch with one click in the window or the menu bar's *Switch layout* submenu; undoable. Automatic restore uses the most recently saved or applied layout.
+- **Version history**: the last 5 versions per monitor, each tagged with the named layout it came from; preview, restore, or label one to keep it.
 - **Menu bar + global hotkeys**: ⌃⌥⌘S save, ⌃⌥⌘R restore, ⌃⌥⌘Z undo (configurable). Optional automatic restore on reconnect, asked once per monitor.
 - **Local only**: no network access; layouts store app IDs, titles/document paths, desktop indices and normalized frames — never window IDs or Space IDs.
 

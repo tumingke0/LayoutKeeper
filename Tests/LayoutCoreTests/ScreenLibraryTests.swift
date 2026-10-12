@@ -168,4 +168,40 @@ final class ScreenLibraryTests: XCTestCase {
         try lib.undoDelete(bin,key:home.key)
         XCTAssertEqual(lib.namedLayouts(home.key).map(\.name),["写代码"])
     }
+
+    func testHistoryRowsRememberWhichNamedLayoutTheyCameFrom() throws {
+        try lib.save(record(home,4,at:1000))                                   // manual
+        let code=try lib.saveNamed(from:lib.currentURL(home.key),key:home.key,name:"写代码")
+        try lib.save(record(home,2,at:2000))
+        let meeting=try lib.saveNamed(from:lib.currentURL(home.key),key:home.key,name:"开会")
+        try lib.apply(code,key:home.key)                                       // current ← 写代码
+        XCTAssertEqual(lib.versions(home.key).first?.originName,"写代码")
+        try lib.apply(meeting,key:home.key)                                    // 写代码 copy pinned → not archived
+        try lib.save(record(home,9,at:3000))                                   // archives the 开会 current, new one is manual
+        var v=lib.versions(home.key)
+        XCTAssertNil(v[0].originName)
+        XCTAssertEqual(v[1].originName,"开会")
+        XCTAssertNil(v.last?.originName)                                       // the first manual save
+        // Renamed 版式 → current name; deleted 版式 → last-known name.
+        try lib.renameNamed(meeting,key:home.key,name:"周会")
+        XCTAssertEqual(lib.versions(home.key)[1].originName,"周会")
+        try lib.deleteNamed(meeting,key:home.key)
+        XCTAssertEqual(lib.versions(home.key)[1].originName,"开会")
+        // Origin travels with a version when it is restored and back into history on undo.
+        let back=try XCTUnwrap(lib.promote(lib.versions(home.key)[1].url,key:home.key))
+        v=lib.versions(home.key)
+        XCTAssertEqual(v[0].originName,"开会")
+        XCTAssertNil(v.first{ $0.url==back }?.originName)
+        try lib.promote(back,key:home.key)
+        XCTAssertNil(lib.versions(home.key)[0].originName)
+        XCTAssertEqual(lib.versions(home.key)[1].originName,"开会")
+    }
+    func testLegacyPreviousIsImportedOnlyOnce() throws {
+        try MonitorLayoutStore.save(record(home,2,at:1000),to:lib.currentURL(home.key))
+        try MonitorLayoutStore.save(record(home,4,at:2000),to:lib.currentURL(home.key))
+        let old=lib.versions(home.key)[1]
+        try lib.promote(old.url,key:home.key)                                  // history: [4]
+        try lib.promote(lib.versions(home.key)[1].url,key:home.key)            // history: [2]
+        XCTAssertEqual(lib.versions(home.key).map(\.windowCount),[4,2])
+    }
 }

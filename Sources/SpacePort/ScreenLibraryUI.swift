@@ -86,12 +86,83 @@ extension Model {
         do { try library.undoDelete(bin,key:key); selectedScreenKey=key; refreshExternalMonitor(); actionNote=ActionNote(icon:"arrow.uturn.backward",text:"已恢复删除的布局",tone:.neutral) }
         catch { actionNote=ActionNote(icon:"exclamationmark.triangle.fill",text:"无法撤销删除（\(error)），文件仍在回收站",tone:.warning) }
     }
-    // Design stage (0.6 mockups): 版式 actions are stubbed until the design is approved.
-    func saveAsNamedLayout(from url: URL?) { actionNote=ActionNote(icon:"paintbrush",text:"设计稿：「另存为版式」尚未接线",tone:.neutral) }
-    func applyNamedLayout(_ layout: NamedLayout) { actionNote=ActionNote(icon:"paintbrush",text:"设计稿：「应用」尚未接线",tone:.neutral) }
-    func renameNamedLayout(_ layout: NamedLayout) { actionNote=ActionNote(icon:"paintbrush",text:"设计稿：重命名尚未接线",tone:.neutral) }
-    func deleteNamedLayout(_ layout: NamedLayout) { actionNote=ActionNote(icon:"paintbrush",text:"设计稿：删除尚未接线",tone:.neutral) }
-    func labelVersion(_ v: LayoutVersion) { actionNote=ActionNote(icon:"paintbrush",text:"设计稿：重命名尚未接线",tone:.neutral) }
+    // MARK: 版式 (named layouts)
+    private func fail(_ text: String,_ error: Error) { actionNote=ActionNote(icon:"exclamationmark.triangle.fill",text:"\(text)：\(error)",tone:.warning) }
+    /// Single-line text prompt; nil when cancelled.
+    private func ask(_ title: String,_ info: String,value: String,placeholder: String,ok: String) -> String? {
+        let alert=NSAlert(); alert.messageText=title; alert.informativeText=info
+        let field=NSTextField(frame:NSRect(x:0,y:0,width:240,height:24)); field.stringValue=value; field.placeholderString=placeholder
+        alert.accessoryView=field; alert.addButton(withTitle:ok); alert.addButton(withTitle:"取消")
+        alert.window.initialFirstResponder=field
+        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
+    }
+    /// Saves the current layout (or the previewed / given history version) as a named layout.
+    func saveAsNamedLayout(from url: URL?) {
+        guard let library=screenLibrary,let key=selectedScreenKey else { return }
+        let source=url ?? previewVersion?.url ?? library.currentURL(key)
+        guard let name=ask("另存为版式","给这套摆法起个名字，例如「写代码」「开会」。版式会一直保留，可以随时一键切换。",value:"",placeholder:"版式 \(namedLayouts.count+1)",ok:"保存") else { return }
+        let finalName=name.trimmingCharacters(in:.whitespaces).isEmpty ? "版式 \(namedLayouts.count+1)" : name
+        do { try library.saveNamed(from:source,key:key,name:finalName); reloadLibrary(); actionNote=ActionNote(icon:"square.stack.3d.up.fill",text:"已存为版式「\(finalName)」",tone:.success) }
+        catch { fail("没有保存版式",error) }
+    }
+    /// One click: make the 版式 current (it becomes the default for auto-restore) and, when connected, put the windows back. 撤销 reverts both.
+    func applyNamedLayout(_ layout: NamedLayout,key explicitKey: String? = nil) {
+        guard let library=screenLibrary,let key=explicitKey ?? selectedScreenKey,!restoring else { return }
+        guard key == currentExternalMonitor?.identity.key else { actionNote=ActionNote(icon:"powerplug",text:"这块屏幕未连接，接上后才能应用版式",tone:.neutral); return }
+        do {
+            let undo=try library.apply(layout.url,key:key)
+            previewVersion=nil; previewRecord=nil
+            refreshExternalMonitor()
+            let journalBefore=lastRestoreJournal?.id
+            var detail="已设为当前布局"
+            if quickBlocker(needsLayout:true) == nil {
+                let o=directRestore(.manual)
+                detail=o.error ?? "已恢复 \(o.restored) 个窗口" + (o.needsConfirmation>0 ? " · \(o.needsConfirmation) 个需确认" : "")
+            }
+            let moved=lastRestoreJournal?.id != journalBefore && lastRestoreJournal?.canUndo == true
+            showToast?(Toast(icon:"square.stack.3d.up.fill",tone:.success,title:"已切换到「\(layout.name)」",detail:detail,
+                             actions:undo.map { url in [Toast.Action(title:"撤销") { [weak self] in self?.undoApply(url,key:key,undoWindows:moved) }] } ?? [],duration:6))
+        } catch { fail("没有应用版式",error) }
+    }
+    private func undoApply(_ url: URL,key: String,undoWindows: Bool) {
+        guard let library=screenLibrary else { return }
+        do {
+            try library.apply(url,key:key); refreshExternalMonitor()
+            if undoWindows,lastRestoreJournal?.canUndo == true { quickUndo() }
+            actionNote=ActionNote(icon:"arrow.uturn.backward",text:"已撤销切换",tone:.neutral)
+        } catch { fail("无法撤销",error) }
+    }
+    /// Menu bar 「切换版式」: the connected screen's named layouts, in the same order as the menu.
+    func applyConnectedLayout(at index: Int) {
+        guard let key=currentExternalMonitor?.identity.key,let library=screenLibrary else { return }
+        let list=library.namedLayouts(key)
+        guard list.indices.contains(index) else { return }
+        applyNamedLayout(list[index],key:key)
+    }
+    func renameNamedLayout(_ layout: NamedLayout) {
+        guard let library=screenLibrary,let key=selectedScreenKey,
+              let name=ask("重命名版式","",value:layout.name,placeholder:layout.name,ok:"好") else { return }
+        do { try library.renameNamed(layout.url,key:key,name:name); reloadLibrary() } catch { fail("没有重命名",error) }
+    }
+    func deleteNamedLayout(_ layout: NamedLayout) {
+        guard let library=screenLibrary,let key=selectedScreenKey else { return }
+        let alert=NSAlert(); alert.messageText="删除版式「\(layout.name)」？"
+        alert.informativeText="版式会移到 LayoutKeeper 的回收站，可以马上撤销。当前布局和窗口不受影响。"
+        alert.addButton(withTitle:"删除"); alert.addButton(withTitle:"取消"); alert.buttons.first?.hasDestructiveAction=true
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            let bin=try library.deleteNamed(layout.url,key:key); reloadLibrary()
+            showToast?(Toast(icon:"trash",tone:.neutral,title:"已删除版式「\(layout.name)」",actions:[Toast.Action(title:"撤销") { [weak self] in
+                do { try library.undoDeleteNamed(bin,key:key); self?.reloadLibrary() } catch { self?.fail("无法撤销删除（文件仍在回收站）",error) }
+            }],duration:8))
+        } catch { fail("没有删除",error) }
+    }
+    /// Labels a history version; a labelled version stays in history and is never auto-pruned. Empty clears the label.
+    func labelVersion(_ v: LayoutVersion) {
+        guard !v.isCurrent,let library=screenLibrary,let key=selectedScreenKey,
+              let label=ask("重命名历史版本","加上名字后，这个版本会一直保留在历史版本里，不会被自动清理。留空则取消名字。",value:v.label ?? "",placeholder:RelativeTime.short(v.savedAt),ok:"好") else { return }
+        do { try library.labelVersion(v.url,key:key,label:label); reloadLibrary() } catch { fail("没有重命名",error) }
+    }
     func renameScreen(_ key: String) {
         guard let screen=savedScreens.first(where:{ $0.key==key }) else { return }
         let alert=NSAlert(); alert.messageText="重命名屏幕"

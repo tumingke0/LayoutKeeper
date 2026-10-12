@@ -172,11 +172,16 @@ struct MainView: View {
         .padding(18).card()
     }
     private func previewBar(_ version: LayoutVersion,connected: Bool) -> some View {
-        HStack(spacing:10) {
-            Label("正在预览 \(RelativeTime.short(version.savedAt)) 的版本",systemImage:"eye").font(.callout).foregroundStyle(.secondary)
+        let named=model.namedLayouts.first { $0.url == version.url }
+        return HStack(spacing:10) {
+            Label(named.map { "正在预览版式「\($0.name)」" } ?? "正在预览 \(RelativeTime.short(version.savedAt)) 的版本",systemImage:"eye").font(.callout).foregroundStyle(.secondary)
             Spacer()
             Button("返回当前") { model.preview(nil) }
-            Button { model.promote(version) } label: { Label("恢复此版本",systemImage:"clock.arrow.circlepath") }.primaryButton().disabled(model.restoring)
+            if let named {
+                Button { model.applyNamedLayout(named) } label: { Label("应用此版式",systemImage:"square.stack.3d.up") }.primaryButton().disabled(model.restoring || !connected)
+            } else {
+                Button { model.promote(version) } label: { Label("恢复此版本",systemImage:"clock.arrow.circlepath") }.primaryButton().disabled(model.restoring)
+            }
         }.controlSize(.large)
     }
     private var disconnectedActions: some View {
@@ -238,7 +243,8 @@ struct MainView: View {
             Text("\(l.windowCount) 个窗口" + (l.desktopCount>0 ? " · \(l.desktopCount) 个桌面" : "")).font(.callout).foregroundStyle(.secondary)
             if l.isActive { Text("当前").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor) }
             Spacer()
-            Button("预览") {}.disabled(l.isActive)
+            Button(model.previewVersion?.url == l.url ? "预览中" : "预览") { model.preview(LayoutVersion(url:l.url,savedAt:l.savedAt,windowCount:l.windowCount,desktopCount:l.desktopCount,isCurrent:false,label:l.name)) }
+                .disabled(l.isActive || model.previewVersion?.url == l.url)
             Button("应用") { model.applyNamedLayout(l) }.disabled(!canApply || l.isActive || model.restoring)
                 .help(canApply ? "设为当前布局并把窗口摆回去，可撤销" : "这块屏幕未连接")
         }
@@ -255,7 +261,7 @@ struct MainView: View {
         return HStack(spacing:10) {
             Image(systemName:v.isCurrent ? "checkmark.circle.fill" : (v.label != nil ? "tag" : "clock")).foregroundStyle(v.isCurrent ? Tone.success.color : Color.secondary).frame(width:16)
             Text(RelativeTime.short(v.savedAt)).font(.callout.monospacedDigit()).frame(width:96,alignment:.leading)
-            if let label=v.label { Text(label).font(.callout.weight(.medium)) }
+            if let label=v.label { Text(label).font(.callout.weight(.medium)) } else { originTag(v.originName) }
             Text("\(v.windowCount) 个窗口" + (v.desktopCount>0 ? " · \(v.desktopCount) 个桌面" : "")).font(.callout).foregroundStyle(.secondary)
             if v.isCurrent { Text("当前").font(.caption.weight(.semibold)).foregroundStyle(Tone.success.color) }
             Spacer()
@@ -272,6 +278,17 @@ struct MainView: View {
         .contextMenu {
             Button("重命名…") { model.labelVersion(v) }.disabled(v.isCurrent)
             Button("另存为版式…") { model.saveAsNamedLayout(from:v.url) }
+        }
+    }
+
+    /// 「来自：写代码」 for versions that came from a 版式; a subtler 「手动保存」 otherwise.
+    @ViewBuilder private func originTag(_ origin: String?) -> some View {
+        if let origin {
+            Label("来自：\(origin)",systemImage:"square.stack.3d.up").labelStyle(.titleAndIcon).font(.caption.weight(.medium)).foregroundStyle(Color.accentColor)
+                .padding(.horizontal,6).padding(.vertical,2).background(Capsule().fill(Color.accentColor.opacity(0.12)))
+        } else {
+            Text("手动保存").font(.caption).foregroundStyle(.tertiary)
+                .padding(.horizontal,6).padding(.vertical,2).background(Capsule().strokeBorder(Color.secondary.opacity(0.25)))
         }
     }
 
