@@ -31,7 +31,7 @@ final class StatusMenuModelTests: XCTestCase {
         var s=state(); s.optionHeld=true
         let items=StatusMenuModel.build(s)
         XCTAssertNil(item(items,"restore")); XCTAssertEqual(item(items,"previewRestore")?.title,"预览后恢复…")
-        XCTAssertNil(item(items,"settings")); XCTAssertEqual(item(items,"advanced")?.title,"高级工具…")
+        XCTAssertNil(item(items,"settings")); XCTAssertEqual(item(items,"diagnostics")?.title,"诊断…")
         XCTAssertNil(item(items,"undo"))
     }
     func testDisabledItemsCarryShortReasons() {
@@ -57,7 +57,7 @@ final class StatusMenuModelTests: XCTestCase {
         let items=StatusMenuModel.build(s)
         let modes=item(items,"mode")!.children
         XCTAssertEqual(modes.filter(\.checked).map(\.id),["mode.ask"])
-        XCTAssertEqual(item(modes,"mode.override")?.title,"公司：自动（已记住）")
+        XCTAssertEqual(item(modes,"mode.override")?.title,"公司：自动恢复（已记住）")
         XCTAssertNotNil(item(modes,"mode.forget"))
         let pause=item(items,"pause")!
         XCTAssertTrue(pause.title.contains("已暂停"))
@@ -204,5 +204,19 @@ final class MainWindowStateTests: XCTestCase {
         let matches=MainWindowState.derive(hasMonitor:true,trusted:true,hasLayout:true,plan:plan([.alreadyInPlace,.alreadyInPlace,.missing,.blocked]))
         XCTAssertEqual(matches,.matches(notRestorable:2)); XCTAssertEqual(matches.primary,.none)
         XCTAssertEqual(MainWindowState.derive(hasMonitor:true,trusted:true,hasLayout:true,plan:plan([.needsConfirmation])),.differs(ready:0,needsConfirmation:1))
+    }
+
+    func testSwitchLayoutsSubmenuListsNamedLayoutsOfConnectedScreen() {
+        var s=MenuState(); s.monitorName="公司"; s.windowCount=3; s.savedAt=Date()
+        XCTAssertNil(StatusMenuModel.build(s).first{$0.id=="layouts"})
+        s.layouts=[MenuLayout(name:"写代码",active:true),MenuLayout(name:"开会",active:false)]
+        let sub=StatusMenuModel.build(s).first{$0.id=="layouts"}
+        XCTAssertEqual(sub?.title,"切换版式")
+        XCTAssertEqual(sub?.children.filter{$0.kind == .action}.map(\.title),["写代码","开会","管理版式…"])
+        XCTAssertEqual(sub?.children.first?.checked,true)
+        s.trusted=false
+        XCTAssertEqual(StatusMenuModel.build(s).first{$0.id=="layouts"}?.children.first?.enabled,false)
+        s.monitorName=nil
+        XCTAssertNil(StatusMenuModel.build(s).first{$0.id=="layouts"})
     }
 }

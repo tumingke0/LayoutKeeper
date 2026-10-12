@@ -9,11 +9,12 @@ import MacAdapters
 extension Model {
     var currentExternalMonitor: ConnectedMonitor? { externalMonitors.count==1 ? externalMonitors[0] : nil }
     func monitorRecordURL(_ monitor: MonitorIdentity) throws -> URL {
-        guard let directory=guidedDirectory else { throw LayoutError.unsupported }
+        guard let directory=layoutDirectory else { throw LayoutError.unsupported }
         return directory.appendingPathComponent("screens",isDirectory:true).appendingPathComponent("\(monitor.key).json")
     }
     func refreshExternalMonitor() {
         externalMonitors=MonitorRecognition.externalMonitors(); refreshAuthorization(); externalRecord=nil
+        defer { reloadLibrary() }
         guard let monitor=currentExternalMonitor else {captureInspection=nil;captureInspectionMessage="";captureInspectionMonitorKey=nil;externalMessage=externalMonitors.isEmpty ? "接上外接屏后，我会自动识别它。" : "当前版本只支持内置屏加一个外接屏，请只连接一个外接屏。";return}
         if captureInspectionMonitorKey != monitor.identity.key {captureInspection=nil;captureInspectionMessage="";captureInspectionMonitorKey=nil}
         do {
@@ -48,7 +49,7 @@ extension Model {
             message=report.json()+traceText
         }
     }
-    /// `confirmOverwrite` false (menu bar / hotkey) skips the dialog; overwriting still keeps `.previous.json`.
+    /// `confirmOverwrite` false (menu bar / hotkey) skips the dialog; overwriting still archives the old version in history.
     @discardableResult func saveExternalLayout(confirmOverwrite: Bool = true) -> SaveOutcome {
         guard !restoring,!checkingCapture,let monitor=currentExternalMonitor else { return .failed(currentExternalMonitor == nil ? "未连接外接屏" : "正在处理上一个操作") }
         refreshAuthorization()
@@ -61,13 +62,12 @@ extension Model {
                 replaced=true
                 if confirmOverwrite {
                     let alert=NSAlert(); alert.messageText="更新这块屏幕的布局？"
-                    alert.informativeText="将覆盖当前布局，并保留上一版。保存只读取窗口，不会恢复或移动窗口。"
-                    alert.addButton(withTitle:"更新并保留上一版"); alert.addButton(withTitle:"取消")
+                    alert.informativeText="新布局会成为当前版本，旧版本存入「历史版本」（保留最近 10 个）。保存只读取窗口，不会恢复或移动窗口。"
+                    alert.addButton(withTitle:"更新布局"); alert.addButton(withTitle:"取消")
                     guard alert.runModal() == .alertFirstButtonReturn else { return .cancelled }
                 }
             }
         } catch { externalMessage="无法确定保存位置，本次没有保存。"; return .failed(externalMessage) }
-        externalRestorePlan=nil
         captureInspection=nil;captureInspectionMessage=""
         var phase=ExternalSavePhase.readWindows
         do {
@@ -89,11 +89,13 @@ extension Model {
             let url=try monitorRecordURL(monitor.identity)
             try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
             record.coverage?.readIssueCount=windows.issues.count
-            try MonitorLayoutStore.save(record,to:url)
+            guard let library=screenLibrary,library.currentURL(monitor.identity.key)==url else { throw LayoutError.unsupported }
+            try library.save(record)
             externalRecord=record
+            selectedScreenKey=monitor.identity.key; reloadLibrary()
             externalMessage=record.captureSummary
             message=record.captureReport?.json() ?? "{}"
-            actionNote=ActionNote(icon:"checkmark.circle.fill",text:"已保存 \(record.profile.windows.count) 个窗口"+(replaced ? " · 上一版已保留" : ""),tone:.success)
+            actionNote=ActionNote(icon:"checkmark.circle.fill",text:"已保存 \(record.profile.windows.count) 个窗口"+(replaced ? " · 旧版本已存入历史" : ""),tone:.success)
             return .saved(count:record.profile.windows.count,replaced:replaced)
         } catch {
             externalMessage=ExternalSaveMessage.failure(error:error,phase:phase)

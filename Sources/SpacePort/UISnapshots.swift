@@ -39,7 +39,45 @@ enum UISnapshots {
         m.externalMonitors=[ConnectedMonitor(identity:monitor,runtimeDisplayToken:"ext")]
         m.externalRecord=record
         if undo { m.lastRestoreJournal=sampleJournal() }
+        sampleLibrary(m,record:record)
         return m
+    }
+    static let homeMonitor=MonitorIdentity(vendor:7789,model:23296,serial:2,name:"LG HDR 4K")
+    static func day(_ offset: Int,_ h: Int,_ min: Int) -> Date {
+        let d=Calendar.current.date(byAdding:.day,value:offset,to:Date()) ?? Date()
+        return Calendar.current.date(bySettingHour:h,minute:min,second:0,of:d) ?? d
+    }
+    /// Two saved screens (this one connected, a home screen not connected) and a few versions; no files are read.
+    static func sampleLibrary(_ m: Model,record: MonitorLayoutRecord?) {
+        m.monitorPreferences.setDisplayName("公司",for:monitor.key,seenName:monitor.name)
+        m.monitorPreferences.setDisplayName("家里",for:homeMonitor.key,seenName:homeMonitor.name)
+        let connected=m.currentExternalMonitor != nil
+        let current=SavedScreen(key:monitor.key,monitor:monitor,name:"公司",savedAt:record?.savedAt ?? .distantPast,windowCount:record?.profile.windows.count ?? 0,desktopCount:4,connected:connected)
+        let home=SavedScreen(key:homeMonitor.key,monitor:homeMonitor,name:"家里",savedAt:day(-1,21,15),windowCount:5,desktopCount:3,connected:false)
+        m.savedScreens=(record != nil || connected ? [current] : [])+[home]
+        m.selectedScreenKey=m.savedScreens.first?.key
+        m.selectedRecord=record
+        guard let record else { m.screenVersions=[]; return }
+        func v(_ n: Int,_ date: Date,_ w: Int,_ d: Int,current: Bool = false) -> LayoutVersion {
+            LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/\(n).json"),savedAt:date,windowCount:w,desktopCount:d,isCurrent:current)
+        }
+        var labelled=v(3,day(-3,10,12),4,3); labelled.label="季度汇报前"
+        m.screenVersions=[v(0,record.savedAt,record.profile.windows.count,4,current:true),v(1,day(-1,18,3),6,4),v(2,day(-1,9,30),6,3),labelled,v(4,day(-6,14,48),3,2)]
+        func n(_ i: Int,_ name: String,_ w: Int,_ d: Int,active: Bool = false) -> NamedLayout {
+            NamedLayout(url:URL(fileURLWithPath:"/tmp/lk-sample/n\(i).json"),name:name,savedAt:day(-2,9,0),windowCount:w,desktopCount:d,isActive:active)
+        }
+        m.namedLayouts=[n(1,"写代码",record.profile.windows.count,4,active:true),n(2,"开会",3,2),n(3,"专注阅读",2,1)]
+    }
+    /// The home screen selected: saved but not connected.
+    static func selectHome(_ m: Model) {
+        m.selectedScreenKey=homeMonitor.key
+        let windows=[saved("com.apple.Safari","阅读",slot:1,Rect(0.05,0.05,0.6,0.9)),saved("com.apple.Music","音乐",slot:1,Rect(0.6,0.1,0.38,0.6)),
+                     saved("com.apple.Terminal","zsh",slot:2,Rect(0,0,1,1)),saved("com.apple.Notes","备忘录",slot:3,Rect(0.1,0.1,0.5,0.8)),saved("com.apple.finder","下载",slot:3,Rect(0.6,0.3,0.38,0.5))]
+        var r=MonitorLayoutRecord(monitor:homeMonitor,profile:Profile(location:homeMonitor.name,windows:windows)); r.savedAt=day(-1,21,15)
+        m.selectedRecord=r
+        m.screenVersions=[LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/h0.json"),savedAt:r.savedAt,windowCount:5,desktopCount:3,isCurrent:true),
+                          LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/h1.json"),savedAt:day(-8,20,40),windowCount:4,desktopCount:3,isCurrent:false)]
+        m.namedLayouts=[NamedLayout(url:URL(fileURLWithPath:"/tmp/lk-sample/hn1.json"),name:"周末娱乐",savedAt:day(-8,20,0),windowCount:5,desktopCount:3,isActive:true)]
     }
     static func sampleJournal() -> RestoreJournal? {
         let w=ObservedWindow(token:"1:1",selector:WindowSelector(bundleID:"com.google.Chrome",title:"x"),frame:Rect(0,0,800,600),spaceIDs:[1],processStartedAt:Date(timeIntervalSince1970:1000))
@@ -115,10 +153,20 @@ enum UISnapshots {
         shot("03-main-matches.png",MainView(model:matches))
         shot("04-main-matches-dark.png",MainView(model:matches),dark:true)
         shot("05-main-needs-permission.png",MainView(model:sampleModel(record:record,trusted:false,undo:false)))
+        let away=sampleModel(record:record,undo:false); selectHome(away)
+        shot("05b-main-disconnected-screen.png",MainView(model:away))
+        let previewing=sampleModel(record:record,undo:false)
+        setLive(previewing,try? QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:"ext",snapshot:matchingSnapshot(record),allowCrossSpace:true))
+        var older=record; older.profile.windows=Array(record.profile.windows.prefix(6)); older.savedAt=day(-1,18,3)
+        previewing.previewVersion=previewing.screenVersions[1]; previewing.previewRecord=older
+        shot("05c-main-preview-version.png",MainView(model:previewing))
+        let empty=sampleModel(record:nil,undo:false); empty.externalMonitors=[]; empty.savedScreens=[]; empty.selectedScreenKey=nil
+        shot("05d-main-empty.png",MainView(model:empty))
 
         // Menu bar menu, from the same item model as the real NSMenu.
         let menuModel=sampleModel(record:record)
         shot("06-menu.png",MenuReplica(items:StatusMenuModel.build(menuModel.menuState(optionHeld:false)),expand:"mode"))
+        shot("06b-menu-switch-layouts.png",MenuReplica(items:StatusMenuModel.build(menuModel.menuState(optionHeld:false)),expand:"layouts"))
         shot("07-menu-option.png",MenuReplica(items:StatusMenuModel.build(menuModel.menuState(optionHeld:true))))
         let noScreen=sampleModel(record:nil,undo:false); noScreen.externalMonitors=[]
         shot("08-menu-no-screen.png",MenuReplica(items:StatusMenuModel.build(noScreen.menuState(optionHeld:false))))

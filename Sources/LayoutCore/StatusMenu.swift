@@ -23,7 +23,15 @@ public struct MenuItemModel: Equatable, Identifiable {
     public var shortcutText: String? { hotkey?.display ?? menuKey.map{"⌘"+$0.uppercased()} }
 }
 
+/// A named layout (版式) of the connected screen, as listed in the 「切换版式」 submenu.
+public struct MenuLayout: Equatable {
+    public var name: String
+    public var active: Bool
+    public init(name: String,active: Bool) { self.name=name; self.active=active }
+}
+
 public struct MenuState {
+    public var layouts: [MenuLayout]=[]
     public var monitorName: String?
     public var windowCount: Int?
     public var savedAt: Date?
@@ -65,6 +73,15 @@ public enum StatusMenuModel {
         if s.canUndo {
             items.append(MenuItemModel(kind:.action,id:"undo",title:"撤销上次恢复",symbol:"arrow.uturn.left",enabled:s.trusted && !s.busy,reason:s.trusted ? nil : "需要辅助功能权限",hotkey:s.hotkeys.shown(.undo)))
         }
+        if s.monitorName != nil,!s.layouts.isEmpty {
+            let block=blocker(s,needsLayout:false)
+            var children=s.layouts.enumerated().map { i,l in
+                MenuItemModel(kind:.action,id:"layout.\(i)",title:l.name,enabled:block == nil,reason:block,checked:l.active)
+            }
+            children.append(.separator("layout.sep"))
+            children.append(MenuItemModel(kind:.action,id:"open",title:"管理版式…"))
+            items.append(MenuItemModel(kind:.submenu,id:"layouts",title:"切换版式",symbol:"square.stack.3d.up",children:children))
+        }
         items.append(.separator("sep1"))
         var modes=AutoRestoreMode.allCases.map { mode in
             MenuItemModel(kind:.action,id:"mode.\(mode.rawValue)",title:mode.title,checked:s.globalMode == mode)
@@ -84,7 +101,7 @@ public enum StatusMenuModel {
         }
         items.append(.separator("sep2"))
         items.append(MenuItemModel(kind:.action,id:"open",title:"打开 LayoutKeeper…",symbol:"macwindow"))
-        items.append(s.optionHeld ? MenuItemModel(kind:.action,id:"advanced",title:"高级工具…",symbol:"wrench.and.screwdriver",menuKey:",")
+        items.append(s.optionHeld ? MenuItemModel(kind:.action,id:"diagnostics",title:"诊断…",symbol:"stethoscope",menuKey:",")
                                   : MenuItemModel(kind:.action,id:"settings",title:"设置…",symbol:"gearshape",menuKey:","))
         items.append(MenuItemModel(kind:.action,id:"quit",title:"退出 LayoutKeeper",symbol:"power",menuKey:"q"))
         return items

@@ -24,6 +24,10 @@ extension Model {
         s.trusted=trusted; s.busy=busy; s.canUndo=lastRestoreJournal?.canUndo == true
         s.globalMode=autoRestoreMode
         s.monitorChoice=currentExternalMonitor.flatMap{ monitorPreferences.restore($0.identity.key) }
+        if let key=currentExternalMonitor?.identity.key {
+            let list=selectedScreenKey==key ? namedLayouts : (screenLibrary?.namedLayouts(key) ?? [])
+            s.layouts=list.map { MenuLayout(name:$0.name,active:$0.isActive) }
+        }
         s.pausedUntil=pausedUntil; s.now=Date(); s.hotkeys=hotkeySettings; s.optionHeld=optionHeld
         return s
     }
@@ -41,7 +45,7 @@ extension Model {
         if let why=quickBlocker(needsLayout:false) { showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:"没有保存",detail:why)); return }
         switch saveExternalLayout(confirmOverwrite:false) {
         case .saved(let count,let replaced):
-            showToast?(Toast(icon:"checkmark.circle.fill",tone:.success,title:"已保存 \(count) 个窗口",detail:replaced ? "上一版已保留" : nil))
+            showToast?(Toast(icon:"checkmark.circle.fill",tone:.success,title:"已保存 \(count) 个窗口",detail:replaced ? "旧版本已存入历史" : nil))
         case .failed(let why): showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:"没有保存",detail:why,duration:4))
         case .cancelled: break
         }

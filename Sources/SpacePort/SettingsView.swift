@@ -5,7 +5,7 @@ import SwiftUI
 import LayoutCore
 import MacAdapters
 
-enum SettingsTab: String, CaseIterable { case general, diagnostics, advanced }
+enum SettingsTab: String, CaseIterable { case general, diagnostics }
 
 struct SettingsView: View {
     @ObservedObject var model: Model
@@ -13,7 +13,6 @@ struct SettingsView: View {
         TabView(selection:$model.settingsTab) {
             GeneralSettings(model:model).tabItem { Label("通用",systemImage:"gearshape") }.tag(SettingsTab.general)
             DiagnosticsSettings(model:model).tabItem { Label("诊断",systemImage:"stethoscope") }.tag(SettingsTab.diagnostics)
-            AdvancedSettings(model:model).tabItem { Label("高级",systemImage:"wrench.and.screwdriver") }.tag(SettingsTab.advanced)
         }
         .frame(width:660,height:620)
     }
@@ -147,28 +146,6 @@ struct DiagnosticsSettings: View {
     }
 }
 
-struct AdvancedSettings: View {
-    @ObservedObject var model: Model
-    @State var showingGroups=false
-    var body: some View {
-        ScrollView {
-            VStack(alignment:.leading,spacing:14) {
-                GroupBox("按窗口组手动恢复") {
-                    VStack(alignment:.leading,spacing:8) {
-                        Text("把每个保存的窗口组手动对应到现在的某个桌面。一般用主窗口的「恢复布局」即可。").font(.caption).foregroundStyle(.secondary)
-                        HStack {
-                            Button("打开…") { model.prepareExternalRestore(); showingGroups=true }
-                                .disabled(model.externalRecord==nil || !model.trusted || model.restoring)
-                            Button("查看上次恢复结果") { showingGroups=true }.disabled(model.externalRestoreResults.isEmpty)
-                        }
-                    }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
-                }
-                GroupBox { AdvancedContent(model:model).padding(8) }
-            }.padding(20)
-        }
-        .sheet(isPresented:$showingGroups) { ExternalRestoreSheet(model:model) }
-    }
-}
 
 /// Click, then press the new combination. Global hotkeys are suspended while recording so the old one can't fire.
 struct HotkeyRow: View {

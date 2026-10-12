@@ -93,7 +93,7 @@ extension Model {
         let report=ManualRestorer.execute(plan,windows:windows,spaces:mover,approved:true,polls:8,pause:{RunLoop.current.run(until:Date(timeIntervalSinceNow:0.12))},persist:{ journal in
             if let url=journalURL { try RestoreJournalStore.update(journal,at:url) }
             else {
-                guard let directory=self.guidedDirectory else { throw LayoutError.unsupported }
+                guard let directory=self.layoutDirectory else { throw LayoutError.unsupported }
                 journalURL=try RestoreJournalStore.create(journal,in:directory.appendingPathComponent("transactions",isDirectory:true))
             }
         })
