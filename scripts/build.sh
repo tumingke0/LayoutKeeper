@@ -76,5 +76,7 @@ fi
 rm -rf "$icon_work"
 codesign --force --sign "$signing_identity" --timestamp=none --identifier local.layoutkeeper.app "$app_dir"
 codesign --verify --strict "$app_dir"
+# Privacy gate: fail the build if the bundle or CLI contains home paths, the user name, private terms or e-mails.
+python3 scripts/privacy-gate.py "$app_dir" "$out_dir/layoutkeeperctl"
 print "Built candidate $app_dir${arch:+ ($arch)}"
 print "Nothing was installed. Older build-products/SpacePort.app (if present) is left untouched. Use scripts/install-local.py only for an intentional local update."

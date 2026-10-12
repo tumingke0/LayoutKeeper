@@ -26,6 +26,8 @@ open build-products/LayoutKeeper.app
 
 普通构建只生成 `build-products/LayoutKeeper.app` 和 `build-products/layoutkeeperctl`，不会覆盖已运行版本，也不会碰旧的 `build-products/SpacePort.app`。`scripts/install-local.py` 默认只预览；显式 `--install` 才部署到 `~/Applications/LayoutKeeper.app`。部署要求已批准的开发签名（团队 ID 与签名身份通过环境变量 `LAYOUTKEEPER_TEAM_ID` / `LAYOUTKEEPER_SIGNING_IDENTITY` 或 gitignored 的 `scripts/signing.local` 提供，不写进源码），拒绝 ad-hoc 候选，拒绝任何 LayoutKeeper/SpacePort GUI 正在运行的情况；指定要求变化须显式接受。已有签名身份和诊断边界见 [授权与稳定构建](AUTHORIZATION.md)。
 
+**隐私闸门**：`scripts/build.sh` 在剥离调试符号并签名后运行 `scripts/privacy-gate.py`，扫描 .app 和 CLI 里的每个文件（二进制用 `strings -a`）；发现 `/Users/`、当前 `$USER` / `$HOME`、`scripts/signing.local` 里的团队 ID 和签名名、gitignored 的 `scripts/privacy-terms.local` 里的私有词（每行一个），或不在白名单上的邮箱地址时，构建失败。`scripts/make-dmg.sh --arch arm64|x86_64` 打包前后各检查一次（扫描最终 dmg 的内容），不通过就删除 dmg。测试：`python3 scripts/test-privacy-gate.py`。
+
 需要已有 Xcode/Swift 工具链。本机使用 Swift 6.4、macOS 27 SDK、arm64 构建。默认构建采用不使用私钥的 ad-hoc 签名，只用于候选验证；正式部署需另行获准沿用开发签名。没有发布或联网功能；开机自启只在用户于引导或设置中开启时通过 SMAppService 注册。`--disable-sandbox` 仅关闭 SwiftPM 的构建子进程沙箱；不改变 SIP、TCC 或系统安全设置。构建缓存默认在项目 `.build`，可用 `LAYOUTKEEPER_BUILD_DIR=/tmp/spaceport-build` 指定其他路径（旧名 `SPACEPORT_BUILD_DIR` 仍可用）。
 
 ## 已实现

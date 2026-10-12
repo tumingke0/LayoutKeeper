@@ -18,6 +18,8 @@ Diagnostics/
 
 # private signing identity for scripts/install-local.py, and signing material
 scripts/signing.local
+# private extra terms for scripts/privacy-gate.py (one per line)
+scripts/privacy-terms.local
 *.p12
 *.cer
 *.pem
