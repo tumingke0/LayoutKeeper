@@ -77,6 +77,9 @@ final class Model: ObservableObject {
     var appNameCache: [String:String]=[:]
     var cachedCrossSpaceSupport: CrossSpaceSupport?
     @Published var actionNote: ActionNote?
+    /// Sparkle; nil in snapshot rendering and builds without a feed.
+    var updater: AppUpdater? { didSet { autoCheckUpdates=updater?.automaticallyChecks ?? true } }
+    @Published var autoCheckUpdates=true { didSet { if let updater,updater.automaticallyChecks != autoCheckUpdates { updater.automaticallyChecks=autoCheckUpdates } } }
     @Published var settingsTab=SettingsTab.general
     var openSettings: ((SettingsTab) -> Void)?
     @Published var autoRestoreMode=AutoRestoreMode(rawValue:Prefs.store?.string(forKey:"autoRestoreMode") ?? "") ?? .defaultMode {
@@ -149,6 +152,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     var onboarding: OnboardingController?
     var authorizationTimer: Timer?
     let toasts=ToastCenter()
+    var updater: AppUpdater?
     let hotkeys=GlobalHotkeys()
     private var liveTimer: Timer?
     private var lastAction: [String:Date]=[:]
@@ -163,6 +167,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.configureEmptyWindowTrial()
+        updater=AppUpdater.makeIfConfigured(); model.updater=updater
         item=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
         item.button?.image=NSImage(systemSymbolName:"rectangle.3.group",accessibilityDescription:"LayoutKeeper")
         let menu=NSMenu(); menu.autoenablesItems=false; menu.delegate=self
@@ -290,6 +295,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "resume": model.pausedUntil=nil
         case "open": show()
         case "settings": showSettings(.general)
+        case "checkUpdates": updater?.checkForUpdates()
         case "quit": NSApplication.shared.terminate(nil)
         case let layout where layout.hasPrefix("layout."): if let i=Int(layout.dropFirst(7)),debounce("layout") { model.applyConnectedLayout(at:i) }
         default: break
@@ -349,6 +355,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         let main=NSMenu()
         let appItem=NSMenuItem(); let app=NSMenu(); appItem.submenu=app; main.addItem(appItem)
         let settings=NSMenuItem(title:"设置…",action:#selector(openSettingsGeneral),keyEquivalent:","); settings.target=self; app.addItem(settings)
+        let updates=NSMenuItem(title:"检查更新…",action:#selector(checkForUpdates),keyEquivalent:""); updates.target=self; app.addItem(updates)
         app.addItem(.separator())
         let close=NSMenuItem(title:"关闭窗口",action:#selector(NSWindow.performClose(_:)),keyEquivalent:"w"); app.addItem(close)
         let q=NSMenuItem(title:"退出 LayoutKeeper",action:#selector(quit),keyEquivalent:"q"); q.target=self; app.addItem(q)
@@ -362,11 +369,19 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     func applicationDidBecomeActive(_ notification: Notification) { model.refreshExternalMonitor(); scheduleLiveCheck(after:0.6) }
     func applicationWillTerminate(_ notification: Notification) { authorizationTimer?.invalidate(); hotkeys.unregisterAll() }
     @objc func quit() { NSApplication.shared.terminate(nil) }
+    @objc func checkForUpdates() { updater?.checkForUpdates() }
 }
 if let index=CommandLine.arguments.firstIndex(of:"--render-ui-snapshots"),CommandLine.arguments.count>index+1 {
     // Offscreen PNG rendering with sample data; never touches other windows, AX, or saved layouts.
     NSApplication.shared.setActivationPolicy(.prohibited)
     exit(MainActor.assumeIsolated { UISnapshots.run(to:URL(fileURLWithPath:CommandLine.arguments[index+1])) })
+}
+if CommandLine.arguments.contains("--update-check-and-install") {
+    let app=NSApplication.shared; app.setActivationPolicy(.prohibited)
+    let driver=HeadlessUpdateDriver()
+    DispatchQueue.main.async { driver.start() }
+    DispatchQueue.main.asyncAfter(deadline:.now()+120) { HeadlessUpdateDriver.log("timed out"); exit(5) }
+    app.run(); exit(0)
 }
 AppMigration.runAtLaunch()
 let application=NSApplication.shared

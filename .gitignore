@@ -30,3 +30,11 @@ scripts/privacy-terms.local
 # local archives / release zips, Xcode user data
 *.zip
 xcuserdata/
+
+# signing / update key material (never commit)
+*.p12
+*.pem
+*.key
+*.cer
+*private-key*
+*.local

@@ -19,10 +19,19 @@ case "$arch" in
   ""|arm64|x86_64) ;;
   *) print -u2 "Unsupported --arch '$arch' (use arm64 or x86_64)"; exit 2 ;;
 esac
-signing_identity="${SPACEPORT_SIGNING_IDENTITY:--}"
-if [[ "$signing_identity" != "-" && "${SPACEPORT_ALLOW_KEYCHAIN_SIGNING:-0}" != "1" ]]; then
-  print -u2 "Existing private-key signing requires explicit authorization. No build or keychain operation attempted."
-  exit 3
+# Release signing identity: a self-signed code-signing certificate with no personal data, so the designated requirement
+# (identifier + certificate leaf) stays the same across versions and macOS keeps the Accessibility permission on update.
+# Override with LAYOUTKEEPER_RELEASE_IDENTITY (env or gitignored scripts/signing.local). Falls back to ad-hoc with a warning.
+release_identity="${LAYOUTKEEPER_RELEASE_IDENTITY:-}"
+if [[ -z "$release_identity" && -f "$project_dir/scripts/signing.local" ]]; then
+  release_identity="$(sed -n 's/^LAYOUTKEEPER_RELEASE_IDENTITY=//p' "$project_dir/scripts/signing.local" | tail -1 | tr -d '"'"'")"
+fi
+release_identity="${release_identity:-LayoutKeeper Self-Signed}"
+if security find-identity -p codesigning 2>/dev/null | grep -Fq "\"$release_identity\""; then
+  signing_identity="$release_identity"
+else
+  print -u2 "warning: signing identity '$release_identity' not found in the keychain; signing ad-hoc (updates will need the Accessibility permission re-granted)"
+  signing_identity="-"
 fi
 build_dir="${LAYOUTKEEPER_BUILD_DIR:-${SPACEPORT_BUILD_DIR:-$project_dir/.build}}"  # SPACEPORT_BUILD_DIR: legacy name
 export CLANG_MODULE_CACHE_PATH="$build_dir/clang-cache"
@@ -44,6 +53,11 @@ cp "$bin_dir/LayoutKeeper" "$app_dir/Contents/MacOS/LayoutKeeper.new" && mv -f "
 cp "$bin_dir/layoutkeeperctl" "$out_dir/layoutkeeperctl.new" && mv -f "$out_dir/layoutkeeperctl.new" "$out_dir/layoutkeeperctl"
 # Compatibility alias for the old CLI name (a symlink; the old spaceportctl binary, if any, is replaced by the link).
 ln -sfn layoutkeeperctl "$out_dir/spaceportctl"
+# Sparkle (in-app updates): embed the framework and let the executable find it in Contents/Frameworks.
+rm -rf "$app_dir/Contents/Frameworks"; mkdir -p "$app_dir/Contents/Frameworks"
+ditto "$bin_dir/Sparkle.framework" "$app_dir/Contents/Frameworks/Sparkle.framework"
+otool -l "$app_dir/Contents/MacOS/LayoutKeeper" | grep -q "@executable_path/../Frameworks" \
+  || install_name_tool -add_rpath "@executable_path/../Frameworks" "$app_dir/Contents/MacOS/LayoutKeeper"
 # Drop debug-symbol (stab) entries: they embed absolute build paths, which would leak the builder's home folder.
 strip -S "$app_dir/Contents/MacOS/LayoutKeeper" "$out_dir/layoutkeeperctl"
 cp "$project_dir/Resources/AppIcon.icns" "$app_dir/Contents/Resources/AppIcon.icns.new" && mv -f "$app_dir/Contents/Resources/AppIcon.icns.new" "$app_dir/Contents/Resources/AppIcon.icns"
@@ -74,6 +88,15 @@ else
   /usr/libexec/PlistBuddy -c 'Delete :CFBundleIconName' "$app_dir/Contents/Info.plist" 2>/dev/null || true
 fi
 rm -rf "$icon_work"
+# Update feed per architecture (override with LAYOUTKEEPER_FEED_URL, e.g. for a local test feed).
+feed_arch="${arch:-$(uname -m)}"
+/usr/libexec/PlistBuddy -c "Set :SUFeedURL ${LAYOUTKEEPER_FEED_URL:-https://github.com/tumingke0/LayoutKeeper/releases/latest/download/appcast-$feed_arch.xml}" "$app_dir/Contents/Info.plist"
+# Sign inside-out: Sparkle's helpers, the framework, then the app. No hardened runtime: with a self-signed certificate
+# (no Team ID) library validation would refuse to load the embedded framework.
+sparkle="$app_dir/Contents/Frameworks/Sparkle.framework/Versions/B"
+for item in "$sparkle/XPCServices/Installer.xpc" "$sparkle/XPCServices/Downloader.xpc" "$sparkle/Autoupdate" "$sparkle/Updater.app" "$app_dir/Contents/Frameworks/Sparkle.framework"; do
+  [[ -e "$item" ]] && codesign --force --sign "$signing_identity" --timestamp=none --preserve-metadata=entitlements "$item"
+done
 codesign --force --sign "$signing_identity" --timestamp=none --identifier local.layoutkeeper.app "$app_dir"
 codesign --verify --strict "$app_dir"
 # Privacy gate: fail the build if the bundle or CLI contains home paths, the user name, private terms or e-mails.

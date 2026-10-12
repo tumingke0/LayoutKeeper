@@ -96,6 +96,14 @@ struct GeneralSettings: View {
                 if !model.trusted { Button("打开系统设置") { model.openControlSettings() } }
                 Text("只在你点击引导里的“打开系统设置”时才会弹出系统授权提示；这里只打开设置，不弹提示。").font(.caption).foregroundStyle(.secondary)
             }
+            Section("更新") {
+                Toggle("自动检查更新",isOn:$model.autoCheckUpdates)
+                HStack {
+                    Text("每天检查一次。只连接 GitHub 获取版本信息和安装包，不发送任何个人数据。").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("立即检查…") { model.updater?.checkForUpdates() }.disabled(model.updater == nil && !RenderMode.snapshot)
+                }
+            }
             Section("关于") {
                 LabeledContent("版本",value:version)
                 LabeledContent("系统",value:"macOS \(model.systemBuildText)")

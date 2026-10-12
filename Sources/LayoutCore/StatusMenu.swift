@@ -101,6 +101,7 @@ public enum StatusMenuModel {
         }
         items.append(.separator("sep2"))
         items.append(MenuItemModel(kind:.action,id:"open",title:"打开 LayoutKeeper…",symbol:"macwindow"))
+        items.append(MenuItemModel(kind:.action,id:"checkUpdates",title:"检查更新…",symbol:"arrow.down.circle"))
         items.append(s.optionHeld ? MenuItemModel(kind:.action,id:"diagnostics",title:"诊断…",symbol:"stethoscope",menuKey:",")
                                   : MenuItemModel(kind:.action,id:"settings",title:"设置…",symbol:"gearshape",menuKey:","))
         items.append(MenuItemModel(kind:.action,id:"quit",title:"退出 LayoutKeeper",symbol:"power",menuKey:"q"))

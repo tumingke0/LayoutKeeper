@@ -17,7 +17,7 @@ final class StatusMenuModelTests: XCTestCase {
     func testNormalOrderShortcutsAndStatusLine() {
         var s=state(); s.canUndo=true
         let items=StatusMenuModel.build(s)
-        XCTAssertEqual(ids(items),["status","save","restore","undo","sep1","mode","pause","sep2","open","settings","quit"])
+        XCTAssertEqual(ids(items),["status","save","restore","undo","sep1","mode","pause","sep2","open","checkUpdates","settings","quit"])
         XCTAssertTrue(item(items,"status")!.title.hasPrefix("公司 · 7 个窗口 · "))
         XCTAssertTrue(item(items,"status")!.title.hasSuffix("09:42"))
         XCTAssertFalse(item(items,"status")!.enabled)

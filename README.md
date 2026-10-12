@@ -52,6 +52,14 @@
 - 需要“辅助功能”权限。
 - 目前只支持**一块**外接屏。
 
+## 下载安装与更新
+
+从 [Releases](https://github.com/tumingke0/LayoutKeeper/releases/latest) 下载对应芯片的 `.dmg`（Apple 芯片选 AppleSilicon，Intel 选 Intel），把 LayoutKeeper 拖进“应用程序”。
+
+- **第一次安装**：应用没有经过 Apple 公证，第一次请**右键 → 打开**（或在“系统设置 → 隐私与安全性”点“仍要打开”），然后按引导打开一次“辅助功能”权限。
+- **之后的更新**：从 0.6.1 起，菜单栏 → **检查更新…**（或设置 → 通用 → 自动检查更新，默认每天一次）会下载并安装新版本。每个版本都用同一个签名证书签名，更新后**辅助功能权限保持有效**，不用重新授权。
+- **从 0.6.0 或更早版本升级**：需要最后一次手动安装 0.6.1（拖进“应用程序”替换），并**最后一次重新授权辅助功能**（若开关显示已打开但不生效，先用“−”移除 LayoutKeeper 再重新添加）。之后就可以用“检查更新…”了。
+
 ## 安装（从源码构建）
 
 需要 Xcode 16 或更新（Swift 6 工具链）。本项目在 Swift 6.4 / macOS 27 SDK 上开发。
@@ -64,7 +72,7 @@ cd LayoutKeeper
 open build-products/LayoutKeeper.app
 ```
 
-- 构建使用 **ad-hoc 签名**（不需要开发者账号）。**每次重新构建后，macOS 会把它当成新应用**：如果功能失效，到“系统设置 → 隐私与安全性 → 辅助功能”删除旧的 LayoutKeeper 再重新添加（点 +，⌘⇧G 输入 `build-products/LayoutKeeper.app` 的路径）。
+- 构建优先用钥匙串里的自签名证书 “LayoutKeeper Self-Signed” 签名（可用 `LAYOUTKEEPER_RELEASE_IDENTITY` 指定其他证书）；没有时退回 **ad-hoc 签名** 并给出警告。ad-hoc 构建**每次重新构建后，macOS 会把它当成新应用**：如果功能失效，到“系统设置 → 隐私与安全性 → 辅助功能”删除旧的 LayoutKeeper 再重新添加（点 +，⌘⇧G 输入 `build-products/LayoutKeeper.app` 的路径）。
 - 可以把 `LayoutKeeper.app` 拖到“应用程序”文件夹再使用。
 - 从网上下载的预编译版本没有经过 Apple 公证：第一次请在 Finder 里**右键 → 打开**，或在“系统设置 → 隐私与安全性”里点“仍要打开”。
 
@@ -108,7 +116,7 @@ open build-products/LayoutKeeper.app
 
 ## 隐私
 
-- **只在本机运行，不联网**，没有统计或更新检查。
+- **不收集任何数据**，没有统计。唯一的网络访问是**检查更新**：只连接 GitHub（Releases 上的 appcast 和安装包），不发送任何个人数据；可以在设置 → 通用里关闭“自动检查更新”。更新包必须带有正确的 EdDSA 签名才会安装。
 - 布局保存在 `~/Library/Application Support/LayoutKeeper/`，内容是应用 ID、窗口标题或文档路径、第几个桌面、归一化的位置和大小。**不保存窗口 ID、Space ID 或显示器运行时 UUID**。
 - 窗口标题只保存在你自己的 Mac 上（布局文件和撤销日志里）；自检报告和诊断导出不含窗口标题（只有短哈希），可以放心附在 Issue 里。
 - 只需要“辅助功能”权限；不需要屏幕录制、输入监控等权限。
@@ -154,7 +162,7 @@ open build-products/LayoutKeeper.app
 - **Named layouts (版式)**: keep several named layouts per monitor (e.g. "coding", "meeting") and switch with one click in the window or the menu bar's *Switch layout* submenu; undoable. Automatic restore uses the most recently saved or applied layout.
 - **Version history**: the last 5 versions per monitor, each tagged with the named layout it came from; preview, restore, or label one to keep it.
 - **Menu bar + global hotkeys**: ⌃⌥⌘S save, ⌃⌥⌘R restore, ⌃⌥⌘Z undo (configurable). Optional automatic restore on reconnect, asked once per monitor.
-- **Local only**: no network access; layouts store app IDs, titles/document paths, desktop indices and normalized frames — never window IDs or Space IDs.
+- **Local data only**: the only network access is the update check (GitHub only, can be turned off); layouts store app IDs, titles/document paths, desktop indices and normalized frames — never window IDs or Space IDs.
 
 **Requirements**: macOS 14+ (same-Space restore); macOS 26+ for cross-Space restore; Accessibility permission; one external monitor.
 
@@ -165,7 +173,7 @@ git clone https://github.com/tumingke0/LayoutKeeper.git && cd LayoutKeeper
 ./scripts/build.sh && open build-products/LayoutKeeper.app
 ```
 
-Builds are ad-hoc signed; after each rebuild, remove and re-add LayoutKeeper under System Settings → Privacy & Security → Accessibility. Prebuilt downloads are not notarized: right-click → Open the first time.
+Local builds are signed with a "LayoutKeeper Self-Signed" keychain identity when present (else ad-hoc; then re-add LayoutKeeper under Accessibility after each rebuild). Prebuilt downloads are not notarized: right-click → Open the first time and grant Accessibility once. **From 0.6.1 on, updates install via "检查更新…" (Check for Updates) and keep the Accessibility permission** (same signing certificate); upgrading from 0.6.0 or earlier needs one last manual install and re-grant. Update checks contact GitHub only (Sparkle, EdDSA-signed updates) and can be turned off in Settings.
 
 **Limitations**: relies on private APIs that may break with OS updates; Finder windows can't be moved across Spaces; "Displays have separate Spaces" should be on; LayoutKeeper never creates or reorders Spaces; one external monitor only.
 
