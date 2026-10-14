@@ -85,6 +85,14 @@ final class Model: ObservableObject {
     @Published var autoRestoreMode=AutoRestoreMode(rawValue:Prefs.store?.string(forKey:"autoRestoreMode") ?? "") ?? .defaultMode {
         didSet { Prefs.store?.set(autoRestoreMode.rawValue,forKey:"autoRestoreMode") }
     }
+    @Published var layoutMode=LayoutMode(rawValue:Prefs.store?.string(forKey:LayoutMode.preferenceKey) ?? "") ?? .defaultMode {
+        didSet { Prefs.store?.set(layoutMode.rawValue,forKey:LayoutMode.preferenceKey); if oldValue != layoutMode { layoutModeChanged() } }
+    }
+    /// Notices from shared mode (too few Spaces / Spaces moved to the built-in screen); shown in the main window too.
+    @Published var sharedNotice: SharedNotice?
+    var pendingSpacesNeeded: Int?
+    /// Snapshot rendering only: pretend the system setting is off to show the hint.
+    var snapshotSeparateSpacesOff=false
     @Published var monitorPreferences=Prefs.monitorPreferences() { didSet { Prefs.save(monitorPreferences,key:Prefs.monitorPreferencesKey) } }
     @Published var pausedUntil: Date?=Prefs.store?.object(forKey:Prefs.pausedUntilKey) as? Date {
         didSet { if let pausedUntil { Prefs.store?.set(pausedUntil,forKey:Prefs.pausedUntilKey) } else { Prefs.store?.removeObject(forKey:Prefs.pausedUntilKey) } }
@@ -165,7 +173,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
               AppIdentity.urlSchemes.contains(url.scheme?.lowercased() ?? ""),url.host?.lowercased()=="self-test" else { return }
         DispatchQueue.main.asyncAfter(deadline:.now()+1.5) { [weak self] in self?.model.beginSelfTest(trigger:"url") }
     }
+    let spaceWatcher=SharedSpaceWatcher()
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MonitorRecognition.layoutMode=model.layoutMode
         model.configureEmptyWindowTrial()
         updater=AppUpdater.makeIfConfigured(); model.updater=updater
         item=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
@@ -192,7 +202,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         // Opening the window from the menu bar or the reconnect prompt must not switch the user's Space.
         window.collectionBehavior=[.moveToActiveSpace]
         NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main) { [weak self] _ in
-            self?.model.refresh(); self?.reconnect?.note(.screens); self?.scheduleLiveCheck(after:1.5); self?.scheduleFirstLayoutReminder()
+            self?.spaceWatcher.screensChanged(); self?.model.refresh(); self?.reconnect?.note(.screens); self?.scheduleLiveCheck(after:1.5); self?.scheduleFirstLayoutReminder()
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.activeSpaceDidChangeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.refresh(); self?.scheduleLiveCheck(after:0.8) }
         NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in self?.reconnect?.note(.wake) }
@@ -202,6 +212,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             showOnboarding(reason)
         } else { show() }
         reconnect=ReconnectCoordinator(model:model,showMain:{ [weak self] in self?.show() })
+        spaceWatcher.start(model:model)
         let timer=Timer(timeInterval:2,repeats:true) { [weak self] _ in self?.model.refreshAuthorization() }
         authorizationTimer=timer
         RunLoop.main.add(timer,forMode:.common)

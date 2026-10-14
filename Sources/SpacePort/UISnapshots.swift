@@ -211,6 +211,23 @@ enum UISnapshots {
             settings.settingsTab=tab
             shot("\(16+i)-settings-\(tab.rawValue).png",SettingsView(model:settings))
         }
+        // 0.6.2: 布局模式 and the closable notices.
+        let shared=sampleModel(record:record)
+        shared.layoutMode = .sharedExternal; MonitorRecognition.layoutMode = .perMonitor
+        shared.settingsTab = .general
+        shot("25-settings-layout-mode-shared.png",SettingsView(model:shared))
+        shared.snapshotSeparateSpacesOff=true
+        shot("26-settings-layout-mode-hint.png",SettingsView(model:shared))
+        let perMonitor=sampleModel(record:record); perMonitor.settingsTab = .general
+        shot("27-settings-layout-mode-per-monitor.png",SettingsView(model:perMonitor))
+        for (name,notice) in [("28-toast-missing-spaces.png",SharedNotice(kind:.missingSpaces(2))),("29-toast-spaces-moved.png",SharedNotice(kind:.migrated(5))),
+                              ("30-toast-separate-spaces-off.png",SharedNotice(kind:.separateSpacesOff))] {
+            let toast=shared.sharedNoticeToast(notice)
+            shot(name,ToastView(toast:toast,actions:toast.actions).padding(16))
+        }
+        let reconnectToast=ReconnectCoordinator.reconnectNotice(name:"公司",restore:{})
+        shot("31-toast-reconnect.png",ToastView(toast:reconnectToast,actions:reconnectToast.actions).padding(16))
+        shot("32-toast-reconnect-dark.png",ToastView(toast:reconnectToast,actions:reconnectToast.actions).padding(16),dark:true)
         // First-run guide (sample models; nothing is requested from the system).
         let fresh=sampleModel(record:nil,trusted:false,undo:false)
         let step1=OnboardingController(model:fresh,reason:.firstRun)

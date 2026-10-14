@@ -9,7 +9,14 @@ public struct ConnectedMonitor {
     public init(identity: MonitorIdentity, runtimeDisplayToken: String) { self.identity=identity; self.runtimeDisplayToken=runtimeDisplayToken }
 }
 public enum MonitorRecognition {
+    /// 布局模式; set by the app from preferences. In shared mode a single external monitor is reported with the shared identity.
+    nonisolated(unsafe) public static var layoutMode: LayoutMode = .perMonitor
     public static func externalMonitors() -> [ConnectedMonitor] {
+        var list=physicalExternalMonitors()
+        if list.count==1,let shared=SharedLayout.effective(list.map(\.identity),mode:layoutMode).first { list[0].identity=shared }
+        return list
+    }
+    public static func physicalExternalMonitors() -> [ConnectedMonitor] {
         NSScreen.screens.compactMap { screen in
             guard let number=screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
             let id=number.uint32Value

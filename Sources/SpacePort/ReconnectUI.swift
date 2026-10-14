@@ -57,6 +57,9 @@ final class ReconnectCoordinator {
         switch action {
         case .none, .paused: return
         case .auto: waitForWindowsThenRestore(monitor)
+        case .ask where !Self.choicePromptEnabled, .askOnce where !Self.choicePromptEnabled:
+            // 0.6.2: the choice panel is disabled. A closable notice with one button replaces it; nothing is remembered.
+            model.showToast?(Self.reconnectNotice(name:name,restore:{ [weak self] in self?.model.quickRestore() }))
         case .ask: askNow(monitor,name:name)
         case .askOnce:
             present(Self.askOncePrompt(name:name,
@@ -64,6 +67,13 @@ final class ReconnectCoordinator {
                 askEachTime:{ [weak self] in self?.remember(.askEachTime,monitor); self?.askNow(monitor,name:name) },
                 never:{ [weak self] in self?.remember(.never,monitor) }))
         }
+    }
+    /// The reconnect choice panel (「以后自动恢复？」/「恢复这块屏幕保存的窗口布局？」) was hard to understand, so 0.6.2
+    /// turns it off. The code stays; set this to true to bring it back.
+    static let choicePromptEnabled=false
+    static func reconnectNotice(name: String,restore: @escaping () -> Void) -> Toast {
+        Toast(icon:"display.2",tone:.info,title:"接上了「\(name)」",detail:"布局和保存的不一样时，点「恢复布局」；只移动能唯一确认的窗口，可以撤销。想接上就自动恢复，可在菜单「接上屏幕时」选「自动恢复」。",
+              actions:[Toast.Action(title:"恢复布局",run:restore)],duration:15)
     }
     static func askOncePrompt(name: String,automatic: @escaping () -> Void,askEachTime: @escaping () -> Void,never: @escaping () -> Void) -> ReconnectPrompt {
         ReconnectPrompt(icon:"sparkles.rectangle.stack",title:"以后接上「\(name)」时自动恢复布局？",

@@ -26,7 +26,8 @@
 - **逐个回读确认**：每个窗口移动后都重新读取，确认真的到了目标桌面和位置；失败的会回滚，不会“假装成功”。
 - **不猜**：同名窗口分不清时标为“需要确认”，由你选，不会移错窗口。
 - **菜单栏 + 全局快捷键**：⌃⌥⌘S 保存、⌃⌥⌘R 恢复、⌃⌥⌘Z 撤销，可自定义或关闭。
-- **接上屏幕时**：每块屏幕第一次接上时问一次“以后自动恢复？”；自动恢复会等窗口稳定后再动，右上角轻提示可撤销。
+- **布局模式**（0.6.2）：「每块屏单独记」（默认），或「所有外接屏共用一套」——公司、家里只接一块外接屏时用同一套桌面和窗口。窗口按“第几个桌面”和相对位置保存，分辨率不同也能对上；桌面不够时多出来的窗口先放在最后一个桌面，并提示你在调度中心按「+」补齐，补好后自动再恢复。拔屏后若有桌面被挪到内置屏，会提示你（不会自动删除）。
+- **接上屏幕时**：先询问恢复（默认）时右上角提示一下，点「恢复布局」才恢复；自动恢复会等窗口稳定后再动。右上角提示都可以点 × 或点文字关闭，可撤销。
 - **首次使用引导**：授权、开机自启、保存第一份布局，三步完成。
 
 <p align="center">
@@ -87,7 +88,7 @@ open build-products/LayoutKeeper.app
 
 **接上屏幕时**（菜单栏或设置 → 通用）：
 
-- **先询问恢复**（默认）：每块屏幕第一次接上时问一次“以后自动恢复？”，记住你的选择。
+- **先询问恢复**（默认）：接上屏幕时右上角提示一下，点「恢复布局」才恢复；不点就什么都不动，提示可以直接关掉。
 - **自动恢复**：屏幕稳定 3 秒、窗口停止移动后自动恢复能唯一确认的窗口；需要确认的、在另一块屏幕上的窗口不会动。
 - **关闭恢复**：只手动恢复。
 - 可以暂停自动恢复 1 小时或到明天。
@@ -161,7 +162,8 @@ open build-products/LayoutKeeper.app
 - **No guessing**: ambiguous windows are marked "needs confirmation" instead of being moved.
 - **Named layouts (版式)**: keep several named layouts per monitor (e.g. "coding", "meeting") and switch with one click in the window or the menu bar's *Switch layout* submenu; undoable. Automatic restore uses the most recently saved or applied layout.
 - **Version history**: the last 5 versions per monitor, each tagged with the named layout it came from; preview, restore, or label one to keep it.
-- **Menu bar + global hotkeys**: ⌃⌥⌘S save, ⌃⌥⌘R restore, ⌃⌥⌘Z undo (configurable). Optional automatic restore on reconnect, asked once per monitor.
+- **Menu bar + global hotkeys**: ⌃⌥⌘S save, ⌃⌥⌘R restore, ⌃⌥⌘Z undo (configurable). Optional automatic restore on reconnect; in Ask mode a closable notice offers *Restore layout*.
+- **Layout mode** (0.6.2): *per monitor* (default) or *shared by all external monitors* — one set of Spaces and windows for whichever single external monitor is attached (home, office). Windows are stored by Space ordinal and relative position; with too few Spaces the extras go to the last Space and a notice asks you to add Spaces with Mission Control's +, after which LayoutKeeper restores again. Spaces that macOS moves to the built-in screen on unplug are reported, never deleted.
 - **Local data only**: the only network access is the update check (GitHub only, can be turned off); layouts store app IDs, titles/document paths, desktop indices and normalized frames — never window IDs or Space IDs.
 
 **Requirements**: macOS 14+ (same-Space restore); macOS 26+ for cross-Space restore; Accessibility permission; one external monitor.

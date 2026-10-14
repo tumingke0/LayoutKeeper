@@ -44,10 +44,11 @@ extension Model {
     func replanQuick() {
         guard let record=quickRecord,let snapshot=quickSnapshot,let display=quickDisplayToken,let monitor=quickMonitor else { quickPlan=nil; return }
         do {
-            let plan=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:snapshot,choices:quickChoices,allowCrossSpace:crossSpaceEnabled,crossSpaceBlockReason:"需要跨桌面移动，但这台 Mac 不支持：\(crossSpaceSupport.summary)")
+            let plan=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:snapshot,choices:quickChoices,allowCrossSpace:crossSpaceEnabled,crossSpaceBlockReason:"需要跨桌面移动，但这台 Mac 不支持：\(crossSpaceSupport.summary)",overflowToLast:monitor.isSharedExternal)
             quickPlan=plan
             var text=""
-            if plan.desktopsNeeded>plan.desktopsNow { text+="保存时用到 \(plan.desktopsNeeded) 个桌面，现在只有 \(plan.desktopsNow) 个：请先在调度中心新建桌面，再重新预览。" }
+            if plan.desktopsNeeded>plan.desktopsNow,monitor.isSharedExternal { text+="保存时用到 \(plan.desktopsNeeded) 个桌面，现在只有 \(plan.desktopsNow) 个：多出来的窗口先放到最后一个桌面。在调度中心按「+」补 \(plan.missingDesktops) 个桌面后会自动再恢复。" }
+            else if plan.desktopsNeeded>plan.desktopsNow { text+="保存时用到 \(plan.desktopsNeeded) 个桌面，现在只有 \(plan.desktopsNow) 个：请先在调度中心新建桌面，再重新预览。" }
             if plan.items.contains(where:{$0.reason==QuickRestorePlanner.oldRecordReason}) { text+="这份布局由旧版本保存，缺少桌面顺序，请重新保存一次。" }
             if !windows.issues.isEmpty { text+="部分窗口信息读取失败，预览可能不完整。" }
             quickMessage=text
@@ -68,7 +69,7 @@ extension Model {
             fresh=try externalLayoutSnapshot()
             let current=MonitorRecognition.externalMonitors()
             guard current.count==1,current[0].identity.key==monitor.key,current[0].runtimeDisplayToken==display else { throw LayoutError.readbackUnavailable }
-            frozen=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:fresh,choices:preview.confirmedChoices,allowCrossSpace:crossSpaceEnabled)
+            frozen=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:fresh,choices:preview.confirmedChoices,allowCrossSpace:crossSpaceEnabled,overflowToLast:monitor.isSharedExternal)
         } catch { quickMessage="执行前重新读取窗口失败，没有移动任何窗口：\(error)"; return (0,0) }
         var plan=autoOnly ? QuickRestorePlanner.autoSubset(frozen) : frozen.plan
         let dropped=preview.readyCount-frozen.readyCount

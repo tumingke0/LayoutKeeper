@@ -8,7 +8,7 @@ public struct MonitorIdentity: Codable, Equatable {
     public var serial: UInt32
     public var name: String
     public init(vendor: UInt32, model: UInt32, serial: UInt32, name: String) { self.vendor=vendor; self.model=model; self.serial=serial; self.name=name }
-    public var key: String { "monitor-\(vendor)-\(model)-\(serial)" }
+    public var key: String { isSharedExternal ? Self.sharedExternalKey : "monitor-\(vendor)-\(model)-\(serial)" }
     public var identifiesDevice: Bool { vendor != 0 && model != 0 && serial != 0 }
 }
 public struct MonitorLayoutRecord: Codable {

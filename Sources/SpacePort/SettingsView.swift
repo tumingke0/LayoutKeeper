@@ -28,10 +28,22 @@ struct GeneralSettings: View {
     }
     var body: some View {
         Form {
+            Section("布局模式") {
+                Picker("布局模式",selection:$model.layoutMode) { ForEach(LayoutMode.allCases,id:\.self) { Text($0.title).tag($0) } }
+                    .pickerStyle(.radioGroup)
+                Text(model.layoutMode == .perMonitor
+                     ? "公司、家里的外接屏各记各的布局。"
+                     : "不管接的是哪块外接屏，都用同一套桌面和窗口。窗口按「第几个桌面」和相对位置保存，分辨率不同也能对上；桌面不够时多出来的窗口先放在最后一个桌面，并提示你补几个。只在接一块外接屏时生效，接两块以上时自动按每块屏单独记。原来各屏的记录都保留。")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                if model.layoutMode == .sharedExternal && !(RenderMode.snapshot ? model.snapshotSeparateSpacesOff == false : SeparateSpaces.enabled) {
+                    Label("「显示器具有单独的空间」已关闭，共用模式需要打开它（系统设置 → 桌面与程序坞 → 调度中心，注销后生效）。",systemImage:"exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(Tone.warning.color).fixedSize(horizontal:false,vertical:true)
+                }
+            }
             Section("接上屏幕时") {
                 Picker("默认",selection:$model.autoRestoreMode) { ForEach(AutoRestoreMode.allCases,id:\.self) { Text($0.title).tag($0) } }
                 Text(model.autoRestoreMode == .auto ? "屏幕稳定、窗口停止移动后自动恢复能唯一确认的窗口；需要确认或在另一块屏幕上的窗口不会动。右上角提示可撤销。"
-                     : (model.autoRestoreMode == .ask ? "每块屏幕第一次接上时问一次「以后自动恢复？」，记住你的选择。" : "不会自动提示，需要时用菜单栏或快捷键恢复。"))
+                     : (model.autoRestoreMode == .ask ? "接上屏幕时右上角提示一下，点「恢复布局」才会恢复；提示可以直接关掉。" : "不会自动提示，需要时用菜单栏或快捷键恢复。"))
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(model.monitorPreferences.entries.keys.sorted(),id:\.self) { key in
                     if let entry=model.monitorPreferences.entries[key],entry.restore != nil || entry.displayName != nil {

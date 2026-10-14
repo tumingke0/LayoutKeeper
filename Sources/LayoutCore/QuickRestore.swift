@@ -144,12 +144,14 @@ public struct QuickRestoreItem: Equatable, Identifiable {
     public var resize=false
     /// The window currently sits on another display; the cross-display Space move is not self-test verified, so auto mode skips it.
     public var crossDisplay=false
+    /// Shared mode: the saved Space ordinal when it doesn't exist now and the window goes to the last Space instead.
+    public var overflowFrom: Int?
     public var targetFrame: Rect?
     public var actionText: String {
         switch state {
         case .ready:
             var parts=[String]()
-            if crossDisplay { parts.append("从另一块屏幕移回") } else if moveSpace { parts.append("移到桌面 \(targetSlot ?? 0)") }
+            if crossDisplay { parts.append("从另一块屏幕移回") } else if moveSpace { parts.append(overflowFrom != nil ? "暂放到最后一个桌面 \(targetSlot ?? 0)" : "移到桌面 \(targetSlot ?? 0)") }
             if resize { parts.append("调整位置和大小") }
             return parts.joined(separator:" + ")
         default: return state.label
@@ -163,6 +165,8 @@ public struct QuickRestorePlan {
     public var entrySavedIndex: [Int]
     public var desktopsNow: Int
     public var desktopsNeeded: Int
+    /// Spaces to add with Mission Control's + so every window gets its own saved Space again.
+    public var missingDesktops: Int { SharedLayout.missingDesktops(needed:desktopsNeeded,available:desktopsNow) }
     public var readyCount: Int { items.filter{$0.state == .ready}.count }
     public var summary: String {
         let c={(s: QuickItemState) in self.items.filter{$0.state==s}.count}
@@ -182,7 +186,8 @@ public struct QuickRestorePlan {
 public enum QuickRestorePlanner {
     public static let oldRecordReason="旧版布局缺少桌面顺序，请先重新保存一次此屏布局"
     public static func plan(record: MonitorLayoutRecord, monitor: MonitorIdentity, displayToken: String, snapshot s: Snapshot,
-                            choices: [Int:QuickChoice] = [:], allowCrossSpace: Bool, crossSpaceBlockReason: String = "当前系统版本未验证跨桌面移动") throws -> QuickRestorePlan {
+                            choices: [Int:QuickChoice] = [:], allowCrossSpace: Bool, crossSpaceBlockReason: String = "当前系统版本未验证跨桌面移动",
+                            overflowToLast: Bool = false) throws -> QuickRestorePlan {
         try record.validate()
         guard record.monitor.key==monitor.key,let display=s.displays.first(where:{$0.token==displayToken && $0.role == .external}),display.visible.valid else { throw LayoutError.unsupported }
         let ordinary=s.spaces.filter{$0.displayToken==displayToken && $0.kind == .ordinary}
@@ -203,9 +208,14 @@ public enum QuickRestorePlanner {
             case .unique: break
             }
             let w=m.chosen!
-            guard let target=saved.desktopIndex else { item.state = .blocked; item.reason=oldRecordReason; items.append(item); continue }
-            guard target<=ordinary.count else {
-                item.state = .blocked; item.reason="保存时在桌面 \(target)，现在这块屏只有 \(ordinary.count) 个桌面：请先在调度中心新建桌面"; items.append(item); continue
+            guard let savedTarget=saved.desktopIndex else { item.state = .blocked; item.reason=oldRecordReason; items.append(item); continue }
+            var target=savedTarget
+            if savedTarget>ordinary.count {
+                guard overflowToLast,let last=SharedLayout.targetSlot(saved:savedTarget,available:ordinary.count) else {
+                    item.state = .blocked; item.reason="保存时在桌面 \(savedTarget)，现在这块屏只有 \(ordinary.count) 个桌面：请先在调度中心新建桌面"; items.append(item); continue
+                }
+                target=last; item.targetSlot=last; item.overflowFrom=savedTarget
+                item.reason="保存时在桌面 \(savedTarget)，现在只有 \(ordinary.count) 个桌面，先放到最后一个桌面；补齐桌面后会自动再恢复"
             }
             let targetSpace=ordinary[target-1].id
             let frame=saved.normalizedFrame.fitted(in:display.visible)
@@ -213,7 +223,7 @@ public enum QuickRestorePlanner {
             item.moveSpace=w.spaceIDs != [targetSpace]
             item.resize = !w.frame.near(frame)
             item.crossDisplay=item.currentSlot==nil
-            if !item.moveSpace && !item.resize { item.state = .alreadyInPlace; item.reason="已在保存的桌面和位置"; items.append(item); continue }
+            if !item.moveSpace && !item.resize { item.state = .alreadyInPlace; if item.overflowFrom == nil { item.reason="已在保存的桌面和位置" }; items.append(item); continue }
             if item.moveSpace && !allowCrossSpace { item.state = .blocked; item.reason=crossSpaceBlockReason; items.append(item); continue }
             if item.moveSpace,let why=MoveScope.problem(window:w,targetSpace:targetSpace,targetDisplay:displayToken,snapshot:s) {
                 item.state = .blocked; item.reason="无法跨桌面移动：\(why)"; items.append(item); continue

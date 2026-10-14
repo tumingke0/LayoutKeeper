@@ -56,6 +56,7 @@ extension Model {
     @discardableResult func directRestore(_ trigger: RestoreTrigger) -> DirectRestoreOutcome {
         var outcome=DirectRestoreOutcome()
         guard prepareQuickRestore(),let plan=quickPlan else { outcome.error=quickMessage.isEmpty ? "无法生成恢复计划" : quickMessage; return outcome }
+        defer { if let plan=quickPlan { noteSharedPlan(plan) } }
         outcome.needsConfirmation=plan.items.filter{$0.state == .needsConfirmation}.count
         let runnable=trigger == .automatic ? QuickRestorePlanner.autoSubset(plan).entries.count : plan.readyCount
         outcome.skippedAuto=plan.readyCount-runnable
@@ -110,7 +111,7 @@ extension Model {
         guard emptyWindowTrial == nil,trialConfigurationError.isEmpty,!busy,trusted,let monitor=currentExternalMonitor,let record=externalRecord,let key=liveKey else { return }
         do {
             let snapshot=try statusWindows.scan(selectedDisplayToken:monitor.runtimeDisplayToken,inspectionBudget:2)
-            livePlan=try QuickRestorePlanner.plan(record:record,monitor:monitor.identity,displayToken:monitor.runtimeDisplayToken,snapshot:snapshot,allowCrossSpace:crossSpaceEnabled)
+            livePlan=try QuickRestorePlanner.plan(record:record,monitor:monitor.identity,displayToken:monitor.runtimeDisplayToken,snapshot:snapshot,allowCrossSpace:crossSpaceEnabled,overflowToLast:monitor.identity.isSharedExternal)
             livePlanKey=key
         } catch { livePlan=nil; livePlanKey=nil }
     }
