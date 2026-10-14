@@ -72,7 +72,7 @@ struct ToastView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(perform:close)   // click the text to dismiss
-            .help("点击关闭")
+            .help(lk("点击关闭"))
             Spacer(minLength:4)
             ForEach(Array(actions.enumerated()),id:\.offset) { index,action in
                 Button(action.title,action:action.run).controlSize(.small)
@@ -89,7 +89,7 @@ struct ToastView: View {
                 Image(systemName:"xmark").font(.system(size:9,weight:.bold)).foregroundStyle(.secondary)
                     .frame(width:18,height:18).background(Circle().fill(Color.primary.opacity(0.08)))
             }
-            .buttonStyle(.plain).padding(6).help("关闭").accessibilityLabel("关闭")
+            .buttonStyle(.plain).padding(6).help(lk("关闭")).accessibilityLabel(lk("关闭"))
             .keyboardShortcut(.cancelAction)
         }
         .onHover(perform:hover)

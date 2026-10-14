@@ -10,7 +10,7 @@ extension Model {
         let version=NSDictionary(contentsOfFile:"/System/Library/CoreServices/SystemVersion.plist")
         return "\(version?["ProductVersion"] as? String ?? "?") \(version?["ProductBuildVersion"] as? String ?? "?")"
     }
-    var crossSpaceStatusText: String { crossSpaceSupport.summary+"。"+crossSpaceSupport.detail }
+    var crossSpaceStatusText: String { crossSpaceSupport.summary+lk("。")+crossSpaceSupport.detail }
     func appName(_ bundleID: String) -> String {
         if let cached=appNameCache[bundleID] { return cached }
         var name=bundleID
@@ -25,11 +25,11 @@ extension Model {
         quickPlan=nil; quickResults=[:]; quickChoices=[:]; quickSnapshot=nil; quickRecord=nil
         refreshAuthorization()
         guard trusted else { quickMessage=accessState.guidance; return false }
-        guard let monitor=currentExternalMonitor else { quickMessage=externalMonitors.isEmpty ? "没有检测到外接屏。" : "目前只支持同时连接一块外接屏。"; return false }
+        guard let monitor=currentExternalMonitor else { quickMessage=externalMonitors.isEmpty ? lk("没有检测到外接屏。") : lk("目前只支持同时连接一块外接屏。"); return false }
         do {
             let url=try monitorRecordURL(monitor.identity)
             guard FileManager.default.fileExists(atPath:url.path) else {
-                quickMessage="这块屏幕（\(monitor.identity.name)）还没有保存过布局。先把窗口摆好，再点「保存布局」。"; return false
+                quickMessage=lk("这块屏幕（%@）还没有保存过布局。先把窗口摆好，再点「保存布局」。", "\(monitor.identity.name)"); return false
             }
             let record=try MonitorLayoutStore.load(from:url)
             guard record.monitor.key==monitor.identity.key else { throw LayoutError.invalidProfile }
@@ -39,20 +39,20 @@ extension Model {
             quickRecord=record; quickSnapshot=snapshot; quickDisplayToken=monitor.runtimeDisplayToken; quickMonitor=monitor.identity
             replanQuick()
             return quickPlan != nil
-        } catch { quickMessage="无法生成恢复预览，没有移动任何窗口：\(error)"; return false }
+        } catch { quickMessage=lk("无法生成恢复预览，没有移动任何窗口：%@", "\(error)"); return false }
     }
     func replanQuick() {
         guard let record=quickRecord,let snapshot=quickSnapshot,let display=quickDisplayToken,let monitor=quickMonitor else { quickPlan=nil; return }
         do {
-            let plan=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:snapshot,choices:quickChoices,allowCrossSpace:crossSpaceEnabled,crossSpaceBlockReason:"需要跨桌面移动，但这台 Mac 不支持：\(crossSpaceSupport.summary)",overflowToLast:monitor.isSharedExternal)
+            let plan=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:snapshot,choices:quickChoices,allowCrossSpace:crossSpaceEnabled,crossSpaceBlockReason:lk("需要跨桌面移动，但这台 Mac 不支持：%@", "\(crossSpaceSupport.summary)"),overflowToLast:monitor.isSharedExternal)
             quickPlan=plan
             var text=""
-            if plan.desktopsNeeded>plan.desktopsNow,monitor.isSharedExternal { text+="保存时用到 \(plan.desktopsNeeded) 个桌面，现在只有 \(plan.desktopsNow) 个：多出来的窗口先放到最后一个桌面。在调度中心按「+」补 \(plan.missingDesktops) 个桌面后会自动再恢复。" }
-            else if plan.desktopsNeeded>plan.desktopsNow { text+="保存时用到 \(plan.desktopsNeeded) 个桌面，现在只有 \(plan.desktopsNow) 个：请先在调度中心新建桌面，再重新预览。" }
-            if plan.items.contains(where:{$0.reason==QuickRestorePlanner.oldRecordReason}) { text+="这份布局由旧版本保存，缺少桌面顺序，请重新保存一次。" }
-            if !windows.issues.isEmpty { text+="部分窗口信息读取失败，预览可能不完整。" }
+            if plan.desktopsNeeded>plan.desktopsNow,monitor.isSharedExternal { text+=lk("保存时用到 %@ 个桌面，现在只有 %@ 个：多出来的窗口先放到最后一个桌面。在调度中心按「+」补 %@ 个桌面后会自动再恢复。", "\(plan.desktopsNeeded)", "\(plan.desktopsNow)", "\(plan.missingDesktops)") }
+            else if plan.desktopsNeeded>plan.desktopsNow { text+=lk("保存时用到 %@ 个桌面，现在只有 %@ 个：请先在调度中心新建桌面，再重新预览。", "\(plan.desktopsNeeded)", "\(plan.desktopsNow)") }
+            if plan.items.contains(where:{$0.reason==QuickRestorePlanner.oldRecordReason}) { text+=lk("这份布局由旧版本保存，缺少桌面顺序，请重新保存一次。") }
+            if !windows.issues.isEmpty { text+=lk("部分窗口信息读取失败，预览可能不完整。") }
             quickMessage=text
-        } catch { quickPlan=nil; quickMessage="屏幕或布局无法可靠对应，请重新预览。" }
+        } catch { quickPlan=nil; quickMessage=lk("屏幕或布局无法可靠对应，请重新预览。") }
     }
     func setQuickChoice(_ index: Int,_ choice: QuickChoice?) {
         if let choice { quickChoices[index]=choice } else { quickChoices.removeValue(forKey:index) }
@@ -70,10 +70,10 @@ extension Model {
             let current=MonitorRecognition.externalMonitors()
             guard current.count==1,current[0].identity.key==monitor.key,current[0].runtimeDisplayToken==display else { throw LayoutError.readbackUnavailable }
             frozen=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:fresh,choices:preview.confirmedChoices,allowCrossSpace:crossSpaceEnabled,overflowToLast:monitor.isSharedExternal)
-        } catch { quickMessage="执行前重新读取窗口失败，没有移动任何窗口：\(error)"; return (0,0) }
+        } catch { quickMessage=lk("执行前重新读取窗口失败，没有移动任何窗口：%@", "\(error)"); return (0,0) }
         var plan=autoOnly ? QuickRestorePlanner.autoSubset(frozen) : frozen.plan
         let dropped=preview.readyCount-frozen.readyCount
-        guard !plan.entries.isEmpty else { quickSnapshot=fresh; replanQuick(); quickMessage="没有需要恢复的窗口。"+(dropped>0 ? "有 \(dropped) 个窗口在预览之后发生了变化，已重新预览。" : ""); return (0,0) }
+        guard !plan.entries.isEmpty else { quickSnapshot=fresh; replanQuick(); quickMessage=lk("没有需要恢复的窗口。")+(dropped>0 ? lk("有 %@ 个窗口在预览之后发生了变化，已重新预览。", "\(dropped)") : ""); return (0,0) }
         let savedIndexForEntry=plan.entries.map{ entry in frozen.items.first{$0.chosenToken==entry.window?.token && $0.state == .ready}?.savedIndex ?? -1 }
         // Global precondition: the build gate. Everything else is decided per window.
         var permits=[SpaceMovePermit]()
@@ -83,7 +83,7 @@ extension Model {
             plan=split.plan; permits=split.permits; blockedCount=split.blocked.count
         } else {
             for i in plan.entries.indices where plan.entries[i].status == .ready && MoveScope.needsMove(plan.entries[i]) {
-                plan.entries[i].status = .blocked; plan.entries[i].reason="无法跨桌面移动：这台 Mac 不支持跨桌面恢复"; blockedCount += 1
+                plan.entries[i].status = .blocked; plan.entries[i].reason=lk("无法跨桌面移动：这台 Mac 不支持跨桌面恢复"); blockedCount += 1
             }
         }
         let runnable=plan.entries.filter{$0.status == .ready}.count
@@ -105,12 +105,12 @@ extension Model {
         // Re-read the already-scanned windows (no rescan) so undo keeps the same window handles.
         if let after=try? windows.snapshot() { quickSnapshot=after; quickChoices=[:]; replanQuick() }
         let verified=report.results.filter{$0.outcome == .verified}.count
-        var text="已恢复 \(verified)/\(runnable) 个窗口（桌面、位置和大小均已回读确认）。"
-        if blockedCount>0 { text+="\(blockedCount) 个窗口无法跨桌面移动，已单独跳过，原因见对应行。" }
-        if verified<runnable { text+="未通过的项目已尝试回滚，请查看逐项结果。" }
-        if dropped>0 { text+="有 \(dropped) 个窗口在预览之后发生了变化，本次没有处理。" }
-        if report.journal?.canUndo == true { text+="可以点「撤销上次恢复」。" }
-        if !report.persistenceIssues.isEmpty { text+="操作日志写入失败，撤销记录可能不完整。" }
+        var text=lk("已恢复 %@/%@ 个窗口（桌面、位置和大小均已回读确认）。", "\(verified)", "\(runnable)")
+        if blockedCount>0 { text+=lk("%@ 个窗口无法跨桌面移动，已单独跳过，原因见对应行。", "\(blockedCount)") }
+        if verified<runnable { text+=lk("未通过的项目已尝试回滚，请查看逐项结果。") }
+        if dropped>0 { text+=lk("有 %@ 个窗口在预览之后发生了变化，本次没有处理。", "\(dropped)") }
+        if report.journal?.canUndo == true { text+=lk("可以点「撤销上次恢复」。") }
+        if !report.persistenceIssues.isEmpty { text+=lk("操作日志写入失败，撤销记录可能不完整。") }
         quickMessage=text
         return (verified,runnable)
     }
@@ -121,14 +121,14 @@ extension QuickRestoreItem {
     var badge: (text: String,icon: String,tone: Tone) {
         switch state {
         case .ready:
-            if crossDisplay { return ("从另一块屏幕移回","display.2",.success) }
-            if moveSpace { return ("移到桌面 \(targetSlot ?? 0)","arrow.right.square",.success) }
-            return ("调整位置","arrow.up.left.and.arrow.down.right",.success)
-        case .needsConfirmation: return ("需要确认","questionmark.circle",.warning)
-        case .alreadyInPlace: return ("已在原位","checkmark",.neutral)
-        case .blocked: return ("无法恢复","minus.circle",.neutral)
-        case .missing: return ("未打开","moon.zzz",.neutral)
-        case .skippedByUser: return ("已跳过","forward",.neutral)
+            if crossDisplay { return (lk("从另一块屏幕移回"),"display.2",.success) }
+            if moveSpace { return (lk("移到桌面 %@", "\(targetSlot ?? 0)"),"arrow.right.square",.success) }
+            return (lk("调整位置"),"arrow.up.left.and.arrow.down.right",.success)
+        case .needsConfirmation: return (lk("需要确认"),"questionmark.circle",.warning)
+        case .alreadyInPlace: return (lk("已在原位"),"checkmark",.neutral)
+        case .blocked: return (lk("无法恢复"),"minus.circle",.neutral)
+        case .missing: return (lk("未打开"),"moon.zzz",.neutral)
+        case .skippedByUser: return (lk("已跳过"),"forward",.neutral)
         }
     }
 }
@@ -148,19 +148,19 @@ struct QuickRestoreSheet: View {
             HStack(spacing:12) {
                 Image(systemName:"arrow.uturn.backward.circle.fill").font(.system(size:26)).foregroundStyle(Color.accentColor)
                 VStack(alignment:.leading,spacing:2) {
-                    Text("恢复「\(model.quickMonitor.map{ model.monitorPreferences.displayName($0) } ?? model.currentMonitorName ?? "外接屏")」").font(.title3.weight(.semibold))
+                    Text(lk("恢复「%@」", "\(model.quickMonitor.map{ model.monitorPreferences.displayName($0) } ?? model.currentMonitorName ?? lk("外接屏"))")).font(.title3.weight(.semibold))
                     if let record=model.quickRecord {
-                        Text("第 N 个保存的桌面对应现在的第 N 个桌面 · 共 \(record.profile.windows.count) 个窗口").font(.caption).foregroundStyle(.secondary)
+                        Text(lk("第 N 个保存的桌面对应现在的第 N 个桌面 · 共 %@ 个窗口", "\(record.profile.windows.count)")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
             }
             if !model.crossSpaceEnabled || model.crossSpaceSupport.isUntested {
-                Label(model.crossSpaceEnabled ? "此系统版本尚未运行过一键自检，每个窗口仍会回读确认" : "这台 Mac 不支持跨桌面移动，只恢复同一桌面内的位置",
+                Label(model.crossSpaceEnabled ? lk("此系统版本尚未运行过一键自检，每个窗口仍会回读确认") : lk("这台 Mac 不支持跨桌面移动，只恢复同一桌面内的位置"),
                       systemImage:"info.circle").font(.caption).foregroundStyle(.secondary).help(model.crossSpaceSupport.detail)
             }
             if let plan=model.quickPlan,plan.desktopsNeeded>plan.desktopsNow {
-                Label("保存时用到 \(plan.desktopsNeeded) 个桌面，现在只有 \(plan.desktopsNow) 个。请先在调度中心新建桌面，再点「重新预览」。",systemImage:"plus.rectangle.on.rectangle")
+                Label(lk("保存时用到 %@ 个桌面，现在只有 %@ 个。请先在调度中心新建桌面，再点「重新预览」。", "\(plan.desktopsNeeded)", "\(plan.desktopsNow)"),systemImage:"plus.rectangle.on.rectangle")
                     .font(.callout).foregroundStyle(Tone.warning.color).padding(10).frame(maxWidth:.infinity,alignment:.leading)
                     .background(RoundedRectangle(cornerRadius:10,style:.continuous).fill(Tone.warning.color.opacity(0.10)))
             }
@@ -168,17 +168,17 @@ struct QuickRestoreSheet: View {
             ScrollView {
                 VStack(alignment:.leading,spacing:12) {
                     if items.isEmpty {
-                        Text(model.quickMessage.isEmpty ? "正在读取…" : model.quickMessage).foregroundStyle(.secondary).padding(30).frame(maxWidth:.infinity).card(radius:14)
+                        Text(model.quickMessage.isEmpty ? lk("正在读取…") : model.quickMessage).foregroundStyle(.secondary).padding(30).frame(maxWidth:.infinity).card(radius:14)
                     }
                     if !confirmItems.isEmpty {
-                        Text("需要你确认").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(lk("需要你确认")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         rows(confirmItems)
                     }
                     if !items.isEmpty {
                         DisclosureGroup(isExpanded:$showDetails) {
                             rows(items).padding(.top,6)
                         } label: {
-                            Text(showDetails ? "收起详情" : "查看详情（\(items.count) 个窗口）").font(.callout)
+                            Text(showDetails ? lk("收起详情") : lk("查看详情（%@ 个窗口）", "\(items.count)")).font(.callout)
                                 .contentShape(Rectangle()).onTapGesture { withAnimation(.easeInOut(duration:0.15)) { showDetails.toggle() } }
                         }
                     }
@@ -188,14 +188,14 @@ struct QuickRestoreSheet: View {
                 Text(model.quickMessage).font(.caption).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
             }
             HStack {
-                Button("重新预览") { model.prepareQuickRestore() }
+                Button(lk("重新预览")) { model.prepareQuickRestore() }
                 if model.lastRestoreJournal?.canUndo == true {
-                    Button("撤销上次恢复") { model.quickUndo() }.buttonStyle(.link).disabled(!model.trusted || model.restoring)
+                    Button(lk("撤销上次恢复")) { model.quickUndo() }.buttonStyle(.link).disabled(!model.trusted || model.restoring)
                 }
                 Spacer()
-                Button("关闭") { if let onClose { onClose() } else { dismiss() } }.keyboardShortcut(.cancelAction)
+                Button(lk("关闭")) { if let onClose { onClose() } else { dismiss() } }.keyboardShortcut(.cancelAction)
                 let n=model.quickPlan?.readyCount ?? 0
-                Button(n>0 ? "恢复 \(n) 个窗口" : "没有需要恢复的窗口") { model.executeQuickRestore() }
+                Button(n>0 ? lk("恢复 %@ 个窗口", "\(n)") : lk("没有需要恢复的窗口")) { model.executeQuickRestore() }
                     .primaryButton().keyboardShortcut(.defaultAction)
                     .disabled(n==0 || !model.trusted || model.restoring)
             }.controlSize(.large)
@@ -207,13 +207,13 @@ struct QuickRestoreSheet: View {
     private var summary: some View {
         HStack(spacing:6) {
             if !model.quickResults.isEmpty {
-                if restoredCount>0 { Pill(text:"已恢复 \(restoredCount)",systemImage:"checkmark",tone:.success) }
-                if failedCount>0 { Pill(text:"未通过 \(failedCount)",systemImage:"exclamationmark",tone:.warning) }
+                if restoredCount>0 { Pill(text:lk("已恢复 %@", "\(restoredCount)"),systemImage:"checkmark",tone:.success) }
+                if failedCount>0 { Pill(text:lk("未通过 %@", "\(failedCount)"),systemImage:"exclamationmark",tone:.warning) }
             }
-            if count([.ready])>0 { Pill(text:"将恢复 \(count([.ready]))",systemImage:"arrow.uturn.backward",tone:.success) }
-            if count([.needsConfirmation])>0 { Pill(text:"需要确认 \(count([.needsConfirmation]))",systemImage:"questionmark",tone:.warning) }
-            if count([.alreadyInPlace])>0 && model.quickResults.isEmpty { Pill(text:"已在原位 \(count([.alreadyInPlace]))",tone:.neutral) }
-            if count([.blocked,.missing,.skippedByUser])>0 { Pill(text:"跳过 \(count([.blocked,.missing,.skippedByUser]))",tone:.neutral) }
+            if count([.ready])>0 { Pill(text:lk("将恢复 %@", "\(count([.ready]))"),systemImage:"arrow.uturn.backward",tone:.success) }
+            if count([.needsConfirmation])>0 { Pill(text:lk("需要确认 %@", "\(count([.needsConfirmation]))"),systemImage:"questionmark",tone:.warning) }
+            if count([.alreadyInPlace])>0 && model.quickResults.isEmpty { Pill(text:lk("已在原位 %@", "\(count([.alreadyInPlace]))"),tone:.neutral) }
+            if count([.blocked,.missing,.skippedByUser])>0 { Pill(text:lk("跳过 %@", "\(count([.blocked,.missing,.skippedByUser]))"),tone:.neutral) }
             Spacer()
         }
     }
@@ -230,11 +230,11 @@ struct QuickRestoreSheet: View {
 struct QuickRestoreRow: View {
     @ObservedObject var model: Model
     let item: QuickRestoreItem
-    func slotText(_ slot: Int?) -> String { slot.map{"桌面 \($0)"} ?? "另一块屏幕" }
+    func slotText(_ slot: Int?) -> String { slot.map{lk("桌面 %@", "\($0)")} ?? lk("另一块屏幕") }
     var secondary: (String,Color)? {
         if let r=model.quickResults[item.savedIndex],r.outcome != .verified { return (r.detail,Tone.warning.color) }
         switch item.state {
-        case .ready: return item.moveSpace ? ("\(slotText(item.currentSlot)) → 桌面 \(item.targetSlot ?? 0)",.secondary) : ("桌面 \(item.currentSlot ?? 0) 内调整位置和大小",.secondary)
+        case .ready: return item.moveSpace ? (lk("%@ → 桌面 %@", "\(slotText(item.currentSlot))", "\(item.targetSlot ?? 0)"),.secondary) : (lk("桌面 %@ 内调整位置和大小", "\(item.currentSlot ?? 0)"),.secondary)
         case .alreadyInPlace: return nil
         default: return item.reason.isEmpty ? nil : (item.reason,.secondary)
         }
@@ -252,7 +252,7 @@ struct QuickRestoreRow: View {
                 }
                 Spacer(minLength:8)
                 if let r=model.quickResults[item.savedIndex] {
-                    Pill(text:r.outcome == .verified ? "已恢复" : "未通过",systemImage:r.outcome == .verified ? "checkmark" : "exclamationmark",tone:r.outcome == .verified ? .success : .warning)
+                    Pill(text:r.outcome == .verified ? lk("已恢复") : lk("未通过"),systemImage:r.outcome == .verified ? "checkmark" : "exclamationmark",tone:r.outcome == .verified ? .success : .warning)
                 } else {
                     let b=item.badge
                     Pill(text:b.text,systemImage:b.icon,tone:b.tone)
@@ -260,19 +260,19 @@ struct QuickRestoreRow: View {
             }
             if item.state == .needsConfirmation || (model.quickChoices[item.savedIndex] != nil && item.state != .skippedByUser) {
                 HStack {
-                    Picker("选择窗口",selection:Binding<String>(get:{
+                    Picker(lk("选择窗口"),selection:Binding<String>(get:{
                         switch model.quickChoices[item.savedIndex] { case .window(let t)?: return t; case .skip?: return "skip"; case nil: return "auto" }
                     },set:{ value in
                         model.setQuickChoice(item.savedIndex,value=="auto" ? nil : (value=="skip" ? .skip : .window(value)))
                     })) {
-                        Text("请选择对应的窗口…").tag("auto")
+                        Text(lk("请选择对应的窗口…")).tag("auto")
                         ForEach(item.candidates) { c in
-                            Text("\(c.title.isEmpty ? "（无标题）" : c.title) · \(slotText(c.slot))").tag(c.token)
+                            Text("\(c.title.isEmpty ? lk("（无标题）") : c.title) · \(slotText(c.slot))").tag(c.token)
                         }
-                        Text("本次跳过").tag("skip")
+                        Text(lk("本次跳过")).tag("skip")
                     }.labelsHidden().frame(maxWidth:380)
                     if item.state == .needsConfirmation,let token=item.chosenToken,model.quickChoices[item.savedIndex]==nil {
-                        Button("就是这个") { model.setQuickChoice(item.savedIndex,.window(token)) }
+                        Button(lk("就是这个")) { model.setQuickChoice(item.savedIndex,.window(token)) }
                     }
                     Spacer()
                 }.padding(.leading,42).controlSize(.small)
@@ -282,8 +282,8 @@ struct QuickRestoreRow: View {
         .contentShape(Rectangle())
         .help(item.reason)
         .contextMenu {
-            if item.state != .skippedByUser { Button("本次跳过") { model.setQuickChoice(item.savedIndex,.skip) } }
-            if model.quickChoices[item.savedIndex] != nil { Button("恢复自动匹配") { model.setQuickChoice(item.savedIndex,nil) } }
+            if item.state != .skippedByUser { Button(lk("本次跳过")) { model.setQuickChoice(item.savedIndex,.skip) } }
+            if model.quickChoices[item.savedIndex] != nil { Button(lk("恢复自动匹配")) { model.setQuickChoice(item.savedIndex,nil) } }
         }
     }
 }

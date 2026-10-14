@@ -10,7 +10,7 @@ extension Model {
         do {
             let trial=try EmptyWindowTrial.parse(arguments:CommandLine.arguments)
             emptyWindowTrial=trial;layoutStorageOverride=trial?.root
-        } catch { trialConfigurationError="验收配置不合法，已阻止界面读写。请正常退出后检查验收目录。" }
+        } catch { trialConfigurationError=lk("验收配置不合法，已阻止界面读写。请正常退出后检查验收目录。") }
     }
     func externalLayoutSnapshot(inspectionBudget:TimeInterval?=nil) throws -> Snapshot {
         guard trialConfigurationError.isEmpty else { throw LayoutError.invalidProfile }

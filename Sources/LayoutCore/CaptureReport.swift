@@ -19,36 +19,36 @@ public enum CaptureReason: String, Codable, CaseIterable {
     case emptyMembership, multipleSpaces, unknownSpace, otherDisplay, nonordinarySpace, notOrdinary, minimized, fullscreen, invalidFrame, unusableSelector, ambiguousSelector
     public var label: String {
         switch self {
-        case .processIdentityUnavailable:return "进程身份未知"
-        case .axEnumerationFailure:return "AX 枚举失败"
-        case .axEnumerationType:return "AX 枚举类型异常"
-        case .axEnumerationLimit:return "超过枚举上限"
-        case .axTimeoutFailure:return "AX 超时设置失败"
-        case .axEmptyValue:return "AX 返回成功但没有值"
-        case .windowIDFailure:return "窗口 ID 读取失败"
-        case .duplicateWindowID:return "重复窗口 ID"
-        case .cgWindowMissing:return "CG 未找到窗口"
-        case .cgOwnerMismatch:return "CG 所属进程不匹配"
-        case .cgMembershipReadFailure:return "CG 成员归属读取失败"
-        case .membershipReadFailure:return "AX 窗口成员归属读取失败"
-        case .windowReadFailure:return "窗口属性读取失败"
-        case .roleUnsupported:return "非窗口 role"
-        case .subroleUnsupported:return "非标准窗口 subrole"
-        case .minimizedUnknown:return "最小化状态未知"
-        case .fullscreenUnknown:return "全屏状态未知"
-        case .remoteTokenUnresolved:return "其他桌面窗口未在时限内取到（状态未知）"
-        case .remoteTokenSkipped:return "其他桌面窗口未查找（状态未知）"
-        case .emptyMembership:return "无 Space 成员信息"
-        case .multipleSpaces:return "属于多个 Space"
-        case .unknownSpace:return "Space 未识别"
-        case .otherDisplay:return "属于其他屏幕"
-        case .nonordinarySpace:return "非普通桌面"
-        case .notOrdinary:return "普通窗口条件未确认"
-        case .minimized:return "已最小化"
-        case .fullscreen:return "已全屏"
-        case .invalidFrame:return "几何信息无效"
-        case .unusableSelector:return "缺少可用窗口标识"
-        case .ambiguousSelector:return "窗口标识不唯一"
+        case .processIdentityUnavailable:return lk("进程身份未知")
+        case .axEnumerationFailure:return lk("AX 枚举失败")
+        case .axEnumerationType:return lk("AX 枚举类型异常")
+        case .axEnumerationLimit:return lk("超过枚举上限")
+        case .axTimeoutFailure:return lk("AX 超时设置失败")
+        case .axEmptyValue:return lk("AX 返回成功但没有值")
+        case .windowIDFailure:return lk("窗口 ID 读取失败")
+        case .duplicateWindowID:return lk("重复窗口 ID")
+        case .cgWindowMissing:return lk("CG 未找到窗口")
+        case .cgOwnerMismatch:return lk("CG 所属进程不匹配")
+        case .cgMembershipReadFailure:return lk("CG 成员归属读取失败")
+        case .membershipReadFailure:return lk("AX 窗口成员归属读取失败")
+        case .windowReadFailure:return lk("窗口属性读取失败")
+        case .roleUnsupported:return lk("非窗口 role")
+        case .subroleUnsupported:return lk("非标准窗口 subrole")
+        case .minimizedUnknown:return lk("最小化状态未知")
+        case .fullscreenUnknown:return lk("全屏状态未知")
+        case .remoteTokenUnresolved:return lk("其他桌面窗口未在时限内取到（状态未知）")
+        case .remoteTokenSkipped:return lk("其他桌面窗口未查找（状态未知）")
+        case .emptyMembership:return lk("无 Space 成员信息")
+        case .multipleSpaces:return lk("属于多个 Space")
+        case .unknownSpace:return lk("Space 未识别")
+        case .otherDisplay:return lk("属于其他屏幕")
+        case .nonordinarySpace:return lk("非普通桌面")
+        case .notOrdinary:return lk("普通窗口条件未确认")
+        case .minimized:return lk("已最小化")
+        case .fullscreen:return lk("已全屏")
+        case .invalidFrame:return lk("几何信息无效")
+        case .unusableSelector:return lk("缺少可用窗口标识")
+        case .ambiguousSelector:return lk("窗口标识不唯一")
         }
     }
 }
@@ -133,13 +133,13 @@ public struct CapturePipelineReport: Codable, Equatable {
         completeness = count(.cgSelectedNotInAX)>0 || !globalReasons.isEmpty || uncertainty.contains(where:{reason($0)>0}) || applications.contains(where:{!$0.axErrors.isEmpty}) ? .partial : .unverified
     }
     public var summary:String {
-        if globalReasons["inspectionBudgetExceeded",default:0]>0 {return "检查达到读取时限；已确认 \(count(.captured)) 个候选可保存，但总量未知，完整性尚未确认。"}
-        guard assessmentCompleted else{return "检查未完成；当前只有局部读取计数，可保存数量未知。完整性尚未确认。"}
+        if globalReasons["inspectionBudgetExceeded",default:0]>0 {return lk("检查达到读取时限；已确认 %@ 个候选可保存，但总量未知，完整性尚未确认。", "\(count(.captured))")}
+        guard assessmentCompleted else{return lk("检查未完成；当前只有局部读取计数，可保存数量未知。完整性尚未确认。")}
         let represented=spaces.filter{$0.captured>0}.count
-        let status=completeness == .partial ? "存在读取失败或未覆盖候选，采集可能不完整。" : "完整性尚未确认。"
+        let status=completeness == .partial ? lk("存在读取失败或未覆盖候选，采集可能不完整。") : lk("完整性尚未确认。")
         let unknown=reason(.remoteTokenUnresolved)+reason(.remoteTokenSkipped)
-        let remote=unknown>0 ? "有 \(unknown) 个其他桌面上的窗口没能读到，状态未知（不代表已关闭）。" : ""
-        return "可保存 \(count(.captured)) 个窗口，覆盖 \(represented)/\(spaces.count) 个普通桌面。"+status+remote+"外屏候选窗口中 \(count(.cgSelectedNotInAX)) 个未被 AX 对应；候选不等于可保存窗口。"
+        let remote=unknown>0 ? lk("有 %@ 个其他桌面上的窗口没能读到，状态未知（不代表已关闭）。", "\(unknown)") : ""
+        return lk("可保存 %@ 个窗口，覆盖 %@/%@ 个普通桌面。", "\(count(.captured))", "\(represented)", "\(spaces.count)")+status+remote+lk("外屏候选窗口中 %@ 个未被 AX 对应；候选不等于可保存窗口。", "\(count(.cgSelectedNotInAX))")
     }
     public func validate(capturedCount:Int) throws {
         guard schemaVersion==1,assessmentCompleted,elapsedMilliseconds>=0,count(.captured)==capturedCount,spaces.reduce(0,{$0+$1.captured})==capturedCount,

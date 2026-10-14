@@ -10,12 +10,12 @@ public struct ControlAccessState: Equatable {
     public init(trusted: Bool? = nil, checkedAt: Date? = nil) { self.trusted=trusted; self.checkedAt=checkedAt }
     public var canReadWindows: Bool { trusted == true }
     public var title: String {
-        guard let trusted else { return "正在检查系统控制权限" }
-        return trusted ? "系统控制权限：已授权" : "系统控制权限：未授权"
+        guard let trusted else { return lk("正在检查系统控制权限") }
+        return trusted ? lk("系统控制权限：已授权") : lk("系统控制权限：未授权")
     }
     public var guidance: String {
-        guard let trusted else { return "正在读取当前应用的授权状态。" }
-        return trusted ? "可以尝试保存可读取的软件窗口。" : "当前运行的 LayoutKeeper 尚未获得系统控制权限。打开系统设置允许 LayoutKeeper；返回后应用会自动检查。"
+        guard let trusted else { return lk("正在读取当前应用的授权状态。") }
+        return trusted ? lk("可以尝试保存可读取的软件窗口。") : lk("当前运行的 LayoutKeeper 尚未获得系统控制权限。打开系统设置允许 LayoutKeeper；返回后应用会自动检查。")
     }
 }
 public final class ControlAccessMonitor {
@@ -53,7 +53,7 @@ public enum AppInstallation {
         home.appendingPathComponent("Applications",isDirectory:true).appendingPathComponent("LayoutKeeper.app",isDirectory:true)
     }
     public static func role(bundleURL: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> String {
-        bundleURL.resolvingSymlinksInPath().standardizedFileURL == fixedBundleURL(home:home).resolvingSymlinksInPath().standardizedFileURL ? "固定安装入口" : "测试候选"
+        bundleURL.resolvingSymlinksInPath().standardizedFileURL == fixedBundleURL(home:home).resolvingSymlinksInPath().standardizedFileURL ? lk("固定安装入口") : lk("测试候选")
     }
     public static let dataFolderName="LayoutKeeper"
     public static let legacyDataFolderName="SpacePort"
@@ -81,18 +81,18 @@ public enum ExternalSavePhase { case readWindows, validateScreen, capture, write
 public enum ExternalSaveMessage {
     public static func failure(error: Error, phase: ExternalSavePhase) -> String {
         if case EmptyWindowTrialError.fixtureRequired = error {
-            return "当前处于空白验收模式，尚未创建空白测试窗口。请正常退出后重新打开固定应用，再保存正式布局。原有布局记录已保留。"
+            return lk("当前处于空白验收模式，尚未创建空白测试窗口。请正常退出后重新打开固定应用，再保存正式布局。原有布局记录已保留。")
         }
         if case LayoutError.permissionRequired = error {
-            return "当前应用的系统控制权限尚不可用。打开系统设置允许 LayoutKeeper，应用会自动检查。原有布局记录已保留。"
+            return lk("当前应用的系统控制权限尚不可用。打开系统设置允许 LayoutKeeper，应用会自动检查。原有布局记录已保留。")
         }
         let reason: String
         switch phase {
-        case .readWindows: reason="窗口读取未完成，可以稍后重试。"
-        case .validateScreen: reason="保存时外接屏连接已改变，请保持屏幕连接后重试。"
-        case .capture: reason="无法可靠确认窗口布局，本次没有保存。"
-        case .writeRecord: reason="布局文件写入失败，请确认保存位置有可用空间且可以写入。"
+        case .readWindows: reason=lk("窗口读取未完成，可以稍后重试。")
+        case .validateScreen: reason=lk("保存时外接屏连接已改变，请保持屏幕连接后重试。")
+        case .capture: reason=lk("无法可靠确认窗口布局，本次没有保存。")
+        case .writeRecord: reason=lk("布局文件写入失败，请确认保存位置有可用空间且可以写入。")
         }
-        return reason + "原有布局记录已保留。"
+        return reason + lk("原有布局记录已保留。")
     }
 }

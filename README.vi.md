@@ -19,7 +19,7 @@ Bạn dùng một màn hình ngoài ở công ty và một cái khác ở nhà. 
 
 LayoutKeeper nằm trên thanh menu và ghi nhớ vị trí từng cửa sổ trên màn hình ngoài, **kể cả cửa sổ nằm ở màn hình nền (Space trong Mission Control) nào**. Khi cắm màn hình lại, mọi thứ trở về chỗ cũ chỉ với một cú nhấp, hoặc tự động.
 
-> Ảnh chụp dùng dữ liệu mẫu. Giao diện ứng dụng hiện chỉ có tiếng Trung.
+> Ảnh chụp dùng dữ liệu mẫu. Ứng dụng có giao diện tiếng Anh và tiếng Trung giản thể, tự theo ngôn ngữ hệ thống.
 
 ## Tính năng
 

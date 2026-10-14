@@ -11,7 +11,7 @@ final class Model: ObservableObject {
     lazy var windows=AXWindows(spaces:spaces)
     @Published var diagnostic=""
     @Published var snapshot: Snapshot?
-    @Published var message="先查看诊断；实际窗口测试需批准辅助功能权限。"
+    @Published var message=lk("先查看诊断；实际窗口测试需批准辅助功能权限。")
     @Published var results: [RestoreResult]=[]
     @Published var fixtureOnly=true
     @Published var restoring=false
@@ -20,15 +20,15 @@ final class Model: ObservableObject {
     let accessMonitor=ControlAccessMonitor()
     var trusted: Bool { accessState.canReadWindows }
     var versionLabel: String {
-        let version=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "开发版本"
-        let build=Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? "未打包"
-        return "版本 \(version) (\(build)) · \(AppInstallation.role(bundleURL:Bundle.main.bundleURL))"
+        let version=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? lk("开发版本")
+        let build=Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? lk("未打包")
+        return lk("版本 %@ (%@) · %@", "\(version)", "\(build)", "\(AppInstallation.role(bundleURL:Bundle.main.bundleURL))")
     }
     func refreshAuthorization() { accessState=accessMonitor.check() }
     func openControlSettings() {
         let opened=ControlSettings.open(using:{ NSWorkspace.shared.open($0) })
-        let panel=ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? "设备控制和数据访问" : "辅助功能"
-        settingsMessage=opened ? "请在“隐私与安全性 → \(panel)”允许 LayoutKeeper。应用会自动检查结果。" : "系统设置未能打开。请手动在“隐私与安全性 → \(panel)”允许 LayoutKeeper。"
+        let panel=ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? lk("设备控制和数据访问") : lk("辅助功能")
+        settingsMessage=opened ? lk("请在“隐私与安全性 → %@”允许 LayoutKeeper。应用会自动检查结果。", "\(panel)") : lk("系统设置未能打开。请手动在“隐私与安全性 → %@”允许 LayoutKeeper。", "\(panel)")
     }
     @Published var externalMonitors: [ConnectedMonitor]=[]
     @Published var externalRecord: MonitorLayoutRecord?
@@ -128,12 +128,12 @@ final class Model: ObservableObject {
         do {
             let next=try windows.snapshot()
                         snapshot=next
-        } catch { snapshot=nil; message="无法读取 Spaces：\(error)。禁止恢复。" }
+        } catch { snapshot=nil; message=lk("无法读取 Spaces：%@。禁止恢复。", "\(error)") }
     }
     func exportDiagnostic() {
         let panel=NSSavePanel(); panel.nameFieldStringValue="layoutkeeper-diagnostic.json"; panel.allowedContentTypes=[.json]
         guard panel.runModal() == .OK,let url=panel.url else { return }
-        do { try diagnostic.write(to:url,atomically:true,encoding:.utf8) } catch { message="导出失败：\(error)" }
+        do { try diagnostic.write(to:url,atomically:true,encoding:.utf8) } catch { message=lk("导出失败：%@", "\(error)") }
     }
     func createFixtures() {
         guard fixtures.isEmpty else { return }
@@ -148,14 +148,14 @@ final class Model: ObservableObject {
             }
             let window=NSWindow(contentRect:frame,styleMask:[.titled,.closable,.resizable,.miniaturizable],backing:.buffered,defer:false)
             window.title="LayoutKeeper Fixture \(index)"; window.isReleasedWhenClosed=false
-            window.contentView=NSHostingView(rootView:VStack(spacing:18) { Image(systemName:"rectangle.3.group").font(.system(size:44)); Text("空白演示窗口").font(.title2); Text("先在 LayoutKeeper 保存布局。\n用鼠标移动或调整本窗口，再预览恢复。\n这里没有你的文档。").multilineTextAlignment(.center) }.frame(maxWidth:.infinity,maxHeight:.infinity))
+            window.contentView=NSHostingView(rootView:VStack(spacing:18) { Image(systemName:"rectangle.3.group").font(.system(size:44)); Text(lk("空白演示窗口")).font(.title2); Text(lk("先在 LayoutKeeper 保存布局。\n用鼠标移动或调整本窗口，再预览恢复。\n这里没有你的文档。")).multilineTextAlignment(.center) }.frame(maxWidth:.infinity,maxHeight:.infinity))
             window.makeKeyAndOrderFront(nil); fixtures.append(window)
         }
-        message="已创建 LayoutKeeper Fixture 1 空白测试窗口；未申请权限、未自动移动窗口。"
+        message=lk("已创建 LayoutKeeper Fixture 1 空白测试窗口；未申请权限、未自动移动窗口。")
     }
     func simulation(_ noop: Bool) {
         let backend=DemoBackend(); backend.pretendSuccess=noop
-        do { results=Restorer.execute(try backend.plan(),windows:backend,spaces:backend,approved:true); message="模拟结果：仅内存状态，未操作 macOS 窗口。" } catch { message="模拟失败：\(error)" }
+        do { results=Restorer.execute(try backend.plan(),windows:backend,spaces:backend,approved:true); message=lk("模拟结果：仅内存状态，未操作 macOS 窗口。") } catch { message=lk("模拟失败：%@", "\(error)") }
     }
 }
 
@@ -272,7 +272,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
         let hosting=NSHostingView(rootView:OnboardingView(controller:controller))
         let w=NSWindow(contentRect:NSRect(origin:.zero,size:hosting.fittingSize),styleMask:[.titled,.closable,.fullSizeContentView],backing:.buffered,defer:false)
-        w.title="欢迎使用 LayoutKeeper"; w.titleVisibility = .hidden; w.titlebarAppearsTransparent=true; w.isMovableByWindowBackground=true
+        w.title=lk("欢迎使用 LayoutKeeper"); w.titleVisibility = .hidden; w.titlebarAppearsTransparent=true; w.isMovableByWindowBackground=true
         w.isReleasedWhenClosed=false; w.contentView=hosting; w.collectionBehavior=[.moveToActiveSpace]; w.delegate=self; w.center()
         onboarding=controller; onboardingWindow=w
         controller.startPolling()
@@ -288,9 +288,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             self.model.refreshExternalMonitor(); self.model.refreshAuthorization()
             guard FirstLayoutReminder.shouldRemind(flag:true,monitorConnected:self.model.currentExternalMonitor != nil,hasLayout:self.model.externalRecord != nil,trusted:self.model.trusted) else { return }
             Prefs.store?.removeObject(forKey:FirstLayoutReminder.key)
-            let name=self.model.currentMonitorName ?? "外接屏"
-            self.toasts.show(Toast(icon:"square.and.arrow.down",tone:.info,title:"接上了「\(name)」",detail:"摆好窗口后保存一次，以后就能一键恢复",
-                                   actions:[Toast.Action(title:"现在保存") { [weak self] in self?.model.quickSave() }],duration:12))
+            let name=self.model.currentMonitorName ?? lk("外接屏")
+            self.toasts.show(Toast(icon:"square.and.arrow.down",tone:.info,title:lk("接上了「%@」", "\(name)"),detail:lk("摆好窗口后保存一次，以后就能一键恢复"),
+                                   actions:[Toast.Action(title:lk("现在保存")) { [weak self] in self?.model.quickSave() }],duration:12))
         }
         reminderTimer=t; RunLoop.main.add(t,forMode:.common)
     }
@@ -353,7 +353,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         if rescan { model.prepareQuickRestore() }
         if previewPanel == nil {
             let p=NSPanel(contentRect:NSRect(x:0,y:0,width:620,height:560),styleMask:[.titled,.closable,.fullSizeContentView],backing:.buffered,defer:false)
-            p.title="恢复预览"; p.titleVisibility = .hidden; p.titlebarAppearsTransparent=true; p.isMovableByWindowBackground=true
+            p.title=lk("恢复预览"); p.titleVisibility = .hidden; p.titlebarAppearsTransparent=true; p.isMovableByWindowBackground=true
             p.isReleasedWhenClosed=false; p.hidesOnDeactivate=false; p.collectionBehavior=[.moveToActiveSpace]; p.delegate=self
             p.contentView=NSHostingView(rootView:QuickRestoreSheet(model:model,onClose:{ [weak self] in self?.previewPanel?.close() }))
             p.center(); previewPanel=p
@@ -373,7 +373,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         model.settingsTab=tab
         if settingsWindow == nil {
             let w=NSWindow(contentRect:NSRect(x:0,y:0,width:660,height:620),styleMask:[.titled,.closable,.miniaturizable],backing:.buffered,defer:false)
-            w.title="LayoutKeeper 设置"; w.isReleasedWhenClosed=false; w.collectionBehavior=[.moveToActiveSpace]
+            w.title=lk("LayoutKeeper 设置"); w.isReleasedWhenClosed=false; w.collectionBehavior=[.moveToActiveSpace]
             w.contentView=NSHostingView(rootView:SettingsView(model:model)); w.center(); settingsWindow=w
         }
         settingsWindow?.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps:true)
@@ -382,15 +382,15 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     func buildMainMenu() -> NSMenu {
         let main=NSMenu()
         let appItem=NSMenuItem(); let app=NSMenu(); appItem.submenu=app; main.addItem(appItem)
-        let settings=NSMenuItem(title:"设置…",action:#selector(openSettingsGeneral),keyEquivalent:","); settings.target=self; app.addItem(settings)
-        let updates=NSMenuItem(title:"检查更新…",action:#selector(checkForUpdates),keyEquivalent:""); updates.target=self; app.addItem(updates)
+        let settings=NSMenuItem(title:lk("设置…"),action:#selector(openSettingsGeneral),keyEquivalent:","); settings.target=self; app.addItem(settings)
+        let updates=NSMenuItem(title:lk("检查更新…"),action:#selector(checkForUpdates),keyEquivalent:""); updates.target=self; app.addItem(updates)
         app.addItem(.separator())
-        let close=NSMenuItem(title:"关闭窗口",action:#selector(NSWindow.performClose(_:)),keyEquivalent:"w"); app.addItem(close)
-        let q=NSMenuItem(title:"退出 LayoutKeeper",action:#selector(quit),keyEquivalent:"q"); q.target=self; app.addItem(q)
-        let editItem=NSMenuItem(); let edit=NSMenu(title:"编辑"); editItem.submenu=edit; main.addItem(editItem)
-        edit.addItem(NSMenuItem(title:"拷贝",action:#selector(NSText.copy(_:)),keyEquivalent:"c"))
-        edit.addItem(NSMenuItem(title:"粘贴",action:#selector(NSText.paste(_:)),keyEquivalent:"v"))
-        edit.addItem(NSMenuItem(title:"全选",action:#selector(NSText.selectAll(_:)),keyEquivalent:"a"))
+        let close=NSMenuItem(title:lk("关闭窗口"),action:#selector(NSWindow.performClose(_:)),keyEquivalent:"w"); app.addItem(close)
+        let q=NSMenuItem(title:lk("退出 LayoutKeeper"),action:#selector(quit),keyEquivalent:"q"); q.target=self; app.addItem(q)
+        let editItem=NSMenuItem(); let edit=NSMenu(title:lk("编辑")); editItem.submenu=edit; main.addItem(editItem)
+        edit.addItem(NSMenuItem(title:lk("拷贝"),action:#selector(NSText.copy(_:)),keyEquivalent:"c"))
+        edit.addItem(NSMenuItem(title:lk("粘贴"),action:#selector(NSText.paste(_:)),keyEquivalent:"v"))
+        edit.addItem(NSMenuItem(title:lk("全选"),action:#selector(NSText.selectAll(_:)),keyEquivalent:"a"))
         return main
     }
     /// Only our own activation re-checks (not every app switch): the check is a read-only scan on the main thread.

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 LayoutKeeper contributors
+import LayoutCore
 import ApplicationServices
 
 enum AXReadValueError: Error, Equatable, CustomStringConvertible {
     case emptyValue(operation: String)
     var description: String {
-        switch self { case .emptyValue(let operation): return "\(operation)：AX 返回成功但没有值" }
+        switch self { case .emptyValue(let operation): return lk("%@：AX 返回成功但没有值", "\(operation)") }
     }
 }
 enum AXAttributeReader {

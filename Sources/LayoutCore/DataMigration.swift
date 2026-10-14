@@ -22,10 +22,10 @@ public struct DataMigrationResult: Codable, Equatable {
     public init(status: Status, detail: String = "") { self.status=status; self.detail=detail }
     public var summary: String {
         switch status {
-        case .migrated: return "已从 SpacePort 复制 \(layouts) 份屏幕布局（共 \(copiedFiles) 个文件），旧文件夹保留未动。"
-        case .alreadyDone: return "已完成过从 SpacePort 的迁移。"
-        case .notNeeded: return detail.isEmpty ? "无需迁移。" : detail
-        case .failed: return "从 SpacePort 迁移失败：\(detail)。旧文件夹保留未动，下次启动会重试。"
+        case .migrated: return lk("已从 SpacePort 复制 %@ 份屏幕布局（共 %@ 个文件），旧文件夹保留未动。", "\(layouts)", "\(copiedFiles)")
+        case .alreadyDone: return lk("已完成过从 SpacePort 的迁移。")
+        case .notNeeded: return detail.isEmpty ? lk("无需迁移。") : detail
+        case .failed: return lk("从 SpacePort 迁移失败：%@。旧文件夹保留未动，下次启动会重试。", "\(detail)")
         }
     }
 }
@@ -40,7 +40,7 @@ public enum DataMigration {
         let marker=target.appendingPathComponent(markerName)
         if fm.fileExists(atPath:marker.path) { return DataMigrationResult(status:.alreadyDone) }
         if layoutCount(in:target.appendingPathComponent("Layouts/screens",isDirectory:true)) > 0 {
-            var result=DataMigrationResult(status:.notNeeded,detail:"LayoutKeeper 文件夹里已有布局，没有迁移。")
+            var result=DataMigrationResult(status:.notNeeded,detail:lk("LayoutKeeper 文件夹里已有布局，没有迁移。"))
             result.finishedAt=now; writeMarker(result,at:marker)
             return result
         }
@@ -60,7 +60,7 @@ public enum DataMigration {
                 plan[mapped]=(url,date)
             }
         }
-        guard !plan.isEmpty else { return DataMigrationResult(status:.notNeeded,detail:"没有找到 SpacePort 的旧数据。") }
+        guard !plan.isEmpty else { return DataMigrationResult(status:.notNeeded,detail:lk("没有找到 SpacePort 的旧数据。")) }
         let staging=target.appendingPathComponent(".migration-staging-\(UUID().uuidString)",isDirectory:true)
         defer { try? fm.removeItem(at:staging) }
         var result=DataMigrationResult(status:.migrated)
@@ -70,7 +70,7 @@ public enum DataMigration {
                 let staged=staging.appendingPathComponent(relative)
                 try fm.createDirectory(at:staged.deletingLastPathComponent(),withIntermediateDirectories:true)
                 try fm.copyItem(at:entry.0,to:staged)
-                guard try Data(contentsOf:staged)==Data(contentsOf:entry.0) else { throw MigrationError("\(relative) 复制后内容不一致") }
+                guard try Data(contentsOf:staged)==Data(contentsOf:entry.0) else { throw MigrationError(lk("%@ 复制后内容不一致", "\(relative)")) }
                 try verifyDecodes(relative:relative,source:entry.0,copy:staged)
             }
             for relative in plan.keys.sorted() {
@@ -95,10 +95,10 @@ public enum DataMigration {
     /// A copy must decode whenever its source decodes (layouts incl. .previous.json, and restore journals).
     static func verifyDecodes(relative: String,source: URL,copy: URL) throws {
         if relative.hasPrefix("Layouts/screens/"),relative.hasSuffix(".json") {
-            if (try? MonitorLayoutStore.load(from:source)) != nil,(try? MonitorLayoutStore.load(from:copy)) == nil { throw MigrationError("\(relative) 复制后无法读取") }
+            if (try? MonitorLayoutStore.load(from:source)) != nil,(try? MonitorLayoutStore.load(from:copy)) == nil { throw MigrationError(lk("%@ 复制后无法读取", "\(relative)")) }
         } else if relative.hasPrefix("Layouts/transactions/"),relative.hasSuffix(".json") {
             let decode={ (url: URL) in try? JSONDecoder().decode(RestoreJournal.self,from:Data(contentsOf:url)) }
-            if decode(source) != nil,decode(copy) == nil { throw MigrationError("\(relative) 复制后无法读取") }
+            if decode(source) != nil,decode(copy) == nil { throw MigrationError(lk("%@ 复制后无法读取", "\(relative)")) }
         }
     }
     static func layoutCount(in directory: URL) -> Int {

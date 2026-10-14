@@ -25,6 +25,6 @@ enum AppMigration {
     }
     static var statusText: String {
         let marker=DataMigration.readMarker(in:AppInstallation.dataDirectory(applicationSupport:applicationSupport))
-        return (lastResult?.status == .alreadyDone ? marker : lastResult)?.summary ?? marker?.summary ?? "无需迁移。"
+        return (lastResult?.status == .alreadyDone ? marker : lastResult)?.summary ?? marker?.summary ?? lk("无需迁移。")
     }
 }

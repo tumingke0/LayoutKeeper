@@ -122,9 +122,9 @@ public struct ScreenLibrary {
     /// Makes an archived version current. The version leaves the history and the replaced current layout enters it,
     /// so promoting the returned URL undoes the change.
     @discardableResult public func promote(_ version: URL,key: String) throws -> URL? {
-        guard version.deletingLastPathComponent().standardizedFileURL==historyDirectory(key).standardizedFileURL else { throw ScreenLibraryError("不是这块屏幕的历史版本") }
+        guard version.deletingLastPathComponent().standardizedFileURL==historyDirectory(key).standardizedFileURL else { throw ScreenLibraryError(lk("不是这块屏幕的历史版本")) }
         let record=try MonitorLayoutStore.load(from:version)
-        guard record.monitor.key==key else { throw ScreenLibraryError("版本与屏幕不匹配") }
+        guard record.monitor.key==key else { throw ScreenLibraryError(lk("版本与屏幕不匹配")) }
         let carried=Self.readIndex(historyDirectory(key),Self.originsFile)[version.lastPathComponent]
         var archivedCurrent: URL?
         if FileManager.default.fileExists(atPath:currentURL(key).path) { archivedCurrent=try archiveCurrent(key) }
@@ -139,7 +139,7 @@ public struct ScreenLibrary {
     /// Moves the screen's current, previous and history files to the trash folder and returns that folder.
     @discardableResult public func delete(_ key: String,now: Date = Date()) throws -> URL {
         let fm=FileManager.default
-        guard fm.fileExists(atPath:currentURL(key).path) else { throw ScreenLibraryError("没有这块屏幕的布局") }
+        guard fm.fileExists(atPath:currentURL(key).path) else { throw ScreenLibraryError(lk("没有这块屏幕的布局")) }
         let bin=trashDirectory.appendingPathComponent("\(Self.stamp(now))-\(key)",isDirectory:true)
         try fm.createDirectory(at:bin,withIntermediateDirectories:true)
         try fm.moveItem(at:currentURL(key),to:bin.appendingPathComponent("\(key).json"))
@@ -153,9 +153,9 @@ public struct ScreenLibrary {
     /// Puts a deleted screen back. Refuses if a layout for that screen was saved since (never overwrites).
     public func undoDelete(_ bin: URL,key: String) throws {
         let fm=FileManager.default
-        guard !fm.fileExists(atPath:currentURL(key).path) else { throw ScreenLibraryError("这块屏幕已有新保存的布局，没有覆盖") }
+        guard !fm.fileExists(atPath:currentURL(key).path) else { throw ScreenLibraryError(lk("这块屏幕已有新保存的布局，没有覆盖")) }
         let saved=bin.appendingPathComponent("\(key).json")
-        guard fm.fileExists(atPath:saved.path) else { throw ScreenLibraryError("回收的布局文件不存在") }
+        guard fm.fileExists(atPath:saved.path) else { throw ScreenLibraryError(lk("回收的布局文件不存在")) }
         try fm.createDirectory(at:root,withIntermediateDirectories:true)
         try fm.moveItem(at:saved,to:currentURL(key))
         let previous=bin.appendingPathComponent(VersionedStore.previousURL(for:currentURL(key)).lastPathComponent)
@@ -181,7 +181,7 @@ public struct ScreenLibrary {
     /// Labels a history version (empty clears). A labelled version stays in history but is exempt from pruning.
     public func labelVersion(_ version: URL,key: String,label: String?) throws {
         guard version.deletingLastPathComponent().standardizedFileURL==historyDirectory(key).standardizedFileURL,
-              FileManager.default.fileExists(atPath:version.path) else { throw ScreenLibraryError("不是这块屏幕的历史版本") }
+              FileManager.default.fileExists(atPath:version.path) else { throw ScreenLibraryError(lk("不是这块屏幕的历史版本")) }
         var labels=Self.readIndex(historyDirectory(key))
         let t=Self.clean(label)
         labels[version.lastPathComponent]=t
@@ -195,15 +195,15 @@ public struct ScreenLibrary {
         return files.filter{$0.pathExtension=="json"}.compactMap { url -> NamedLayout? in
             guard let data=try? Data(contentsOf:url),let record=try? MonitorLayoutStore.load(from:url),record.monitor.key==key else { return nil }
             let c=Self.counts(record)
-            return NamedLayout(url:url,name:names[url.lastPathComponent] ?? "未命名",savedAt:record.savedAt,windowCount:c.windows,desktopCount:c.desktops,isActive:data==current)
+            return NamedLayout(url:url,name:names[url.lastPathComponent] ?? lk("未命名"),savedAt:record.savedAt,windowCount:c.windows,desktopCount:c.desktops,isActive:data==current)
         }.sorted { $0.url.deletingPathExtension().lastPathComponent<$1.url.deletingPathExtension().lastPathComponent }   // creation order
     }
     /// Saves the current layout or a history version as a named layout (a copy; the source is untouched).
     @discardableResult public func saveNamed(from source: URL,key: String,name: String,now: Date = Date()) throws -> URL {
-        guard let n=Self.clean(name) else { throw ScreenLibraryError("请输入名字") }
-        guard isOwn(source,key:key) else { throw ScreenLibraryError("不是这块屏幕的布局") }
+        guard let n=Self.clean(name) else { throw ScreenLibraryError(lk("请输入名字")) }
+        guard isOwn(source,key:key) else { throw ScreenLibraryError(lk("不是这块屏幕的布局")) }
         let record=try MonitorLayoutStore.load(from:source)
-        guard record.monitor.key==key else { throw ScreenLibraryError("版本与屏幕不匹配") }
+        guard record.monitor.key==key else { throw ScreenLibraryError(lk("版本与屏幕不匹配")) }
         let dir=namedDirectory(key)
         try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true)
         var url=dir.appendingPathComponent("\(Self.stamp(now)).json"); var i=2
@@ -213,26 +213,26 @@ public struct ScreenLibrary {
         return url
     }
     public func renameNamed(_ url: URL,key: String,name: String) throws {
-        guard let n=Self.clean(name) else { throw ScreenLibraryError("请输入名字") }
-        guard url.deletingLastPathComponent().standardizedFileURL==namedDirectory(key).standardizedFileURL,FileManager.default.fileExists(atPath:url.path) else { throw ScreenLibraryError("不是这块屏幕的版式") }
+        guard let n=Self.clean(name) else { throw ScreenLibraryError(lk("请输入名字")) }
+        guard url.deletingLastPathComponent().standardizedFileURL==namedDirectory(key).standardizedFileURL,FileManager.default.fileExists(atPath:url.path) else { throw ScreenLibraryError(lk("不是这块屏幕的版式")) }
         var names=Self.readIndex(namedDirectory(key)); names[url.lastPathComponent]=n; try Self.writeIndex(names,namedDirectory(key))
     }
     /// Moves a named layout to the trash; `undoDeleteNamed` puts it back with its name.
     @discardableResult public func deleteNamed(_ url: URL,key: String,now: Date = Date()) throws -> URL {
         let dir=namedDirectory(key)
-        guard url.deletingLastPathComponent().standardizedFileURL==dir.standardizedFileURL,FileManager.default.fileExists(atPath:url.path) else { throw ScreenLibraryError("不是这块屏幕的版式") }
+        guard url.deletingLastPathComponent().standardizedFileURL==dir.standardizedFileURL,FileManager.default.fileExists(atPath:url.path) else { throw ScreenLibraryError(lk("不是这块屏幕的版式")) }
         var names=Self.readIndex(dir)
         let bin=trashDirectory.appendingPathComponent("\(Self.stamp(now))-named-\(key)",isDirectory:true)
         try FileManager.default.createDirectory(at:bin,withIntermediateDirectories:true)
         try FileManager.default.moveItem(at:url,to:bin.appendingPathComponent(url.lastPathComponent))
-        try Self.writeIndex([url.lastPathComponent:names[url.lastPathComponent] ?? "未命名"],bin)
+        try Self.writeIndex([url.lastPathComponent:names[url.lastPathComponent] ?? lk("未命名")],bin)
         names.removeValue(forKey:url.lastPathComponent); try Self.writeIndex(names,dir)
         return bin
     }
     public func undoDeleteNamed(_ bin: URL,key: String) throws {
         let fm=FileManager.default, dir=namedDirectory(key), saved=Self.readIndex(bin)
-        guard let (file,name)=saved.first else { throw ScreenLibraryError("回收的版式不存在") }
-        guard !fm.fileExists(atPath:dir.appendingPathComponent(file).path) else { throw ScreenLibraryError("同名文件已存在，没有覆盖") }
+        guard let (file,name)=saved.first else { throw ScreenLibraryError(lk("回收的版式不存在")) }
+        guard !fm.fileExists(atPath:dir.appendingPathComponent(file).path) else { throw ScreenLibraryError(lk("同名文件已存在，没有覆盖")) }
         try fm.createDirectory(at:dir,withIntermediateDirectories:true)
         try fm.moveItem(at:bin.appendingPathComponent(file),to:dir.appendingPathComponent(file))
         var names=Self.readIndex(dir); names[file]=name; try Self.writeIndex(names,dir)
@@ -242,9 +242,9 @@ public struct ScreenLibrary {
     /// the archived former current, or — when the former current is already kept as a named layout — that layout.
     @discardableResult public func apply(_ source: URL,key: String) throws -> URL? {
         if source.deletingLastPathComponent().standardizedFileURL==historyDirectory(key).standardizedFileURL { return try promote(source,key:key) }
-        guard source.deletingLastPathComponent().standardizedFileURL==namedDirectory(key).standardizedFileURL else { throw ScreenLibraryError("不是这块屏幕的版式") }
+        guard source.deletingLastPathComponent().standardizedFileURL==namedDirectory(key).standardizedFileURL else { throw ScreenLibraryError(lk("不是这块屏幕的版式")) }
         let data=try Data(contentsOf:source)
-        guard try MonitorLayoutStore.load(from:source).monitor.key==key else { throw ScreenLibraryError("版本与屏幕不匹配") }
+        guard try MonitorLayoutStore.load(from:source).monitor.key==key else { throw ScreenLibraryError(lk("版本与屏幕不匹配")) }
         var undo: URL?
         if let current=try? Data(contentsOf:currentURL(key)) {
             if current==data { return nil }
@@ -253,7 +253,7 @@ public struct ScreenLibrary {
         }
         try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
         try data.write(to:currentURL(key),options:.atomic)
-        setOrigin(key,Self.currentSlot,(source.lastPathComponent,Self.readIndex(namedDirectory(key))[source.lastPathComponent] ?? "未命名"))
+        setOrigin(key,Self.currentSlot,(source.lastPathComponent,Self.readIndex(namedDirectory(key))[source.lastPathComponent] ?? lk("未命名")))
         prune(key,keeping:undo)
         return undo
     }

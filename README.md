@@ -19,7 +19,7 @@ You use an external monitor at the office and another one at home. Every time yo
 
 LayoutKeeper lives in the menu bar. It remembers where each window was on your external monitor, **including which desktop (Mission Control Space) it was on**. When you plug the monitor back in, it puts everything back with one click, or automatically.
 
-> Screenshots show sample data. The app's interface is currently in Chinese only.
+> Screenshots show sample data. The app is available in English and Simplified Chinese and follows your system language.
 
 ## Features
 

@@ -22,7 +22,7 @@ enum StatusMenuBuilder {
                 item.state=model.checked ? .on : .off
                 if let symbol=model.symbol { item.image=NSImage(systemSymbolName:symbol,accessibilityDescription:nil) }
                 if let reason=model.reason {
-                    if #available(macOS 14.4, *) { item.subtitle=reason } else { item.title="\(model.title)（\(reason)）" }
+                    if #available(macOS 14.4, *) { item.subtitle=reason } else { item.title=lk("%@（%@）", "\(model.title)", "\(reason)") }
                     item.toolTip=reason
                 }
                 if let key=model.hotkey,let equivalent=KeyCodes.keyEquivalent(key.keyCode) {

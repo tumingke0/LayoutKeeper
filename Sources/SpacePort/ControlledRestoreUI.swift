@@ -20,7 +20,7 @@ extension Model {
                                   membershipRead:raw.membershipRead != 0,managedDisplaySpaces:raw.managedDisplaySpaces != 0,mainConnection:raw.mainConnection != 0)
         var support=CrossSpaceGate.decide(major:os.majorVersion,minor:os.minorVersion,patch:os.patchVersion,build:build,probe:probe)
         // The native dispatcher applies its own copy of the gate; never enable the UI if they disagree.
-        if support.enabled && SPControlledBridgeAvailable() != 1 { support = .unavailable(reason:"系统接口检测结果不一致，已关闭跨桌面移动。") }
+        if support.enabled && SPControlledBridgeAvailable() != 1 { support = .unavailable(reason:lk("系统接口检测结果不一致，已关闭跨桌面移动。")) }
         cachedCrossSpaceSupport=support
         return support
     }

@@ -6,7 +6,7 @@ public enum AutoRestoreMode: String, CaseIterable, Codable {
     case off, ask, auto
     public static let defaultMode=AutoRestoreMode.ask
     public var title: String {
-        switch self { case .off: return "关闭恢复"; case .ask: return "先询问恢复"; case .auto: return "自动恢复" }
+        switch self { case .off: return lk("关闭恢复"); case .ask: return lk("先询问恢复"); case .auto: return lk("自动恢复") }
     }
 }
 

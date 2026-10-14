@@ -52,7 +52,7 @@ public struct Hotkey: Codable, Hashable {
 public enum HotkeyAction: String, CaseIterable, Codable {
     case save, restore, undo
     public var title: String {
-        switch self { case .save: return "保存当前布局"; case .restore: return "恢复布局"; case .undo: return "撤销上次恢复" }
+        switch self { case .save: return lk("保存当前布局"); case .restore: return lk("恢复布局"); case .undo: return lk("撤销上次恢复") }
     }
 }
 
@@ -80,8 +80,8 @@ public enum HotkeyStatus: Hashable {
 /// (another app or the system already owns that combination).
 public enum HotkeyRegistrar {
     public static func validate(_ key: Hotkey) -> String? {
-        guard !key.modifiers.intersection([.command,.control,.option]).isEmpty else { return "需要包含 ⌘、⌃ 或 ⌥ 中的至少一个" }
-        guard KeyCodes.name(key.keyCode) != nil else { return "不支持这个按键" }
+        guard !key.modifiers.intersection([.command,.control,.option]).isEmpty else { return lk("需要包含 ⌘、⌃ 或 ⌥ 中的至少一个") }
+        guard KeyCodes.name(key.keyCode) != nil else { return lk("不支持这个按键") }
         return nil
     }
     public static func register(_ settings: HotkeySettings,attempt: (HotkeyAction,Hotkey) -> Bool) -> [HotkeyAction:HotkeyStatus] {
@@ -91,9 +91,9 @@ public enum HotkeyRegistrar {
             guard settings.enabled else { result[action] = .off; continue }
             guard let key=settings.keys[action] else { result[action] = .unset; continue }
             if let why=validate(key) { result[action] = .invalid(why); continue }
-            if let owner=taken[key] { result[action] = .conflict("与「\(owner.title)」重复"); continue }
+            if let owner=taken[key] { result[action] = .conflict(lk("与「%@」重复", "\(owner.title)")); continue }
             if attempt(action,key) { result[action] = .active; taken[key]=action }
-            else { result[action] = .conflict("\(key.display) 注册失败：可能已被系统或其他应用占用，请换一个") }
+            else { result[action] = .conflict(lk("%@ 注册失败：可能已被系统或其他应用占用，请换一个", "\(key.display)")) }
         }
         return result
     }

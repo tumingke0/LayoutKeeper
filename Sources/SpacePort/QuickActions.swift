@@ -33,20 +33,20 @@ extension Model {
     }
     /// Why save/restore can't run right now (nil when it can).
     func quickBlocker(needsLayout: Bool) -> String? {
-        if currentExternalMonitor == nil { return externalMonitors.count>1 ? "目前只支持一块外接屏" : "未连接外接屏" }
-        if !trusted { return "需要辅助功能权限" }
-        if needsLayout && externalRecord == nil { return "这块屏幕尚未保存布局" }
-        if busy { return "正在处理上一个操作" }
+        if currentExternalMonitor == nil { return externalMonitors.count>1 ? lk("目前只支持一块外接屏") : lk("未连接外接屏") }
+        if !trusted { return lk("需要辅助功能权限") }
+        if needsLayout && externalRecord == nil { return lk("这块屏幕尚未保存布局") }
+        if busy { return lk("正在处理上一个操作") }
         return nil
     }
     /// Menu / hotkey save: no dialog. Overwriting keeps `.previous.json` exactly as before.
     func quickSave() {
         refreshExternalMonitor()
-        if let why=quickBlocker(needsLayout:false) { showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:"没有保存",detail:why)); return }
+        if let why=quickBlocker(needsLayout:false) { showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:lk("没有保存"),detail:why)); return }
         switch saveExternalLayout(confirmOverwrite:false) {
         case .saved(let count,let replaced):
-            showToast?(Toast(icon:"checkmark.circle.fill",tone:.success,title:"已保存 \(count) 个窗口",detail:replaced ? "旧版本已存入历史" : nil))
-        case .failed(let why): showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:"没有保存",detail:why,duration:4))
+            showToast?(Toast(icon:"checkmark.circle.fill",tone:.success,title:lk("已保存 %@ 个窗口", "\(count)"),detail:replaced ? lk("旧版本已存入历史") : nil))
+        case .failed(let why): showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:lk("没有保存"),detail:why,duration:4))
         case .cancelled: break
         }
         requestLiveCheck?()
@@ -55,7 +55,7 @@ extension Model {
     /// Automatic mode additionally skips windows coming from another screen or needing any confirmation.
     @discardableResult func directRestore(_ trigger: RestoreTrigger) -> DirectRestoreOutcome {
         var outcome=DirectRestoreOutcome()
-        guard prepareQuickRestore(),let plan=quickPlan else { outcome.error=quickMessage.isEmpty ? "无法生成恢复计划" : quickMessage; return outcome }
+        guard prepareQuickRestore(),let plan=quickPlan else { outcome.error=quickMessage.isEmpty ? lk("无法生成恢复计划") : quickMessage; return outcome }
         defer { if let plan=quickPlan { noteSharedPlan(plan) } }
         outcome.needsConfirmation=plan.items.filter{$0.state == .needsConfirmation}.count
         let runnable=trigger == .automatic ? QuickRestorePlanner.autoSubset(plan).entries.count : plan.readyCount
@@ -68,32 +68,32 @@ extension Model {
         return outcome
     }
     func restoreToast(_ o: DirectRestoreOutcome,trigger: RestoreTrigger) -> Toast? {
-        let view=Toast.Action(title:"查看") { [weak self] in self?.openPreviewPanel?(false) }
+        let view=Toast.Action(title:lk("查看")) { [weak self] in self?.openPreviewPanel?(false) }
         if let error=o.error {
             if trigger == .automatic && externalRecord == nil { return nil }
-            return Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:trigger == .automatic ? "没有自动恢复" : "没有恢复",detail:error,duration:5)
+            return Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:trigger == .automatic ? lk("没有自动恢复") : lk("没有恢复"),detail:error,duration:5)
         }
         if o.nothingToDo {
-            if o.needsConfirmation>0 { return Toast(icon:"questionmark.circle.fill",tone:.warning,title:"\(o.needsConfirmation) 个窗口需要确认",detail:"无法唯一确认，没有移动",actions:[view],duration:trigger == .automatic ? 7 : 5) }
-            if o.skippedAuto>0 { return Toast(icon:"info.circle.fill",tone:.neutral,title:"\(o.skippedAuto) 个窗口在另一块屏幕上",detail:"自动恢复不会移动它们，可手动恢复",actions:[view],duration:7) }
+            if o.needsConfirmation>0 { return Toast(icon:"questionmark.circle.fill",tone:.warning,title:lk("%@ 个窗口需要确认", "\(o.needsConfirmation)"),detail:lk("无法唯一确认，没有移动"),actions:[view],duration:trigger == .automatic ? 7 : 5) }
+            if o.skippedAuto>0 { return Toast(icon:"info.circle.fill",tone:.neutral,title:lk("%@ 个窗口在另一块屏幕上", "\(o.skippedAuto)"),detail:lk("自动恢复不会移动它们，可手动恢复"),actions:[view],duration:7) }
             // Automatic: nothing moved and nothing needs you → stay silent. Manual: always answer.
-            return trigger == .automatic ? nil : Toast(icon:"checkmark.circle.fill",tone:.success,title:"布局已是保存的样子")
+            return trigger == .automatic ? nil : Toast(icon:"checkmark.circle.fill",tone:.success,title:lk("布局已是保存的样子"))
         }
-        var title="已恢复 \(o.restored) 个窗口"
-        if o.needsConfirmation>0 { title+=" · \(o.needsConfirmation) 个需确认" }
-        let detail: String?=o.failed>0 ? "\(o.failed) 个未通过，已回滚" : (o.skippedAuto>0 ? "\(o.skippedAuto) 个在另一块屏幕上的窗口没有自动移动" : nil)
+        var title=lk("已恢复 %@ 个窗口", "\(o.restored)")
+        if o.needsConfirmation>0 { title+=lk(" · %@ 个需确认", "\(o.needsConfirmation)") }
+        let detail: String?=o.failed>0 ? lk("%@ 个未通过，已回滚", "\(o.failed)") : (o.skippedAuto>0 ? lk("%@ 个在另一块屏幕上的窗口没有自动移动", "\(o.skippedAuto)") : nil)
         var actions=[Toast.Action]()
-        if lastRestoreJournal?.canUndo == true { actions.append(Toast.Action(title:"撤销") { [weak self] in NSApp.activate(ignoringOtherApps:true); self?.undoExternalRestore(); self?.requestLiveCheck?() }) }
+        if lastRestoreJournal?.canUndo == true { actions.append(Toast.Action(title:lk("撤销")) { [weak self] in NSApp.activate(ignoringOtherApps:true); self?.undoExternalRestore(); self?.requestLiveCheck?() }) }
         actions.append(view)
         return Toast(icon:o.failed>0 ? "exclamationmark.circle.fill" : "checkmark.circle.fill",tone:o.failed>0 || o.needsConfirmation>0 ? .warning : .success,title:title,detail:detail,actions:actions,duration:trigger == .automatic ? 7 : 5)
     }
     func quickRestore() {
         refreshExternalMonitor()
-        if let why=quickBlocker(needsLayout:true) { showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:"没有恢复",detail:why)); return }
+        if let why=quickBlocker(needsLayout:true) { showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:lk("没有恢复"),detail:why)); return }
         if let toast=restoreToast(directRestore(.manual),trigger:.manual) { showToast?(toast) }
     }
     func quickUndo() {
-        guard lastRestoreJournal?.canUndo == true else { showToast?(Toast(icon:"info.circle.fill",tone:.neutral,title:"没有可撤销的恢复")); return }
+        guard lastRestoreJournal?.canUndo == true else { showToast?(Toast(icon:"info.circle.fill",tone:.neutral,title:lk("没有可撤销的恢复"))); return }
         NSApp.activate(ignoringOtherApps:true)
         undoExternalRestore()
         requestLiveCheck?()

@@ -9,7 +9,7 @@ public struct MonitorPreference: Codable, Equatable {
     /// The monitor's own name when the choice was made, so Settings can list screens that aren't connected.
     public var seenName: String?
     public init(restore: AutoRestoreMode? = nil, displayName: String? = nil, seenName: String? = nil) { self.restore=restore; self.displayName=displayName; self.seenName=seenName }
-    public var label: String { displayName ?? seenName ?? "外接屏" }
+    public var label: String { displayName ?? seenName ?? lk("外接屏") }
 }
 public struct MonitorPreferences: Codable, Equatable {
     public var entries: [String:MonitorPreference]=[:]
@@ -53,7 +53,7 @@ public enum ReconnectPolicy {
 
 public enum AutoRestorePause: String, CaseIterable {
     case oneHour, untilTomorrow
-    public var title: String { self == .oneHour ? "1 小时" : "直到明天" }
+    public var title: String { self == .oneHour ? lk("1 小时") : lk("直到明天") }
     public func until(from now: Date,calendar: Calendar = .current) -> Date {
         switch self {
         case .oneHour: return now.addingTimeInterval(3600)
@@ -65,15 +65,15 @@ public enum AutoRestorePause: String, CaseIterable {
 public enum RelativeTime {
     /// "今天 09:42" / "昨天 09:42" / "10月9日 09:42".
     public static func short(_ date: Date,now: Date = Date(),calendar: Calendar = .current) -> String {
-        let f=DateFormatter(); f.locale=Locale(identifier:"zh_CN"); f.calendar=calendar; f.timeZone=calendar.timeZone
-        if calendar.isDate(date,inSameDayAs:now) { f.dateFormat="'今天' HH:mm" }
-        else if let y=calendar.date(byAdding:.day,value:-1,to:now),calendar.isDate(date,inSameDayAs:y) { f.dateFormat="'昨天' HH:mm" }
-        else { f.dateFormat="M月d日 HH:mm" }
+        let f=DateFormatter(); f.locale=Locale(identifier:Localization.isEnglish ? "en_US_POSIX" : "zh_CN"); f.calendar=calendar; f.timeZone=calendar.timeZone
+        if calendar.isDate(date,inSameDayAs:now) { f.dateFormat=lk("'今天' HH:mm") }
+        else if let y=calendar.date(byAdding:.day,value:-1,to:now),calendar.isDate(date,inSameDayAs:y) { f.dateFormat=lk("'昨天' HH:mm") }
+        else { f.dateFormat=lk("M月d日 HH:mm") }
         return f.string(from:date)
     }
     public static func clock(_ date: Date,now: Date = Date(),calendar: Calendar = .current) -> String {
-        let f=DateFormatter(); f.locale=Locale(identifier:"zh_CN"); f.calendar=calendar; f.timeZone=calendar.timeZone
-        f.dateFormat=calendar.isDate(date,inSameDayAs:now) ? "HH:mm" : "M月d日 HH:mm"
+        let f=DateFormatter(); f.locale=Locale(identifier:Localization.isEnglish ? "en_US_POSIX" : "zh_CN"); f.calendar=calendar; f.timeZone=calendar.timeZone
+        f.dateFormat=calendar.isDate(date,inSameDayAs:now) ? "HH:mm" : lk("M月d日 HH:mm")
         return f.string(from:date)
     }
 }

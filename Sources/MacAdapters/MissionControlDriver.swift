@@ -15,14 +15,14 @@ public final class MissionControlDriver {
         case notTrusted, dockMissing, didNotOpen, displayNotFound, addButtonMissing, listMissing, removeUnsupported, axError(Int32)
         public var description: String {
             switch self {
-            case .notTrusted: return "没有辅助功能权限"
-            case .dockMissing: return "找不到程序坞进程"
-            case .didNotOpen: return "调度中心没有打开"
-            case .displayNotFound: return "调度中心里找不到这块屏幕"
-            case .addButtonMissing: return "调度中心里找不到「+」按钮"
-            case .listMissing: return "调度中心里找不到桌面列表"
-            case .removeUnsupported: return "这个系统版本的调度中心不支持关闭桌面"
-            case .axError(let e): return "辅助功能调用失败（\(e)）"
+            case .notTrusted: return lk("没有辅助功能权限")
+            case .dockMissing: return lk("找不到程序坞进程")
+            case .didNotOpen: return lk("调度中心没有打开")
+            case .displayNotFound: return lk("调度中心里找不到这块屏幕")
+            case .addButtonMissing: return lk("调度中心里找不到「+」按钮")
+            case .listMissing: return lk("调度中心里找不到桌面列表")
+            case .removeUnsupported: return lk("这个系统版本的调度中心不支持关闭桌面")
+            case .axError(let e): return lk("辅助功能调用失败（%@）", "\(e)")
             }
         }
     }
@@ -140,8 +140,8 @@ public final class MissionControlDriver {
     /// Read-only: opens Mission Control, waits until it is laid out, dumps the whole Dock AX tree while it stays open, then closes it.
     public func inspect() -> String {
         var lines=["macOS \(ProcessInfo.processInfo.operatingSystemVersionString)","trusted=\(AXIsProcessTrusted())"]
-        do { try open() } catch { lines.append("调度中心未就绪：\(error)（仍然导出当前结构）") }
-        guard let dock=mcRoot ?? dock else { return (lines+["找不到程序坞进程"]).joined(separator:"\n") }
+        do { try open() } catch { lines.append(lk("调度中心未就绪：%@（仍然导出当前结构）", "\(error)")) }
+        guard let dock=mcRoot ?? dock else { return (lines+[lk("找不到程序坞进程")]).joined(separator:"\n") }
         var count=0
         func walk(_ e: AXUIElement,_ d: Int) {
             guard count<4000 else { return }
@@ -154,7 +154,7 @@ public final class MissionControlDriver {
             if d<16 { for c in Self.children(e) { walk(c,d+1) } }
         }
         walk(dock,0)
-        lines.append("共 \(count) 个元素；调度中心就绪=\(isOpen)")
+        lines.append(lk("共 %@ 个元素；调度中心就绪=%@", "\(count)", "\(isOpen)"))
         close()
         return lines.joined(separator:"\n")
     }

@@ -40,14 +40,14 @@ public enum CandidateExclusion: String, Codable, CaseIterable, Sendable {
     case nonzeroLayer, attachedToParent, undersized, transparent, notDocumentWindow, orderedOut, membershipUnreadable, noSpaceMembership
     public var label: String {
         switch self {
-        case .nonzeroLayer: return "非普通层级"
-        case .attachedToParent: return "附属于其他窗口"
-        case .undersized: return "尺寸过小"
-        case .transparent: return "完全透明"
-        case .notDocumentWindow: return "弹出/辅助窗口"
-        case .orderedOut: return "已关闭或未显示"
-        case .membershipUnreadable: return "桌面归属读取失败"
-        case .noSpaceMembership: return "不属于任何桌面"
+        case .nonzeroLayer: return lk("非普通层级")
+        case .attachedToParent: return lk("附属于其他窗口")
+        case .undersized: return lk("尺寸过小")
+        case .transparent: return lk("完全透明")
+        case .notDocumentWindow: return lk("弹出/辅助窗口")
+        case .orderedOut: return lk("已关闭或未显示")
+        case .membershipUnreadable: return lk("桌面归属读取失败")
+        case .noSpaceMembership: return lk("不属于任何桌面")
         }
     }
 }
@@ -126,9 +126,9 @@ public struct CaptureTraceEntry: Codable, Equatable {
         self.bundleID=bundleID; self.windowID=windowID; self.width=width; self.height=height; self.spaceSlot=spaceSlot; self.placement=placement; self.exclusion=exclusion; self.axSource=axSource; self.outcome=outcome
     }
     public var line: String {
-        let slot=spaceSlot.map{"桌面\($0)"} ?? placement
+        let slot=spaceSlot.map{lk("桌面%@", "\($0)")} ?? placement
         let source=axSource?.rawValue ?? "noAX"
-        let reason=exclusion.map{"；排除：\($0.label)"} ?? ""
+        let reason=exclusion.map{lk("；排除：%@", "\($0.label)")} ?? ""
         return "\(bundleID) #\(windowID) \(width)×\(height) \(slot) \(source) → \(outcome)\(reason)"
     }
 }

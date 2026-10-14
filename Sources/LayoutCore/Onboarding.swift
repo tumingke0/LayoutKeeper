@@ -6,7 +6,7 @@ import Foundation
 public enum OnboardingStep: Int, CaseIterable, Equatable {
     case permission, launchAtLogin, firstLayout
     public var title: String {
-        switch self { case .permission: return "权限"; case .launchAtLogin: return "开机自启"; case .firstLayout: return "保存第一份布局" }
+        switch self { case .permission: return lk("权限"); case .launchAtLogin: return lk("开机自启"); case .firstLayout: return lk("保存第一份布局") }
     }
 }
 public enum OnboardingReason: Equatable {
@@ -42,8 +42,8 @@ public struct OnboardingFlow: Equatable {
     public var canGoBack: Bool { index>0 && !finished }
     /// The permission step can always be passed (the app still works read-only); the button just says so.
     public var primaryTitle: String {
-        if step == .permission && !permissionGranted { return isLast ? "稍后再说" : "跳过这一步" }
-        return isLast ? "完成" : "下一步"
+        if step == .permission && !permissionGranted { return isLast ? lk("稍后再说") : lk("跳过这一步") }
+        return isLast ? lk("完成") : lk("下一步")
     }
     /// Feed the latest AXIsProcessTrusted result (polled ~1 s). Returns true exactly once, when access was just
     /// granted while the permission step is shown — the UI shows a check mark and then calls `advance()`.
@@ -60,7 +60,7 @@ public struct OnboardingFlow: Equatable {
     public mutating func skip() { finished=true; skipped=true }
     /// Completing or skipping both mean "don't show the full guide again"; missing permission still re-shows step 1.
     public var marksCompleted: Bool { finished }
-    public var stepLabel: String { "第 \(index+1) 步，共 \(steps.count) 步" }
+    public var stepLabel: String { lk("第 %@ 步，共 %@ 步", "\(index+1)", "\(steps.count)") }
 }
 
 public enum LaunchAtLoginStatus: Equatable {
@@ -69,8 +69,8 @@ public enum LaunchAtLoginStatus: Equatable {
     public var message: String? {
         switch self {
         case .enabled, .disabled: return nil
-        case .requiresApproval: return "需要在“系统设置 → 通用 → 登录项”里允许 LayoutKeeper。"
-        case .unavailable(let why): return "无法设置开机自启：\(why)"
+        case .requiresApproval: return lk("需要在“系统设置 → 通用 → 登录项”里允许 LayoutKeeper。")
+        case .unavailable(let why): return lk("无法设置开机自启：%@", "\(why)")
         }
     }
 }

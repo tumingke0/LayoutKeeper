@@ -8,12 +8,12 @@ public enum LayoutMode: String, CaseIterable, Codable {
     case perMonitor, sharedExternal
     public static let defaultMode=LayoutMode.perMonitor
     public static let preferenceKey="layoutMode"
-    public var title: String { self == .perMonitor ? "每块屏单独记" : "所有外接屏共用一套" }
+    public var title: String { self == .perMonitor ? lk("每块屏单独记") : lk("所有外接屏共用一套") }
 }
 
 extension MonitorIdentity {
     /// Virtual identity of the shared layout. Stored as `screens/shared-external.json` with the usual history and 版式.
-    public static let sharedExternal=MonitorIdentity(vendor:0x4C4B,model:0x5348,serial:1,name:"共用外接屏")
+    public static let sharedExternal=MonitorIdentity(vendor:0x4C4B,model:0x5348,serial:1,name:lk("共用外接屏"))
     public var isSharedExternal: Bool { vendor==0x4C4B && model==0x5348 && serial==1 }
     public static let sharedExternalKey="shared-external"
 }

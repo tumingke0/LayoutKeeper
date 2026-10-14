@@ -109,8 +109,8 @@ final class FixtureTest {
             guard captured.windows.count==1, captured.windows[0].ordinary, captured.windows[0].spaceIDs==[source.id],
                   let display=captured.displays.first(where:{$0.token==source.displayToken}) else { throw LayoutError.readbackUnavailable }
             let w=captured.windows[0]; original=w
-            let binding=DesktopBinding(label:"隔离测试",role:display.role,spaceID:source.id,snapshot:captured)
-            let (profile,issues)=try Planner.capture(location:"隔离实测",snapshot:captured,bindings:[binding])
+            let binding=DesktopBinding(label:lk("隔离测试"),role:display.role,spaceID:source.id,snapshot:captured)
+            let (profile,issues)=try Planner.capture(location:lk("隔离实测"),snapshot:captured,bindings:[binding])
             guard profile.windows.count==1,issues.isEmpty else { throw LayoutError.readbackUnavailable }
             test["savedOriginal"]=rect(w.frame); test["before"]=sample()
             let requested=Rect(w.frame.x+60,w.frame.y+40,w.frame.width+80,w.frame.height+50)
@@ -144,7 +144,7 @@ final class FixtureTest {
         report["axTest"]=test; persist()
     }
     func finish() {
-        model.message="已批准的真实隔离测试结束，证据：\(url.path)"
+        model.message=lk("已批准的真实隔离测试结束，证据：%@", "\(url.path)")
         fputs("Fixture integration report: \(url.path)\n",stderr)
         NSApplication.shared.terminate(nil)
     }

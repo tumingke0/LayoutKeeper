@@ -17,7 +17,7 @@ struct ControlledDisplay: Identifiable, Equatable {
     var ddcMax=100
     var volumeMax=100
     var badge: (String,Tone) {
-        switch method { case .builtIn: return ("内建",.neutral); case .ddc: return ("DDC",.success); case .software: return ("软件调暗",.warning) }
+        switch method { case .builtIn: return (lk("内建"),.neutral); case .ddc: return ("DDC",.success); case .software: return (lk("软件调暗"),.warning) }
     }
     static func == (a: ControlledDisplay,b: ControlledDisplay) -> Bool {
         a.id==b.id && a.name==b.name && a.method==b.method && a.brightness==b.brightness && a.volume==b.volume && a.muted==b.muted
@@ -64,7 +64,7 @@ final class DisplayControl: ObservableObject {
         return Array(ids.prefix(Int(n))).filter { CGDisplayIsActive($0) != 0 && CGDisplayMirrorsDisplay($0)==kCGNullDirectDisplay }
     }
     static func name(_ id: CGDirectDisplayID) -> String {
-        NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value==id }?.localizedName ?? (CGDisplayIsBuiltin(id) != 0 ? "内建显示屏" : "显示器")
+        NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value==id }?.localizedName ?? (CGDisplayIsBuiltin(id) != 0 ? lk("内建显示屏") : lk("显示器"))
     }
     static func key(_ id: CGDirectDisplayID) -> String { "\(CGDisplayVendorNumber(id))-\(CGDisplayModelNumber(id))-\(CGDisplaySerialNumber(id))" }
     var displayUnderMouse: ControlledDisplay? {
@@ -232,7 +232,7 @@ final class BrightnessHUDCenter {
     static let radius: CGFloat=22
     func show(_ d: ControlledDisplay,kind: BrightnessHUD.Kind) {
         let view=BrightnessHUD(name:d.name,percent:kind == .brightness ? d.brightness : (d.volume ?? 0),kind:kind,
-                               note:d.method == .software && kind == .brightness ? "软件调暗" : nil,liveGlass:true)
+                               note:d.method == .software && kind == .brightness ? lk("软件调暗") : nil,liveGlass:true)
         let p=panel ?? {
             let p=NSPanel(contentRect:.zero,styleMask:[.nonactivatingPanel,.borderless],backing:.buffered,defer:false)
             p.isFloatingPanel=true; p.level = .statusBar; p.hidesOnDeactivate=false; p.isReleasedWhenClosed=false
@@ -293,7 +293,7 @@ final class DisplayControlCoordinator {
         let want=KeyTakeover.active(enabled:control.brightnessKeys || control.volumeKeys,running:running) && trusted
         tap.wantsVolume=control.volumeKeys
         if want && !tap.isInstalled {
-            let err: String?=tap.install() ? nil : "无法监听亮度键（需要辅助功能权限）"
+            let err: String?=tap.install() ? nil : lk("无法监听亮度键（需要辅助功能权限）")
             if control.keyTapError != err { control.keyTapError=err }
         } else if !want && tap.isInstalled { tap.uninstall() }
         if control.keyTapActive != tap.isInstalled { control.keyTapActive=tap.isInstalled }
@@ -308,9 +308,9 @@ struct DisplayMenuSection: View {
     @ObservedObject var control: DisplayControl
     var body: some View {
         VStack(alignment:.leading,spacing:0) {
-            Text("显示器").font(.system(size:12,weight:.semibold)).foregroundStyle(.secondary).padding(.horizontal,14).padding(.top,4).padding(.bottom,2)
+            Text(lk("显示器")).font(.system(size:12,weight:.semibold)).foregroundStyle(.secondary).padding(.horizontal,14).padding(.top,4).padding(.bottom,2)
             if control.displays.isEmpty {
-                Text("正在读取显示器…").font(.system(size:12)).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,6)
+                Text(lk("正在读取显示器…")).font(.system(size:12)).foregroundStyle(.secondary).padding(.horizontal,14).padding(.vertical,6)
             }
             ForEach(Array(control.displays.enumerated()),id:\.element.id) { i,d in
                 VStack(alignment:.leading,spacing:6) {
@@ -343,35 +343,35 @@ struct DisplaySettings: View {
     @ObservedObject var control: DisplayControl
     var body: some View {
         Form {
-            Section("菜单栏") {
-                Toggle("在菜单中显示亮度和音量滑块",isOn:$control.showInMenu)
+            Section(lk("菜单栏")) {
+                Toggle(lk("在菜单中显示亮度和音量滑块"),isOn:$control.showInMenu)
             }
-            Section("键盘") {
-                Toggle("亮度键调节鼠标所在的屏幕",isOn:$control.brightnessKeys)
-                Toggle("音量键调节外接显示器音量（鼠标在支持 DDC 音量的外接屏上时）",isOn:$control.volumeKeys)
+            Section(lk("键盘")) {
+                Toggle(lk("亮度键调节鼠标所在的屏幕"),isOn:$control.brightnessKeys)
+                Toggle(lk("音量键调节外接显示器音量（鼠标在支持 DDC 音量的外接屏上时）"),isOn:$control.volumeKeys)
                 if !control.conflicts.isEmpty {
-                    Label("\(control.conflicts.joined(separator:"、")) 正在运行，暂不接管按键，避免一次按键调两次。退出它后会自动接管，不用重启。",systemImage:"exclamationmark.triangle.fill")
+                    Label(lk("%@ 正在运行，暂不接管按键，避免一次按键调两次。退出它后会自动接管，不用重启。", "\(control.conflicts.joined(separator:lk("、")))"),systemImage:"exclamationmark.triangle.fill")
                         .font(.caption).foregroundStyle(Tone.warning.color).fixedSize(horizontal:false,vertical:true)
                 } else if let e=control.keyTapError {
                     Label(e,systemImage:"exclamationmark.triangle.fill").font(.caption).foregroundStyle(Tone.warning.color)
                 } else {
-                    Text(control.keyTapActive ? "已接管：按亮度键会调节鼠标所在的屏幕并显示提示。⌥⇧ + 亮度键可微调。" : "未接管按键。")
+                    Text(control.keyTapActive ? lk("已接管：按亮度键会调节鼠标所在的屏幕并显示提示。⌥⇧ + 亮度键可微调。") : lk("未接管按键。"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Section("外接显示器") {
-                Toggle("DDC 不可用时使用软件调暗",isOn:$control.softwareFallback)
+            Section(lk("外接显示器")) {
+                Toggle(lk("DDC 不可用时使用软件调暗"),isOn:$control.softwareFallback)
                 ForEach(control.displays.filter{ $0.method != .builtIn }) { d in
                     let key=DisplayControl.key(d.id)
                     HStack {
                         Text(d.name); Pill(text:d.badge.0,tone:d.badge.1)
                         Spacer()
-                        Toggle("使用 DDC",isOn:Binding(get:{ !control.ddcDisabled.contains(key) },set:{ on in
+                        Toggle(lk("使用 DDC"),isOn:Binding(get:{ !control.ddcDisabled.contains(key) },set:{ on in
                             if on { control.ddcDisabled.remove(key) } else { control.ddcDisabled.insert(key) }
                         })).toggleStyle(.switch).controlSize(.small)
                     }
                 }
-                HStack { Text("显示器不响应或数值不对时，可以关掉它的 DDC 改用软件调暗。").font(.caption).foregroundStyle(.secondary); Spacer(); Button("重新检测") { control.refresh() }.controlSize(.small) }
+                HStack { Text(lk("显示器不响应或数值不对时，可以关掉它的 DDC 改用软件调暗。")).font(.caption).foregroundStyle(.secondary); Spacer(); Button(lk("重新检测")) { control.refresh() }.controlSize(.small) }
             }
         }.formStyle(.grouped)
     }

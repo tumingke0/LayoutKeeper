@@ -34,7 +34,7 @@ public enum SelfTestPlanner {
         }.sorted{$0.token<$1.token}
     }
 
-    public static func select(record: MonitorLayoutRecord, snapshot: Snapshot, displayToken: String, crossSpaceAvailable: Bool, crossSpaceUnavailableReason: String = "跨桌面后端在此系统构建上不可用") -> Selection {
+    public static func select(record: MonitorLayoutRecord, snapshot: Snapshot, displayToken: String, crossSpaceAvailable: Bool, crossSpaceUnavailableReason: String = lk("跨桌面后端在此系统构建上不可用")) -> Selection {
         var result=Selection()
         let eligible=eligibleWindows(record:record,snapshot:snapshot,displayToken:displayToken)
         let spaces=snapshot.spaces.filter{$0.displayToken==displayToken && $0.kind == .ordinary}
@@ -42,9 +42,9 @@ public enum SelfTestPlanner {
         // Same-Space: a window on the active ordinary Space, non-Chrome first (titles of browser windows change more often).
         let onActive=eligible.filter{active.contains($0.spaceIDs[0])}
         result.sameSpace=onActive.first{$0.selector.bundleID != preferredCrossSpaceBundle} ?? onActive.first
-        if result.sameSpace==nil { result.sameSpaceSkip="外接屏当前桌面上没有已采集、可唯一识别的普通窗口" }
+        if result.sameSpace==nil { result.sameSpaceSkip=lk("外接屏当前桌面上没有已采集、可唯一识别的普通窗口") }
         guard crossSpaceAvailable else { result.crossSpaceSkip=crossSpaceUnavailableReason; return result }
-        guard spaces.count>=2 else { result.crossSpaceSkip="外接屏只有一个普通桌面，无法测试跨桌面"; return result }
+        guard spaces.count>=2 else { result.crossSpaceSkip=lk("外接屏只有一个普通桌面，无法测试跨桌面"); return result }
         // Cross-Space: needs a known process start time; prefer Chrome and Spaces that are not shown, so nothing visibly jumps.
         let movable=eligible.filter{$0.processStartedAt != nil && $0.token != result.sameSpace?.token}
         let ordered=movable.sorted { a,b in
@@ -56,7 +56,7 @@ public enum SelfTestPlanner {
             let targets=spaces.filter{$0.id != source}.sorted { a,b in (a.active ? 1 : 0) < (b.active ? 1 : 0) }
             if let target=targets.first { result.crossSpace=CrossSpaceChoice(window:window,source:source,target:target.id); break }
         }
-        if result.crossSpace==nil { result.crossSpaceSkip=movable.isEmpty ? "没有可唯一识别且有进程启动时间的外接屏窗口" : "没有可用的目标普通桌面" }
+        if result.crossSpace==nil { result.crossSpaceSkip=movable.isEmpty ? lk("没有可唯一识别且有进程启动时间的外接屏窗口") : lk("没有可用的目标普通桌面") }
         return result
     }
 
@@ -91,7 +91,7 @@ public enum SelfTestPlanner {
     public static func restrict(_ plan: RestorePlan, toToken token: String) -> RestorePlan {
         var copy=plan
         for i in copy.entries.indices where copy.entries[i].window?.token != token {
-            if copy.entries[i].status == .ready || copy.entries[i].status == .blocked { copy.entries[i].status = .skipped; copy.entries[i].reason="自检未选中此窗口" }
+            if copy.entries[i].status == .ready || copy.entries[i].status == .blocked { copy.entries[i].status = .skipped; copy.entries[i].reason=lk("自检未选中此窗口") }
         }
         return copy
     }
@@ -207,21 +207,21 @@ public struct SelfTestReport: Codable, Equatable {
     public var text: String {
         func f(_ r: Rect?) -> String { r.map{"(\(Int($0.x)),\(Int($0.y)) \(Int($0.width))×\(Int($0.height)))"} ?? "—" }
         let formatter=ISO8601DateFormatter(); formatter.timeZone=TimeZone.current
-        var lines=["LayoutKeeper 一键自检报告","总体：\(overall.rawValue)\(cancelled ? "（用户中止）" : "")\(timedOut ? "（超时）" : "")",
-                   "开始：\(formatter.string(from:startedAt))  结束：\(finishedAt.map{formatter.string(from:$0)} ?? "—")",
-                   "LayoutKeeper \(appVersion) (\(appBuild))  macOS \(macOSVersion) (\(macOSBuild))  辅助功能：\(accessibilityTrusted)  跨桌面能力：\(crossSpaceStatus ?? (controlledBuildSupported ? "可用" : "不可用"))",
-                   "外接屏：\(externalMonitorName ?? "—")  已确认执行：\(confirmed)","",
-                   "采集：\(capture.scanMs) ms，可保存 \(capture.savedWindowCount) 个；\(capture.summary)"]
-        for slot in capture.slots { lines.append("  桌面 \(slot.slot)\(slot.active ? "（当前）" : "") space=\(slot.spaceID)：候选 \(slot.cgCandidates)，可保存 \(slot.captured)") }
+        var lines=[lk("LayoutKeeper 一键自检报告"),lk("总体：%@%@%@", "\(overall.rawValue)", "\(cancelled ? lk("（用户中止）") : "")", "\(timedOut ? lk("（超时）") : "")"),
+                   lk("开始：%@  结束：%@", "\(formatter.string(from:startedAt))", "\(finishedAt.map{formatter.string(from:$0)} ?? "—")"),
+                   lk("LayoutKeeper %@ (%@)  macOS %@ (%@)  辅助功能：%@  跨桌面能力：%@", "\(appVersion)", "\(appBuild)", "\(macOSVersion)", "\(macOSBuild)", "\(accessibilityTrusted)", "\(crossSpaceStatus ?? (controlledBuildSupported ? lk("可用") : lk("不可用")))"),
+                   lk("外接屏：%@  已确认执行：%@", "\(externalMonitorName ?? "—")", "\(confirmed)"),"",
+                   lk("采集：%@ ms，可保存 %@ 个；%@", "\(capture.scanMs)", "\(capture.savedWindowCount)", "\(capture.summary)")]
+        for slot in capture.slots { lines.append(lk("  桌面 %@%@ space=%@：候选 %@，可保存 %@", "\(slot.slot)", "\(slot.active ? lk("（当前）") : "")", "\(slot.spaceID)", "\(slot.cgCandidates)", "\(slot.captured)")) }
         for app in capture.applications {
             let sources=app.sources.keys.sorted().map{"\($0)=\(app.sources[$0] ?? 0)"}.joined(separator:",")
-            lines.append("  \(app.bundleID)：可保存 \(app.captured)，候选 \(app.cgCandidates)，未对应 \(app.notInAX)，其他桌面找回 \(app.remoteResolved)/\(app.remoteWanted)，未知 \(app.unresolved)；来源 \(sources)")
+            lines.append(lk("  %@：可保存 %@，候选 %@，未对应 %@，其他桌面找回 %@/%@，未知 %@；来源 %@", "\(app.bundleID)", "\(app.captured)", "\(app.cgCandidates)", "\(app.notInAX)", "\(app.remoteResolved)", "\(app.remoteWanted)", "\(app.unresolved)", "\(sources)"))
         }
-        if !capture.globalReasons.isEmpty { lines.append("  全局原因：\(capture.globalReasons.keys.sorted().map{"\($0)=\(capture.globalReasons[$0] ?? 0)"}.joined(separator:", "))") }
+        if !capture.globalReasons.isEmpty { lines.append(lk("  全局原因：%@", "\(capture.globalReasons.keys.sorted().map{"\($0)=\(capture.globalReasons[$0] ?? 0)"}.joined(separator:", "))")) }
         for step in steps {
-            lines.append("");lines.append("[\(step.status.rawValue)] \(step.name)（\(step.durationMs) ms）\(step.detail)")
-            for w in step.windows { lines.append("  窗口 \(w.bundleID) \(w.token) 标题#\(w.titleHash) space=\(w.spaceID.map(String.init) ?? "—") 桌面\(w.slot.map(String.init) ?? "—")") }
-            for r in step.readbacks { lines.append("  \(r.matches ? "✓" : "✗") \(r.label)：实际 \(f(r.frame)) space=\(r.spaceIDs?.map(String.init).joined(separator:",") ?? "—")；期望 \(f(r.expectedFrame)) space=\(r.expectedSpace.map(String.init) ?? "—")") }
+            lines.append("");lines.append(lk("[%@] %@（%@ ms）%@", "\(step.status.rawValue)", "\(step.name)", "\(step.durationMs)", "\(step.detail)"))
+            for w in step.windows { lines.append(lk("  窗口 %@ %@ 标题#%@ space=%@ 桌面%@", "\(w.bundleID)", "\(w.token)", "\(w.titleHash)", "\(w.spaceID.map(String.init) ?? "—")", "\(w.slot.map(String.init) ?? "—")")) }
+            for r in step.readbacks { lines.append(lk("  %@ %@：实际 %@ space=%@；期望 %@ space=%@", "\(r.matches ? "✓" : "✗")", "\(r.label)", "\(f(r.frame))", "\(r.spaceIDs?.map(String.init).joined(separator:",") ?? "—")", "\(f(r.expectedFrame))", "\(r.expectedSpace.map(String.init) ?? "—")")) }
             for m in step.messages { lines.append("  · \(m)") }
         }
         return lines.joined(separator:"\n")

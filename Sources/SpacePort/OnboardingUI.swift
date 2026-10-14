@@ -14,7 +14,7 @@ enum LoginItem {
         case .enabled: return .enabled
         case .requiresApproval: return .requiresApproval
         case .notRegistered: return .disabled
-        case .notFound: return .unavailable("系统找不到这个应用（请从 .app 启动）")
+        case .notFound: return .unavailable(lk("系统找不到这个应用（请从 .app 启动）"))
         @unknown default: return .disabled
         }
     }
@@ -73,8 +73,8 @@ final class OnboardingController: ObservableObject {
     func requestPermission() {
         ControlSettings.requestAccessibility()
         let opened=ControlSettings.openAccessibility(using:{ NSWorkspace.shared.open($0) })
-        let pane=ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? "设备控制和数据访问" : "辅助功能"
-        permissionNote=opened ? "在“隐私与安全性 → \(pane)”里打开 LayoutKeeper 的开关，这里会自动继续。" : "系统设置未能打开，请手动前往“隐私与安全性 → \(pane)”。"
+        let pane=ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? lk("设备控制和数据访问") : lk("辅助功能")
+        permissionNote=opened ? lk("在“隐私与安全性 → %@”里打开 LayoutKeeper 的开关，这里会自动继续。", "\(pane)") : lk("系统设置未能打开，请手动前往“隐私与安全性 → %@”。", "\(pane)")
     }
     func next() {
         if flow.step == .launchAtLogin { loginStatus=LoginItem.set(launchAtLogin) }
@@ -86,7 +86,7 @@ final class OnboardingController: ObservableObject {
     private func finish() { stopPolling(); onFinish(flow) }
     func saveNow() {
         switch model.saveExternalLayout() {
-        case .saved(let count,_): saveNote=("已保存 \(count) 个窗口。以后用菜单栏或 ⌃⌥⌘R 恢复。",true)
+        case .saved(let count,_): saveNote=(lk("已保存 %@ 个窗口。以后用菜单栏或 ⌃⌥⌘R 恢复。", "\(count)"),true)
         case .failed(let why): saveNote=(why,false)
         case .cancelled: break
         }
@@ -107,14 +107,14 @@ struct OnboardingView: View {
             HStack(spacing:10) {
                 Image(systemName:"rectangle.3.group.fill").font(.system(size:20,weight:.semibold))
                     .foregroundStyle(LinearGradient(colors:[Color.accentColor,Color.accentColor.opacity(0.6)],startPoint:.topLeading,endPoint:.bottomTrailing))
-                Text(flow.reason == .missingPermission ? "LayoutKeeper 需要权限" : "欢迎使用 LayoutKeeper").font(.system(size:20,weight:.semibold,design:.rounded))
+                Text(flow.reason == .missingPermission ? lk("LayoutKeeper 需要权限") : lk("欢迎使用 LayoutKeeper")).font(.system(size:20,weight:.semibold,design:.rounded))
                 Spacer()
                 if flow.steps.count>1 { progress }
             }
             content.frame(maxWidth:.infinity,minHeight:200,alignment:.topLeading).padding(20).card()
             HStack {
-                if flow.canGoBack { Button("上一步") { controller.back() } }
-                Button(flow.reason == .missingPermission ? "以后再说" : "跳过引导") { controller.skip() }.buttonStyle(.link)
+                if flow.canGoBack { Button(lk("上一步")) { controller.back() } }
+                Button(flow.reason == .missingPermission ? lk("以后再说") : lk("跳过引导")) { controller.skip() }.buttonStyle(.link)
                 Spacer()
                 Text(flow.stepLabel).font(.caption).foregroundStyle(.secondary)
                 if flow.step == .permission && !flow.permissionGranted {
@@ -155,31 +155,30 @@ struct OnboardingView: View {
     }
     private var permission: some View {
         VStack(alignment:.leading,spacing:16) {
-            header("hand.raised.fill","允许 LayoutKeeper 读取和移动窗口",
-                   "macOS 的“辅助功能”权限用于读取窗口的位置、大小和标题，并把窗口放回原处。LayoutKeeper 只在本机工作，不联网，不读取窗口内容。")
+            header("hand.raised.fill",lk("允许 LayoutKeeper 读取和移动窗口"),
+                   lk("macOS 的“辅助功能”权限用于读取窗口的位置、大小和标题，并把窗口放回原处。布局只保存在本机，不读取窗口内容；唯一的联网是可关闭的 GitHub 更新检查。"))
             if flow.permissionGranted {
-                Label(controller.justGranted ? "已获得权限，继续下一步…" : "已获得权限",systemImage:"checkmark.circle.fill")
+                Label(controller.justGranted ? lk("已获得权限，继续下一步…") : lk("已获得权限"),systemImage:"checkmark.circle.fill")
                     .font(.body.weight(.medium)).foregroundStyle(Tone.success.color)
             } else {
                 HStack(spacing:12) {
-                    Button { controller.requestPermission() } label: { Label("打开系统设置",systemImage:"gearshape") }.primaryButton()
+                    Button { controller.requestPermission() } label: { Label(lk("打开系统设置"),systemImage:"gearshape") }.primaryButton()
                     ProgressView().controlSize(.small)
-                    Text("等待授权…").font(.callout).foregroundStyle(.secondary)
+                    Text(lk("等待授权…")).font(.callout).foregroundStyle(.secondary)
                 }
-                Text(controller.permissionNote.isEmpty ? "点按钮后，系统会弹出提示并打开“隐私与安全性”。打开 LayoutKeeper 的开关后，这里会自动继续。" : controller.permissionNote)
+                Text(controller.permissionNote.isEmpty ? lk("点按钮后，系统会弹出提示并打开“隐私与安全性”。打开 LayoutKeeper 的开关后，这里会自动继续。") : controller.permissionNote)
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
-                Text("每次重新编译（ad-hoc 签名）后，系统可能需要你重新添加一次。").font(.caption).foregroundStyle(.tertiary)
             }
         }
     }
     private var login: some View {
         VStack(alignment:.leading,spacing:16) {
-            header("power","登录时自动打开","LayoutKeeper 常驻菜单栏，接上外接屏时才能及时恢复布局。可以随时在“设置 → 通用”里关闭。")
-            Toggle("登录 Mac 时打开 LayoutKeeper",isOn:$controller.launchAtLogin).toggleStyle(.switch)
+            header("power",lk("登录时自动打开"),lk("LayoutKeeper 常驻菜单栏，接上外接屏时才能及时恢复布局。可以随时在“设置 → 通用”里关闭。"))
+            Toggle(lk("登录 Mac 时打开 LayoutKeeper"),isOn:$controller.launchAtLogin).toggleStyle(.switch)
             if let message=controller.loginStatus?.message {
                 HStack {
                     Label(message,systemImage:"exclamationmark.triangle.fill").font(.caption).foregroundStyle(Tone.warning.color)
-                    if controller.loginStatus == .requiresApproval { Button("打开登录项") { LoginItem.openLoginItemsSettings() }.controlSize(.small) }
+                    if controller.loginStatus == .requiresApproval { Button(lk("打开登录项")) { LoginItem.openLoginItemsSettings() }.controlSize(.small) }
                 }
             }
         }
@@ -187,26 +186,26 @@ struct OnboardingView: View {
     private var firstLayout: some View {
         VStack(alignment:.leading,spacing:16) {
             if let monitor=model.currentExternalMonitor {
-                header("square.and.arrow.down","保存第一份布局",
-                       "把「\(model.monitorPreferences.displayName(monitor.identity))」上各个桌面的窗口摆好，然后保存。以后接上这块屏幕，就能一键恢复（菜单栏或 ⌃⌥⌘R）。")
+                header("square.and.arrow.down",lk("保存第一份布局"),
+                       lk("把「%@」上各个桌面的窗口摆好，然后保存。以后接上这块屏幕，就能一键恢复（菜单栏或 ⌃⌥⌘R）。", "\(model.monitorPreferences.displayName(monitor.identity))"))
                 if let note=controller.saveNote {
                     Label(note.text,systemImage:note.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .font(.callout).foregroundStyle(note.ok ? Tone.success.color : Tone.warning.color).fixedSize(horizontal:false,vertical:true)
                 }
                 if controller.saveNote?.ok != true {
                     HStack(spacing:12) {
-                        Button { controller.saveNow() } label: { Label("现在保存",systemImage:"square.and.arrow.down") }
+                        Button { controller.saveNow() } label: { Label(lk("现在保存"),systemImage:"square.and.arrow.down") }
                             .primaryButton().disabled(!model.trusted || model.busy)
-                        if !model.trusted { Text("需要先获得权限").font(.caption).foregroundStyle(.secondary) }
-                        else { Text("也可以以后用菜单栏或 ⌃⌥⌘S 保存").font(.caption).foregroundStyle(.secondary) }
+                        if !model.trusted { Text(lk("需要先获得权限")).font(.caption).foregroundStyle(.secondary) }
+                        else { Text(lk("也可以以后用菜单栏或 ⌃⌥⌘S 保存")).font(.caption).foregroundStyle(.secondary) }
                     }
                 }
             } else {
-                header("display","接上外接屏后保存","现在没有连接外接屏。LayoutKeeper 按屏幕记住布局，接上后摆好窗口，用菜单栏“保存当前布局”或 ⌃⌥⌘S 保存。")
+                header("display",lk("接上外接屏后保存"),lk("现在没有连接外接屏。LayoutKeeper 按屏幕记住布局，接上后摆好窗口，用菜单栏“保存当前布局”或 ⌃⌥⌘S 保存。"))
                 if controller.reminderSet {
-                    Label("好的，下次接上没有保存过布局的外接屏时会提醒你",systemImage:"bell.badge").font(.callout).foregroundStyle(Tone.success.color)
+                    Label(lk("好的，下次接上没有保存过布局的外接屏时会提醒你"),systemImage:"bell.badge").font(.callout).foregroundStyle(Tone.success.color)
                 } else {
-                    Button { controller.remindLater() } label: { Label("下次接上外接屏时提醒我",systemImage:"bell") }.primaryButton()
+                    Button { controller.remindLater() } label: { Label(lk("下次接上外接屏时提醒我"),systemImage:"bell") }.primaryButton()
                 }
             }
         }

@@ -20,11 +20,11 @@ public enum AutoSpaces {
         case disabled, fullScreenActive, tooMany(Int), nothingToDo, separateSpacesOff
         public var description: String {
             switch self {
-            case .disabled: return "开关未打开"
-            case .fullScreenActive: return "有全屏或分屏 App，暂不自动操作桌面"
-            case .tooMany(let n): return "需要处理 \(n) 个桌面，超过单次上限 \(maxPerRun)"
-            case .nothingToDo: return "无需操作"
-            case .separateSpacesOff: return "「显示器具有单独的空间」已关闭"
+            case .disabled: return lk("开关未打开")
+            case .fullScreenActive: return lk("有全屏或分屏 App，暂不自动操作桌面")
+            case .tooMany(let n): return lk("需要处理 %@ 个桌面，超过单次上限 %@", "\(n)", "\(maxPerRun)")
+            case .nothingToDo: return lk("无需操作")
+            case .separateSpacesOff: return lk("「显示器具有单独的空间」已关闭")
             }
         }
     }

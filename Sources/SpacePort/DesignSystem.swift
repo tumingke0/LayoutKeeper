@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 LayoutKeeper contributors
+import LayoutCore
 import AppKit
 import SwiftUI
 
@@ -105,7 +106,7 @@ struct SpacesMiniMap: View {
                             }
                         }.padding(4)
                     }.frame(width:tileWidth,height:tileWidth*0.62)
-                    Text("桌面 \(slot.id)").font(.caption2).foregroundStyle(.secondary)
+                    Text(lk("桌面 %@", "\(slot.id)")).font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }

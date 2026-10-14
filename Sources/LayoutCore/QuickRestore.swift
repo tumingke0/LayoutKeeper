@@ -79,11 +79,11 @@ public enum WindowMatcher {
         let pool=s.windows.filter{$0.selector.bundleID==saved.selector.bundleID && eligible($0,s)}
         if let choice {
             guard let picked=pool.first(where:{$0.token==choice}) else {
-                return WindowMatch(verdict:.needsConfirmation,kind:.none,chosen:nil,candidates:pool,reason:"之前选择的窗口已不存在，请重新选择")
+                return WindowMatch(verdict:.needsConfirmation,kind:.none,chosen:nil,candidates:pool,reason:lk("之前选择的窗口已不存在，请重新选择"))
             }
-            return WindowMatch(verdict:.unique,kind:.userChoice,chosen:picked,candidates:pool,reason:"你选择的窗口")
+            return WindowMatch(verdict:.unique,kind:.userChoice,chosen:picked,candidates:pool,reason:lk("你选择的窗口"))
         }
-        guard !pool.isEmpty else { return WindowMatch(verdict:.missing,kind:.none,chosen:nil,candidates:[],reason:"没有找到这个应用的可恢复窗口（不会启动应用）") }
+        guard !pool.isEmpty else { return WindowMatch(verdict:.missing,kind:.none,chosen:nil,candidates:[],reason:lk("没有找到这个应用的可恢复窗口（不会启动应用）")) }
         let strongs=pool.compactMap{w in strong(saved,w).map{(w,$0)}}
         func narrowed(_ list: [ObservedWindow]) -> [ObservedWindow] {
             var list=list
@@ -98,15 +98,15 @@ public enum WindowMatcher {
         if strongs.count==1 { return WindowMatch(verdict:.unique,kind:strongs[0].1,chosen:strongs[0].0,candidates:pool,reason:"") }
         if strongs.count>1 {
             let left=narrowed(strongs.map(\.0))
-            if left.count==1 { return WindowMatch(verdict:.unique,kind:.tieBreak,chosen:left[0],candidates:pool,reason:"同名窗口有多个，按保存时的桌面和位置选中一个") }
-            return WindowMatch(verdict:.needsConfirmation,kind:.none,chosen:nil,candidates:pool,reason:"有 \(strongs.count) 个同名窗口，无法确定是哪一个，请选择")
+            if left.count==1 { return WindowMatch(verdict:.unique,kind:.tieBreak,chosen:left[0],candidates:pool,reason:lk("同名窗口有多个，按保存时的桌面和位置选中一个")) }
+            return WindowMatch(verdict:.needsConfirmation,kind:.none,chosen:nil,candidates:pool,reason:lk("有 %@ 个同名窗口，无法确定是哪一个，请选择", "\(strongs.count)"))
         }
         // No title/document match.
         if BrowserTitles.isBrowser(saved.selector.bundleID),let index=saved.desktopIndex {
             let placed=pool.filter{slot(of:$0,displayToken:displayToken,in:s)==index && geometryMatches(saved,$0,s)}
-            if placed.count==1 { return WindowMatch(verdict:.needsConfirmation,kind:.slotGeometry,chosen:placed[0],candidates:pool,reason:"标题已变化；同一桌面同一位置有一个浏览器窗口，已预选，请确认") }
+            if placed.count==1 { return WindowMatch(verdict:.needsConfirmation,kind:.slotGeometry,chosen:placed[0],candidates:pool,reason:lk("标题已变化；同一桌面同一位置有一个浏览器窗口，已预选，请确认")) }
         }
-        return WindowMatch(verdict:.needsConfirmation,kind:.none,chosen:nil,candidates:pool,reason:"标题已变化，找到 \(pool.count) 个同应用窗口，请选择或跳过")
+        return WindowMatch(verdict:.needsConfirmation,kind:.none,chosen:nil,candidates:pool,reason:lk("标题已变化，找到 %@ 个同应用窗口，请选择或跳过", "\(pool.count)"))
     }
 }
 
@@ -114,12 +114,12 @@ public enum QuickChoice: Equatable { case window(String), skip }
 public enum QuickItemState: String, Codable { case ready, needsConfirmation, alreadyInPlace, blocked, missing, skippedByUser
     public var label: String {
         switch self {
-        case .ready: return "将恢复"
-        case .needsConfirmation: return "需要确认"
-        case .alreadyInPlace: return "已在原位"
-        case .blocked: return "无法恢复"
-        case .missing: return "未找到"
-        case .skippedByUser: return "已跳过"
+        case .ready: return lk("将恢复")
+        case .needsConfirmation: return lk("需要确认")
+        case .alreadyInPlace: return lk("已在原位")
+        case .blocked: return lk("无法恢复")
+        case .missing: return lk("未找到")
+        case .skippedByUser: return lk("已跳过")
         }
     }
 }
@@ -151,8 +151,8 @@ public struct QuickRestoreItem: Equatable, Identifiable {
         switch state {
         case .ready:
             var parts=[String]()
-            if crossDisplay { parts.append("从另一块屏幕移回") } else if moveSpace { parts.append(overflowFrom != nil ? "暂放到最后一个桌面 \(targetSlot ?? 0)" : "移到桌面 \(targetSlot ?? 0)") }
-            if resize { parts.append("调整位置和大小") }
+            if crossDisplay { parts.append(lk("从另一块屏幕移回")) } else if moveSpace { parts.append(overflowFrom != nil ? lk("暂放到最后一个桌面 %@", "\(targetSlot ?? 0)") : lk("移到桌面 %@", "\(targetSlot ?? 0)")) }
+            if resize { parts.append(lk("调整位置和大小")) }
             return parts.joined(separator:" + ")
         default: return state.label
         }
@@ -170,11 +170,11 @@ public struct QuickRestorePlan {
     public var readyCount: Int { items.filter{$0.state == .ready}.count }
     public var summary: String {
         let c={(s: QuickItemState) in self.items.filter{$0.state==s}.count}
-        var parts=["将恢复 \(c(.ready))","已在原位 \(c(.alreadyInPlace))"]
-        if c(.needsConfirmation)>0 { parts.append("需要确认 \(c(.needsConfirmation))") }
-        if c(.blocked)>0 { parts.append("无法恢复 \(c(.blocked))") }
-        if c(.missing)>0 { parts.append("未找到 \(c(.missing))") }
-        if c(.skippedByUser)>0 { parts.append("已跳过 \(c(.skippedByUser))") }
+        var parts=[lk("将恢复 %@", "\(c(.ready))"),lk("已在原位 %@", "\(c(.alreadyInPlace))")]
+        if c(.needsConfirmation)>0 { parts.append(lk("需要确认 %@", "\(c(.needsConfirmation))")) }
+        if c(.blocked)>0 { parts.append(lk("无法恢复 %@", "\(c(.blocked))")) }
+        if c(.missing)>0 { parts.append(lk("未找到 %@", "\(c(.missing))")) }
+        if c(.skippedByUser)>0 { parts.append(lk("已跳过 %@", "\(c(.skippedByUser))")) }
         return parts.joined(separator:" · ")
     }
     /// Choices that freeze the preview: ready windows stay pinned to their previewed token; everything else is skipped.
@@ -184,9 +184,9 @@ public struct QuickRestorePlan {
 }
 
 public enum QuickRestorePlanner {
-    public static let oldRecordReason="旧版布局缺少桌面顺序，请先重新保存一次此屏布局"
+    public static let oldRecordReason=lk("旧版布局缺少桌面顺序，请先重新保存一次此屏布局")
     public static func plan(record: MonitorLayoutRecord, monitor: MonitorIdentity, displayToken: String, snapshot s: Snapshot,
-                            choices: [Int:QuickChoice] = [:], allowCrossSpace: Bool, crossSpaceBlockReason: String = "当前系统版本未验证跨桌面移动",
+                            choices: [Int:QuickChoice] = [:], allowCrossSpace: Bool, crossSpaceBlockReason: String = lk("当前系统版本未验证跨桌面移动"),
                             overflowToLast: Bool = false) throws -> QuickRestorePlan {
         try record.validate()
         guard record.monitor.key==monitor.key,let display=s.displays.first(where:{$0.token==displayToken && $0.role == .external}),display.visible.valid else { throw LayoutError.unsupported }
@@ -195,7 +195,7 @@ public enum QuickRestorePlanner {
         let needed=record.profile.windows.compactMap(\.desktopIndex).max() ?? 0
         for (index,saved) in record.profile.windows.enumerated() {
             var item=QuickRestoreItem(savedIndex:index,bundleID:saved.selector.bundleID,savedTitle:saved.selector.title,currentTitle:nil,currentSlot:nil,targetSlot:saved.desktopIndex,chosenToken:nil,candidates:[],matchKind:.none,state:.missing,reason:"")
-            if choices[index] == .skip { item.state = .skippedByUser; item.reason="本次不恢复此窗口"; items.append(item); continue }
+            if choices[index] == .skip { item.state = .skippedByUser; item.reason=lk("本次不恢复此窗口"); items.append(item); continue }
             var choiceToken: String?
             if case .window(let token)? = choices[index] { choiceToken=token }
             let m=WindowMatcher.match(saved,displayToken:displayToken,snapshot:s,choice:choiceToken)
@@ -212,10 +212,10 @@ public enum QuickRestorePlanner {
             var target=savedTarget
             if savedTarget>ordinary.count {
                 guard overflowToLast,let last=SharedLayout.targetSlot(saved:savedTarget,available:ordinary.count) else {
-                    item.state = .blocked; item.reason="保存时在桌面 \(savedTarget)，现在这块屏只有 \(ordinary.count) 个桌面：请先在调度中心新建桌面"; items.append(item); continue
+                    item.state = .blocked; item.reason=lk("保存时在桌面 %@，现在这块屏只有 %@ 个桌面：请先在调度中心新建桌面", "\(savedTarget)", "\(ordinary.count)"); items.append(item); continue
                 }
                 target=last; item.targetSlot=last; item.overflowFrom=savedTarget
-                item.reason="保存时在桌面 \(savedTarget)，现在只有 \(ordinary.count) 个桌面，先放到最后一个桌面；补齐桌面后会自动再恢复"
+                item.reason=lk("保存时在桌面 %@，现在只有 %@ 个桌面，先放到最后一个桌面；补齐桌面后会自动再恢复", "\(savedTarget)", "\(ordinary.count)")
             }
             let targetSpace=ordinary[target-1].id
             let frame=saved.normalizedFrame.fitted(in:display.visible)
@@ -223,13 +223,13 @@ public enum QuickRestorePlanner {
             item.moveSpace=w.spaceIDs != [targetSpace]
             item.resize = !w.frame.near(frame)
             item.crossDisplay=item.currentSlot==nil
-            if !item.moveSpace && !item.resize { item.state = .alreadyInPlace; if item.overflowFrom == nil { item.reason="已在保存的桌面和位置" }; items.append(item); continue }
+            if !item.moveSpace && !item.resize { item.state = .alreadyInPlace; if item.overflowFrom == nil { item.reason=lk("已在保存的桌面和位置") }; items.append(item); continue }
             if item.moveSpace && !allowCrossSpace { item.state = .blocked; item.reason=crossSpaceBlockReason; items.append(item); continue }
             if item.moveSpace,let why=MoveScope.problem(window:w,targetSpace:targetSpace,targetDisplay:displayToken,snapshot:s) {
-                item.state = .blocked; item.reason="无法跨桌面移动：\(why)"; items.append(item); continue
+                item.state = .blocked; item.reason=lk("无法跨桌面移动：%@", "\(why)"); items.append(item); continue
             }
             item.state = .ready
-            if item.reason.isEmpty { item.reason=item.crossDisplay ? "从另一块屏幕移回（自动模式不会执行这一类）" : "" }
+            if item.reason.isEmpty { item.reason=item.crossDisplay ? lk("从另一块屏幕移回（自动模式不会执行这一类）") : "" }
             pinned[index]=m.kind == .userChoice || m.kind == .tieBreak || s.windows.filter{w.selector.matches($0.selector)}.count != 1
             items.append(item)
         }
@@ -237,7 +237,7 @@ public enum QuickRestorePlanner {
         let claimed=items.filter{[.ready,.alreadyInPlace,.blocked].contains($0.state)}.compactMap(\.chosenToken)
         for i in items.indices where [.ready,.alreadyInPlace,.blocked].contains(items[i].state) {
             if let token=items[i].chosenToken,claimed.filter({$0==token}).count>1 {
-                items[i].state = .needsConfirmation; items[i].reason="多个保存记录对应到同一个窗口，请逐个选择"
+                items[i].state = .needsConfirmation; items[i].reason=lk("多个保存记录对应到同一个窗口，请逐个选择")
             }
         }
         var entrySaved=[Int]()

@@ -72,17 +72,17 @@ final class ReconnectCoordinator {
     /// turns it off. The code stays; set this to true to bring it back.
     static let choicePromptEnabled=false
     static func reconnectNotice(name: String,restore: @escaping () -> Void) -> Toast {
-        Toast(icon:"display.2",tone:.info,title:"接上了「\(name)」",detail:"布局和保存的不一样时，点「恢复布局」；只移动能唯一确认的窗口，可以撤销。想接上就自动恢复，可在菜单「接上屏幕时」选「自动恢复」。",
-              actions:[Toast.Action(title:"恢复布局",run:restore)],duration:15)
+        Toast(icon:"display.2",tone:.info,title:lk("接上了「%@」", "\(name)"),detail:lk("布局和保存的不一样时，点「恢复布局」；只移动能唯一确认的窗口，可以撤销。想接上就自动恢复，可在菜单「接上屏幕时」选「自动恢复」。"),
+              actions:[Toast.Action(title:lk("恢复布局"),run:restore)],duration:15)
     }
     static func askOncePrompt(name: String,automatic: @escaping () -> Void,askEachTime: @escaping () -> Void,never: @escaping () -> Void) -> ReconnectPrompt {
-        ReconnectPrompt(icon:"sparkles.rectangle.stack",title:"以后接上「\(name)」时自动恢复布局？",
-            message:"只移动能唯一确认的窗口，完成后可以撤销。随时可在菜单「接上屏幕时」修改。",
-            actions:[PromptAction(title:"自动恢复",style:.primary,run:automatic),PromptAction(title:"每次先问",style:.normal,run:askEachTime),PromptAction(title:"不要",style:.cancel,run:never)])
+        ReconnectPrompt(icon:"sparkles.rectangle.stack",title:lk("以后接上「%@」时自动恢复布局？", "\(name)"),
+            message:lk("只移动能唯一确认的窗口，完成后可以撤销。随时可在菜单「接上屏幕时」修改。"),
+            actions:[PromptAction(title:lk("自动恢复"),style:.primary,run:automatic),PromptAction(title:lk("每次先问"),style:.normal,run:askEachTime),PromptAction(title:lk("不要"),style:.cancel,run:never)])
     }
     static func askPrompt(name: String,restore: @escaping () -> Void,preview: @escaping () -> Void) -> ReconnectPrompt {
-        ReconnectPrompt(icon:"display.2",title:"检测到「\(name)」",message:"恢复这块屏幕保存的窗口布局？只移动能唯一确认的窗口，可以撤销。",
-            actions:[PromptAction(title:"恢复布局",style:.primary,run:restore),PromptAction(title:"这次不用",style:.cancel) {},PromptAction(title:"先预览…",style:.link,run:preview)])
+        ReconnectPrompt(icon:"display.2",title:lk("检测到「%@」", "\(name)"),message:lk("恢复这块屏幕保存的窗口布局？只移动能唯一确认的窗口，可以撤销。"),
+            actions:[PromptAction(title:lk("恢复布局"),style:.primary,run:restore),PromptAction(title:lk("这次不用"),style:.cancel) {},PromptAction(title:lk("先预览…"),style:.link,run:preview)])
     }
     private func remember(_ answer: AskOnceAnswer,_ monitor: ConnectedMonitor) {
         model.monitorPreferences.setRestore(answer.mode,for:monitor.identity.key,seenName:monitor.identity.name)

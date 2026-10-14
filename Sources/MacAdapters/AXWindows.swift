@@ -47,7 +47,7 @@ public final class AXWindows: WindowBackend {
     }
     private func optionalAttribute(_ element: AXUIElement, _ key: String, token: String) -> CFTypeRef? {
         do { return try attribute(element,key) }
-        catch {recordIssue("\(token)：\(error)");if let bundle=handles[token]?.bundleID {recordAXError(error,bundle)};return nil}
+        catch {recordIssue(lk("%@：%@", "\(token)", "\(error)"));if let bundle=handles[token]?.bundleID {recordAXError(error,bundle)};return nil}
     }
     private typealias GetWindowFunction = @convention(c) (AXUIElement, UnsafeMutablePointer<UInt32>) -> Int32
     private static let getWindowFunction: GetWindowFunction? = {
@@ -84,7 +84,7 @@ public final class AXWindows: WindowBackend {
     /// Shared validation for every discovery source: CG ownership must match the AX pid exactly once.
     @discardableResult
     private func register(_ element: AXUIElement, id: UInt32, source: AXWindowSource, app: NSRunningApplication, bundle: String) -> Bool {
-        guard latestCaptureReport.noteWindowID(bundleID:bundle,axPID:app.processIdentifier,cgOwners:Array(cgOwners[id] ?? [])) else{recordIssue("\(bundle)：CG 窗口归属未确认");return false}
+        guard latestCaptureReport.noteWindowID(bundleID:bundle,axPID:app.processIdentifier,cgOwners:Array(cgOwners[id] ?? [])) else{recordIssue(lk("%@：CG 窗口归属未确认", "\(bundle)"));return false}
         let token="\(app.processIdentifier):\(id)"
         guard handles[token]==nil else{exclude(.duplicateWindowID,bundle);return false}
         axWindowIDs[app.processIdentifier,default:[]].insert(id)
@@ -118,20 +118,20 @@ public final class AXWindows: WindowBackend {
             if app.launchDate==nil {count(.processLaunchDateMissing,bundle)}
             let application=AXUIElementCreateApplication(app.processIdentifier)
             let timeout=AXUIElementSetMessagingTimeout(application,0.25)
-            if timeout != .success {let error=AXFailure(operation:"AXMessagingTimeout",code:timeout.rawValue);exclude(.axTimeoutFailure,bundle,error:error);recordIssue("\(bundle)：\(error)");continue}
+            if timeout != .success {let error=AXFailure(operation:"AXMessagingTimeout",code:timeout.rawValue);exclude(.axTimeoutFailure,bundle,error:error);recordIssue(lk("%@：%@", "\(bundle)", "\(error)"));continue}
             var gathered=[(id:UInt32?,value:(AXUIElement,AXWindowSource))]()
             var appUnresponsive=false
             do {
                 let windows=try readElements(application,kAXWindowsAttribute,bundle:bundle)
                 latestCaptureReport.increment(.axEnumerated,bundleID:bundle,by:windows.count)
                 count(.axWindowsListed,bundle)
-                if windows.count>100 {latestCaptureReport.exclude(.axEnumerationLimit,bundleID:bundle,by:windows.count-100);issues.append("\(bundle)：只读取前 100 个可枚举窗口，本次不是完整采集")}
+                if windows.count>100 {latestCaptureReport.exclude(.axEnumerationLimit,bundleID:bundle,by:windows.count-100);issues.append(lk("%@：只读取前 100 个可枚举窗口，本次不是完整采集", "\(bundle)"))}
                 for element in windows.prefix(100) {gathered.append((nil,(element,.windowsList)))}
             } catch is AXReadTypeError {
-                exclude(.axEnumerationType,bundle);recordIssue("\(bundle)：AXWindows 返回的值类型不正确")
+                exclude(.axEnumerationType,bundle);recordIssue(lk("%@：AXWindows 返回的值类型不正确", "\(bundle)"))
             } catch {
                 // A failed read is unknown, not "no windows"; still try the focused/main window below.
-                exclude(.axEnumerationFailure,bundle,error:error);recordIssue("\(bundle)：\(error)")
+                exclude(.axEnumerationFailure,bundle,error:error);recordIssue(lk("%@：%@", "\(bundle)", "\(error)"))
                 if let failure=error as? AXFailure, failure.code==AXError.cannotComplete.rawValue {appUnresponsive=true}
             }
             // Focused and main window are not limited to the visible Spaces.
@@ -145,12 +145,12 @@ public final class AXWindows: WindowBackend {
                 if inspectionExpired(){break}
                 let element=item.value.0
                 let timeout=AXUIElementSetMessagingTimeout(element,0.25)
-                if timeout != .success {let error=AXFailure(operation:"AXMessagingTimeout",code:timeout.rawValue);exclude(.axTimeoutFailure,bundle,error:error);recordIssue("\(bundle)：\(error)");continue}
+                if timeout != .success {let error=AXFailure(operation:"AXMessagingTimeout",code:timeout.rawValue);exclude(.axTimeoutFailure,bundle,error:error);recordIssue(lk("%@：%@", "\(bundle)", "\(error)"));continue}
                 do { withIDs.append((try cgID(element),item.value)) }
                 catch {
                     // Focused/main are only extra sources; Finder's list also carries a desktop element with window ID 0.
                     let finderDesktop=bundle=="com.apple.finder" && (error as? LayoutError) == .readbackUnavailable
-                    if item.value.1 == .windowsList && !finderDesktop {exclude(.windowIDFailure,bundle,error:error);recordIssue("\(bundle)：\(error)")}
+                    if item.value.1 == .windowsList && !finderDesktop {exclude(.windowIDFailure,bundle,error:error);recordIssue(lk("%@：%@", "\(bundle)", "\(error)"))}
                 }
             }
             let unique=WindowCandidateRules.uniqueByWindowID(withIDs)
@@ -184,14 +184,14 @@ public final class AXWindows: WindowBackend {
                 // Not found within the budget: unknown, never reported as closed.
                 for id in result.unresolved {remoteUnresolved[id] = .remoteTokenUnresolved}
                 latestCaptureReport.exclude(.remoteTokenUnresolved,bundleID:bundle,by:result.unresolved.count)
-                recordIssue("\(bundle)：\(result.unresolved.count) 个其他桌面窗口未在时限内取到（\(result.stop.rawValue)），状态未知")
+                recordIssue(lk("%@：%@ 个其他桌面窗口未在时限内取到（%@），状态未知", "\(bundle)", "\(result.unresolved.count)", "\(result.stop.rawValue)"))
                 if result.stop == .timeBudget || result.stop == .deadline {latestCaptureReport.globalReasons["remoteTokenBudgetExhausted",default:0]+=1}
             }
         }
         let captured:Snapshot
         do{captured=try snapshot()}catch{latestCaptureReport.globalReasons["snapshotUnavailable"]=1;throw error}
         collectCGCoverage(snapshot:captured,apps:apps,selectedDisplayToken:selectedDisplayToken)
-        if captured.windows.count<handles.count { issues.append("\(handles.count-captured.windows.count) 个已枚举窗口无法回读，未保存其布局") }
+        if captured.windows.count<handles.count { issues.append(lk("%@ 个已枚举窗口无法回读，未保存其布局", "\(handles.count-captured.windows.count)")) }
         return captured
     }
     /// Fills trace outcomes from LayoutCore decisions keyed by window token. Runtime only.
@@ -243,8 +243,8 @@ public final class AXWindows: WindowBackend {
             if inspectionExpired(){break}
             do {
                 if let window=try readWindow(token:token) {windows.append(window);if let bundle=handles[token]?.bundleID {count(.axReadable,bundle)}}
-                else {if let bundle=handles[token]?.bundleID {exclude(.windowReadFailure,bundle)};recordIssue("\(token)：窗口已关闭、所属进程不可用或窗口引用已改变")}
-            } catch {if let bundle=handles[token]?.bundleID {exclude(.windowReadFailure,bundle,error:error)};recordIssue("\(token)：窗口回读失败：\(error)")}
+                else {if let bundle=handles[token]?.bundleID {exclude(.windowReadFailure,bundle)};recordIssue(lk("%@：窗口已关闭、所属进程不可用或窗口引用已改变", "\(token)"))}
+            } catch {if let bundle=handles[token]?.bundleID {exclude(.windowReadFailure,bundle,error:error)};recordIssue(lk("%@：窗口回读失败：%@", "\(token)", "\(error)"))}
         }
         return Snapshot(session:session,topology:MacEnvironment.topology(displays:displays,spaces:found),displays:displays,spaces:found,windows:windows)
     }

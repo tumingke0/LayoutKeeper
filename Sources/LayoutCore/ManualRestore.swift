@@ -14,15 +14,15 @@ public enum MonitorRestorePlanner {
         var plan=try Planner.plan(profile:record.profile,snapshot:snapshot,bindings:bindings,canMoveSpaces:true)
         let collapsed=Set(groupSpaces.values.filter { target in groupSpaces.values.filter{$0==target}.count>1 })
         for i in plan.entries.indices {
-            if plan.entries[i].reason.contains("多个窗口匹配") {
+            if plan.entries[i].reason.contains(lk("多个窗口匹配")) {
                 plan.entries[i].status = .skipped
-                plan.entries[i].reason="多个窗口匹配，已跳过；不会猜测应该调整哪一个"
+                plan.entries[i].reason=lk("多个窗口匹配，已跳过；不会猜测应该调整哪一个")
             } else if let target=groupSpaces[plan.entries[i].saved.desktopLabel],collapsed.contains(target) {
                 plan.entries[i].status = .blocked
-                plan.entries[i].reason="多个保存窗口组选择了同一桌面；桌面数量不足时不会合并布局"
+                plan.entries[i].reason=lk("多个保存窗口组选择了同一桌面；桌面数量不足时不会合并布局")
             } else if plan.entries[i].status == .ready,let window=plan.entries[i].window,let target=plan.entries[i].targetSpace,window.spaceIDs != [target], !allowCrossSpace {
                 plan.entries[i].status = .blocked
-                plan.entries[i].reason="需要跨桌面移动；请勾选「本次启用跨桌面恢复」（仅在已验证的系统版本可用）"
+                plan.entries[i].reason=lk("需要跨桌面移动；请勾选「本次启用跨桌面恢复」（仅在已验证的系统版本可用）")
             }
         }
         return plan
@@ -97,7 +97,7 @@ public enum ManualRestorer {
     public static func execute(_ plan: RestorePlan,windows: WindowBackend,spaces: SpacesBackend? = nil,approved: Bool,polls: Int = 5,pause: () -> Void = {},persist: (RestoreJournal) throws -> Void) -> ManualRestoreReport {
         var results=plan.entries.map{RestoreResult(title:$0.saved.selector.title,outcome:$0.status == .skipped ? .skipped : .blocked,detail:$0.reason)}
         func blockReady(_ detail: String) { for i in plan.entries.indices where plan.entries[i].status == .ready { results[i].detail=detail } }
-        guard approved else { blockReady("未确认此预览，没有执行写操作");return ManualRestoreReport(journal:nil,results:results,persistenceIssues:[]) }
+        guard approved else { blockReady(lk("未确认此预览，没有执行写操作"));return ManualRestoreReport(journal:nil,results:results,persistenceIssues:[]) }
         var journal=RestoreJournal(id:UUID(),createdAt:Date(),session:plan.session,topology:plan.topology,entries:[])
         var issues=[String]()
         do {
@@ -108,33 +108,33 @@ public enum ManualRestorer {
                       before.spaceIDs.count==1,let source=snapshot.spaces.first(where:{$0.id==before.spaceIDs[0] && $0.kind == .ordinary}),
                       let bounds=snapshot.displays.first(where:{$0.token==display})?.visible,inside(frame,bounds),
                       let current=try windows.readWindow(token:before.token),identity(current,before,snapshot,pinned:planned.tokenPinned==true),current.spaceIDs==before.spaceIDs,current.frame.near(before.frame,tolerance:0.01) else {
-                    results[i].detail="预览过期，窗口、显示器或桌面无法可靠确认";continue
+                    results[i].detail=lk("预览过期，窗口、显示器或桌面无法可靠确认");continue
                 }
-                guard before.spaceIDs==[target] || spaces?.canMove==true else { results[i].detail="没有获准的跨桌面后端，未移动窗口";continue }
-                let entry=RestoreJournalEntry(planIndex:i,before:current,targetFrame:frame,targetDisplay:display,targetSpace:target,sourceDisplay:source.displayToken,after:nil,state:.prepared,detail:"等待执行",tokenPinned:planned.tokenPinned)
-                guard validRoute(entry,snapshot) else { results[i].detail="源或目标桌面已改变";continue }
+                guard before.spaceIDs==[target] || spaces?.canMove==true else { results[i].detail=lk("没有获准的跨桌面后端，未移动窗口");continue }
+                let entry=RestoreJournalEntry(planIndex:i,before:current,targetFrame:frame,targetDisplay:display,targetSpace:target,sourceDisplay:source.displayToken,after:nil,state:.prepared,detail:lk("等待执行"),tokenPinned:planned.tokenPinned)
+                guard validRoute(entry,snapshot) else { results[i].detail=lk("源或目标桌面已改变");continue }
                 journal.entries.append(entry)
             }
             guard !journal.entries.isEmpty else { return ManualRestoreReport(journal:nil,results:results,persistenceIssues:[]) }
             try journal.validate();try persist(journal)
-        } catch { blockReady("执行前快照无法保存或复核，没有移动窗口：\(error)");return ManualRestoreReport(journal:nil,results:results,persistenceIssues:["执行前快照：\(error)"]) }
+        } catch { blockReady(lk("执行前快照无法保存或复核，没有移动窗口：%@", "\(error)"));return ManualRestoreReport(journal:nil,results:results,persistenceIssues:[lk("执行前快照：%@", "\(error)")]) }
         var failed=false
         for i in journal.entries.indices {
-            if failed { journal.entries[i].state = .blocked;journal.entries[i].detail="前一项失败，已停止后续恢复";continue }
+            if failed { journal.entries[i].state = .blocked;journal.entries[i].detail=lk("前一项失败，已停止后续恢复");continue }
             let entry=journal.entries[i];let target=targetSpace(entry);var writeInvoked=false
             do {
                 guard let initial=try live(entry,journal,windows),initial.spaceIDs==entry.before.spaceIDs,initial.frame.near(entry.before.frame,tolerance:0.01) else { throw LayoutError.readbackUnavailable }
                 if initial.spaceIDs==[target] && initial.frame.near(entry.targetFrame) {
-                    journal.entries[i].after=initial;journal.entries[i].state = .unchanged;journal.entries[i].detail="已在目标位置和桌面，没有写入窗口";try persist(journal);continue
+                    journal.entries[i].after=initial;journal.entries[i].state = .unchanged;journal.entries[i].detail=lk("已在目标位置和桌面，没有写入窗口");try persist(journal);continue
                 }
-                journal.entries[i].state = .attempted;journal.entries[i].detail="已保存快照与写入意图"
-                do { try persist(journal) } catch { journal.entries[i].state = .blocked;journal.entries[i].detail="写前日志失败，没有写入此窗口：\(error)";issues.append(journal.entries[i].detail);failed=true;continue }
+                journal.entries[i].state = .attempted;journal.entries[i].detail=lk("已保存快照与写入意图")
+                do { try persist(journal) } catch { journal.entries[i].state = .blocked;journal.entries[i].detail=lk("写前日志失败，没有写入此窗口：%@", "\(error)");issues.append(journal.entries[i].detail);failed=true;continue }
                 guard var current=try live(entry,journal,windows),current.spaceIDs==entry.before.spaceIDs,current.frame.near(entry.before.frame,tolerance:0.01) else { throw LayoutError.readbackUnavailable }
                 if current.spaceIDs != [target] {
                     guard let spaces,spaces.canMove else { throw LayoutError.unsupported }
                     writeInvoked=true;try spaces.move(window:current,to:target)
                     guard let moved=try poll(entry,journal,windows,space:target,polls:polls,pause:pause) else { throw LayoutError.readbackUnavailable }
-                    current=moved;journal.entries[i].after=moved;journal.entries[i].detail="目标普通桌面已回读，准备调整几何";try persist(journal)
+                    current=moved;journal.entries[i].after=moved;journal.entries[i].detail=lk("目标普通桌面已回读，准备调整几何");try persist(journal)
                 }
                 if !current.frame.near(entry.targetFrame) {
                     journal.entries[i].after=current;try persist(journal)
@@ -142,15 +142,15 @@ public enum ManualRestorer {
                     writeInvoked=true;try windows.setFrame(window:atWrite,to:entry.targetFrame)
                 }
                 guard let actual=try poll(entry,journal,windows,space:target,frame:entry.targetFrame,polls:polls,pause:pause) else { throw LayoutError.readbackUnavailable }
-                journal.entries[i].after=actual;journal.entries[i].state = .verified;journal.entries[i].detail="目标普通桌面、位置和大小均已回读验证";try persist(journal)
+                journal.entries[i].after=actual;journal.entries[i].state = .verified;journal.entries[i].detail=lk("目标普通桌面、位置和大小均已回读验证");try persist(journal)
             } catch {
-                if writeInvoked { journal.entries[i].after=(try? live(entry,journal,windows)) ?? journal.entries[i].after;journal.entries[i].state = .attempted;journal.entries[i].detail="恢复未通过验证：\(error)" }
-                else { journal.entries[i].state = .blocked;journal.entries[i].detail="写入前窗口或桌面改变，没有写入此窗口" }
+                if writeInvoked { journal.entries[i].after=(try? live(entry,journal,windows)) ?? journal.entries[i].after;journal.entries[i].state = .attempted;journal.entries[i].detail=lk("恢复未通过验证：%@", "\(error)") }
+                else { journal.entries[i].state = .blocked;journal.entries[i].detail=lk("写入前窗口或桌面改变，没有写入此窗口") }
                 failed=true
             }
         }
         if failed { rollback(&journal,windows:windows,spaces:spaces,polls:polls,pause:pause,persist:persist,issues:&issues) }
-        do { try persist(journal) } catch { issues.append("最终日志更新失败：\(error)") }
+        do { try persist(journal) } catch { issues.append(lk("最终日志更新失败：%@", "\(error)")) }
         for entry in journal.entries {
             let outcome: Outcome = [.verified,.unchanged].contains(entry.state) ? .verified : (entry.state == .blocked ? .blocked : .failed)
             results[entry.planIndex]=RestoreResult(title:results[entry.planIndex].title,outcome:outcome,detail:entry.detail,observed:entry.after)
@@ -162,40 +162,40 @@ public enum ManualRestorer {
             let entry=journal.entries[i];var writeInvoked=false
             do {
                 guard let after=entry.after,var current=try live(entry,journal,windows),current.spaceIDs==after.spaceIDs,current.frame.near(after.frame,tolerance:0.01) else {
-                    journal.entries[i].state = .rollbackBlocked;journal.entries[i].detail="无法安全撤销：身份、桌面或位置改变，或缺少写后回读";continue
+                    journal.entries[i].state = .rollbackBlocked;journal.entries[i].detail=lk("无法安全撤销：身份、桌面或位置改变，或缺少写后回读");continue
                 }
                 if current.spaceIDs != entry.before.spaceIDs {
-                    guard let spaces,spaces.canMove else { journal.entries[i].state = .rollbackBlocked;journal.entries[i].detail="跨桌面撤销未获准，没有派发";continue }
+                    guard let spaces,spaces.canMove else { journal.entries[i].state = .rollbackBlocked;journal.entries[i].detail=lk("跨桌面撤销未获准，没有派发");continue }
                     try persist(journal)
-                    guard let atWrite=try live(entry,journal,windows),atWrite.spaceIDs==current.spaceIDs,atWrite.frame.near(current.frame,tolerance:0.01) else { journal.entries[i].state = .rollbackBlocked;journal.entries[i].detail="撤销前窗口改变，保留后续调整";continue }
+                    guard let atWrite=try live(entry,journal,windows),atWrite.spaceIDs==current.spaceIDs,atWrite.frame.near(current.frame,tolerance:0.01) else { journal.entries[i].state = .rollbackBlocked;journal.entries[i].detail=lk("撤销前窗口改变，保留后续调整");continue }
                     writeInvoked=true;try spaces.move(window:atWrite,to:entry.before.spaceIDs[0])
                     guard let returned=try poll(entry,journal,windows,space:entry.before.spaceIDs[0],polls:polls,pause:pause) else { throw LayoutError.readbackUnavailable }
                     current=returned;journal.entries[i].after=returned;try persist(journal)
                 }
                 if !current.frame.near(entry.before.frame,tolerance:0.01) {
                     try persist(journal)
-                    guard let atWrite=try live(entry,journal,windows),atWrite.spaceIDs==entry.before.spaceIDs,atWrite.frame.near(current.frame,tolerance:0.01) else { journal.entries[i].state = .rollbackBlocked;journal.entries[i].detail="撤销前窗口改变，保留后续调整";continue }
+                    guard let atWrite=try live(entry,journal,windows),atWrite.spaceIDs==entry.before.spaceIDs,atWrite.frame.near(current.frame,tolerance:0.01) else { journal.entries[i].state = .rollbackBlocked;journal.entries[i].detail=lk("撤销前窗口改变，保留后续调整");continue }
                     writeInvoked=true;try windows.setFrame(window:atWrite,to:entry.before.frame)
                 }
                 guard let restored=try poll(entry,journal,windows,space:entry.before.spaceIDs[0],frame:entry.before.frame,polls:polls,pause:pause) else { throw LayoutError.readbackUnavailable }
-                journal.entries[i].after=restored;journal.entries[i].state = .rolledBack;journal.entries[i].detail="已回滚到原普通桌面、位置和大小。\(entry.detail)"
+                journal.entries[i].after=restored;journal.entries[i].state = .rolledBack;journal.entries[i].detail=lk("已回滚到原普通桌面、位置和大小。%@", "\(entry.detail)")
             } catch {
                 if writeInvoked { journal.entries[i].after=(try? live(entry,journal,windows)) ?? journal.entries[i].after }
-                journal.entries[i].state = .rollbackFailed;journal.entries[i].detail="回滚失败：\(error)；请检查实际窗口，可显式重试撤销"
+                journal.entries[i].state = .rollbackFailed;journal.entries[i].detail=lk("回滚失败：%@；请检查实际窗口，可显式重试撤销", "\(error)")
             }
-            do { try persist(journal) } catch { issues.append("回滚日志更新失败：\(error)") }
+            do { try persist(journal) } catch { issues.append(lk("回滚日志更新失败：%@", "\(error)")) }
         }
     }
     public static func undo(_ original: RestoreJournal,windows: WindowBackend,spaces: SpacesBackend? = nil,approved: Bool,polls: Int = 5,pause: () -> Void = {},persist: (RestoreJournal) throws -> Void) -> ManualRestoreReport {
         var journal=original;var issues=[String]()
-        guard approved else { return ManualRestoreReport(journal:journal,results:journal.entries.map{RestoreResult(title:$0.before.selector.title,outcome:.blocked,detail:"未确认撤销，没有写入窗口")},persistenceIssues:[]) }
-        do { try journal.validate();try persist(journal) } catch { return ManualRestoreReport(journal:journal,results:journal.entries.map{RestoreResult(title:$0.before.selector.title,outcome:.blocked,detail:"撤销前日志失败：\(error)")},persistenceIssues:["撤销前日志：\(error)"]) }
+        guard approved else { return ManualRestoreReport(journal:journal,results:journal.entries.map{RestoreResult(title:$0.before.selector.title,outcome:.blocked,detail:lk("未确认撤销，没有写入窗口"))},persistenceIssues:[]) }
+        do { try journal.validate();try persist(journal) } catch { return ManualRestoreReport(journal:journal,results:journal.entries.map{RestoreResult(title:$0.before.selector.title,outcome:.blocked,detail:lk("撤销前日志失败：%@", "\(error)"))},persistenceIssues:[lk("撤销前日志：%@", "\(error)")]) }
         let eligible=Set(journal.entries.indices.filter{[.verified,.rollbackFailed,.rollbackBlocked].contains(journal.entries[$0].state)})
         rollback(&journal,windows:windows,spaces:spaces,polls:polls,pause:pause,persist:persist,issues:&issues)
-        do { try persist(journal) } catch { issues.append("撤销最终日志更新失败：\(error)") }
+        do { try persist(journal) } catch { issues.append(lk("撤销最终日志更新失败：%@", "\(error)")) }
         let results=journal.entries.enumerated().map { index,entry in
             let outcome: Outcome = !eligible.contains(index) ? .skipped : (entry.state == .rolledBack ? .verified : (entry.state == .rollbackBlocked ? .blocked : .failed))
-            return RestoreResult(title:entry.before.selector.title,outcome:outcome,detail:eligible.contains(index) ? entry.detail : "此窗口无需撤销",observed:entry.after)
+            return RestoreResult(title:entry.before.selector.title,outcome:outcome,detail:eligible.contains(index) ? entry.detail : lk("此窗口无需撤销"),observed:entry.after)
         }
         return ManualRestoreReport(journal:journal,results:results,persistenceIssues:issues)
     }

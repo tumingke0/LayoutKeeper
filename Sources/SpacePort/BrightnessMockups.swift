@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 LayoutKeeper contributors
+import LayoutCore
 import AppKit
 import SwiftUI
 
@@ -23,8 +24,8 @@ struct BrightnessHUD: View {
             HStack(spacing:8) {
                 Text(name).font(.system(size:15,weight:.semibold))
                 HStack(spacing:5) {
-                    Text(kind == .muted ? "静音" : "\(Int((percent*100).rounded()))%").foregroundStyle(Color.accentColor)
-                    if let nits { Circle().frame(width:3,height:3).opacity(0.5); Text("\(nits) 尼特") }
+                    Text(kind == .muted ? lk("静音") : "\(Int((percent*100).rounded()))%").foregroundStyle(Color.accentColor)
+                    if let nits { Circle().frame(width:3,height:3).opacity(0.5); Text(lk("%@ 尼特", "\(nits)")) }
                     if let note { Circle().frame(width:3,height:3).opacity(0.5); Text(note) }
                 }
                 .font(.system(size:12,weight:.semibold)).foregroundStyle(.secondary)
@@ -84,11 +85,11 @@ struct BrightnessMenuMock: View {
     var rows: [DisplayRow]
     var body: some View {
         VStack(alignment:.leading,spacing:0) {
-            menuText("显示器").padding(.top,6)
+            menuText(lk("显示器")).padding(.top,6)
             ForEach(Array(rows.enumerated()),id:\.offset) { i,r in
                 VStack(alignment:.leading,spacing:6) {
                     HStack(spacing:6) {
-                        Image(systemName:r.badge == "内建" ? "laptopcomputer" : "display").foregroundStyle(.secondary)
+                        Image(systemName:r.badge == lk("内建") ? "laptopcomputer" : "display").foregroundStyle(.secondary)
                         Text(r.name).font(.system(size:13,weight:.semibold))
                         Pill(text:r.badge,tone:r.badgeTone)
                         Spacer()
@@ -100,11 +101,11 @@ struct BrightnessMenuMock: View {
                 if i<rows.count-1 { Divider().padding(.horizontal,12) }
             }
             Divider().padding(.horizontal,8).padding(.vertical,4)
-            menuItem("亮度键调节鼠标所在的屏幕",check:true)
-            menuItem("显示器设置…")
+            menuItem(lk("亮度键调节鼠标所在的屏幕"),check:true)
+            menuItem(lk("显示器设置…"))
             Divider().padding(.horizontal,8).padding(.vertical,4)
-            menuItem("恢复布局").opacity(0.55)
-            menuItem("保存当前布局").opacity(0.55)
+            menuItem(lk("恢复布局")).opacity(0.55)
+            menuItem(lk("保存当前布局")).opacity(0.55)
         }
         .padding(.vertical,5).frame(width:320)
         .background(RoundedRectangle(cornerRadius:10).fill(Color(nsColor:.windowBackgroundColor)))
@@ -142,7 +143,7 @@ struct HUDPlacementMock: View {
                 ForEach(0..<6) { i in RoundedRectangle(cornerRadius:6).fill(Color.primary.opacity(0.10)).frame(width:CGFloat(380+(i%3)*120),height:22) }
             }.padding(.top,120).padding(.leading,60).frame(maxWidth:.infinity,alignment:.leading)
             VStack(spacing:0) {
-                HStack(spacing:14) { Image(systemName:"apple.logo"); Text("访达").bold(); Text("文件"); Text("编辑"); Spacer(); Image(systemName:"rectangle.3.group"); Text("周三 16:20") }
+                HStack(spacing:14) { Image(systemName:"apple.logo"); Text(lk("访达")).bold(); Text(lk("文件")); Text(lk("编辑")); Spacer(); Image(systemName:"rectangle.3.group"); Text(lk("周三 16:20")) }
                     .font(.system(size:12)).padding(.horizontal,14).frame(height:26).background(Color.primary.opacity(0.08))
                 BrightnessHUD(name:"DELL SE2416H",percent:0.31).padding(.top,12)
                 Spacer()
@@ -158,20 +159,20 @@ enum BrightnessMockups {
         func shot<V: View>(_ n: String,_ v: V,dark: Bool) { ok=UISnapshots.render(v,to:dir.appendingPathComponent(n),dark:dark) && ok }
         let menu=BrightnessMenuMock(rows:[
             .init(name:"DELL SE2416H",badge:"DDC",badgeTone:.success,brightness:0.38,volume:0.55,note:nil),
-            .init(name:"内建显示屏",badge:"内建",badgeTone:.neutral,brightness:0.42,volume:nil,note:nil),
+            .init(name:lk("内建显示屏"),badge:lk("内建"),badgeTone:.neutral,brightness:0.42,volume:nil,note:nil),
         ])
         let fallback=BrightnessMenuMock(rows:[
-            .init(name:"LG HDR 4K",badge:"软件调暗",badgeTone:.warning,brightness:0.70,volume:nil,note:"这台显示器不响应 DDC（或接在不支持的转接头上），改为软件调暗；音量不可调。"),
+            .init(name:"LG HDR 4K",badge:lk("软件调暗"),badgeTone:.warning,brightness:0.70,volume:nil,note:lk("这台显示器不响应 DDC（或接在不支持的转接头上），改为软件调暗；音量不可调。")),
         ])
         for dark in [false,true] {
             let s=dark ? "dark" : "light"
             shot("01-menu-displays-\(s).png",menu,dark:dark)
             shot("02-menu-software-dimming-\(s).png",fallback,dark:dark)
-            shot("03-hud-builtin-\(s).png",MockDesktop { BrightnessHUD(name:"内建显示屏",percent:0.56,nits:92) },dark:dark)
+            shot("03-hud-builtin-\(s).png",MockDesktop { BrightnessHUD(name:lk("内建显示屏"),percent:0.56,nits:92) },dark:dark)
             shot("04-hud-external-ddc-\(s).png",MockDesktop { BrightnessHUD(name:"DELL SE2416H",percent:0.38) },dark:dark)
             shot("05-hud-volume-\(s).png",MockDesktop { BrightnessHUD(name:"DELL SE2416H",percent:0.55,kind:.volume); BrightnessHUD(name:"DELL SE2416H",percent:0.55,kind:.muted) },dark:dark)
             shot("07-hud-top-placement-\(s).png",HUDPlacementMock(),dark:dark)
-            shot("06-hud-software-dimming-\(s).png",MockDesktop { BrightnessHUD(name:"LG HDR 4K",percent:0.70,note:"软件调暗") },dark:dark)
+            shot("06-hud-software-dimming-\(s).png",MockDesktop { BrightnessHUD(name:"LG HDR 4K",percent:0.70,note:lk("软件调暗")) },dark:dark)
         }
         return ok ? 0 : 1
     }

@@ -12,22 +12,22 @@ struct SharedNotice: Equatable {
     var autoFailure: String?=nil
     var title: String {
         switch kind {
-        case .missingSpaces(let n): return "外接屏少 \(n) 个桌面"
-        case .migrated(let n): return "\(n) 个桌面被移到了内置屏"
-        case .separateSpacesOff: return "「显示器具有单独的空间」已关闭"
-        case .multipleMonitors: return "接了多块外接屏，已按每块屏单独记"
+        case .missingSpaces(let n): return lk("外接屏少 %@ 个桌面", "\(n)")
+        case .migrated(let n): return lk("%@ 个桌面被移到了内置屏", "\(n)")
+        case .separateSpacesOff: return lk("「显示器具有单独的空间」已关闭")
+        case .multipleMonitors: return lk("接了多块外接屏，已按每块屏单独记")
         }
     }
     var detail: String {
-        let prefix=autoFailure.map{ "自动操作没完成（\($0)），已停下。" } ?? ""
+        let prefix=autoFailure.map{ lk("自动操作没完成（%@），已停下。", "\($0)") } ?? ""
         return prefix+manualDetail
     }
     var manualDetail: String {
         switch kind {
-        case .missingSpaces(let n): return "多出来的窗口先放在最后一个桌面。打开调度中心，在顶部按「+」补 \(n) 个桌面，补好后会自动再恢复一次。"
-        case .migrated: return "这是拔掉外接屏时 macOS 挪过来的。不需要的话，在调度中心把它们删掉即可；共用布局按桌面顺序保存，删了也不会丢，下次接上外接屏照样恢复。"
-        case .separateSpacesOff: return "共用模式需要每块屏有自己的桌面。请在「系统设置 → 桌面与程序坞 → 调度中心」打开它，注销后生效。"
-        case .multipleMonitors: return "共用模式只在接一块外接屏时生效。拔到只剩一块后会自动切回共用布局。"
+        case .missingSpaces(let n): return lk("多出来的窗口先放在最后一个桌面。打开调度中心，在顶部按「+」补 %@ 个桌面，补好后会自动再恢复一次。", "\(n)")
+        case .migrated: return lk("这是拔掉外接屏时 macOS 挪过来的。不需要的话，在调度中心把它们删掉即可；共用布局按桌面顺序保存，删了也不会丢，下次接上外接屏照样恢复。")
+        case .separateSpacesOff: return lk("共用模式需要每块屏有自己的桌面。请在「系统设置 → 桌面与程序坞 → 调度中心」打开它，注销后生效。")
+        case .multipleMonitors: return lk("共用模式只在接一块外接屏时生效。拔到只剩一块后会自动切回共用布局。")
         }
     }
     var icon: String {
@@ -58,8 +58,8 @@ extension Model {
     func sharedNoticeToast(_ notice: SharedNotice) -> Toast {
         var actions=[Toast.Action]()
         switch notice.kind {
-        case .missingSpaces, .migrated: actions.append(Toast.Action(title:"打开调度中心") { MissionControl.open() })
-        case .separateSpacesOff: actions.append(Toast.Action(title:"打开设置") { NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Desktop-Settings.extension")!) })
+        case .missingSpaces, .migrated: actions.append(Toast.Action(title:lk("打开调度中心")) { MissionControl.open() })
+        case .separateSpacesOff: actions.append(Toast.Action(title:lk("打开设置")) { NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Desktop-Settings.extension")!) })
         case .multipleMonitors: break
         }
         return Toast(icon:notice.icon,tone:notice.tone,title:notice.title,detail:notice.detail,actions:actions,duration:0) { [weak self] in
@@ -79,8 +79,8 @@ extension Model {
         if layoutMode == .sharedExternal {
             let physical=MonitorRecognition.physicalExternalMonitors()
             if let library=screenLibrary,let source=try? SharedLayout.seed(library:library,preferredKey:physical.count==1 ? physical[0].identity.key : nil) {
-                let name=savedScreens.first{ $0.key==source }?.name ?? "外接屏"
-                showToast?(Toast(icon:"square.on.square",tone:.success,title:"已切换为共用一套",detail:"用「\(name)」现在的布局作为共用布局，原来各屏的记录都保留着。",duration:6))
+                let name=savedScreens.first{ $0.key==source }?.name ?? lk("外接屏")
+                showToast?(Toast(icon:"square.on.square",tone:.success,title:lk("已切换为共用一套"),detail:lk("用「%@」现在的布局作为共用布局，原来各屏的记录都保留着。", "\(name)"),duration:6))
             }
             if !SeparateSpaces.enabled { postSharedNotice(SharedNotice(kind:.separateSpacesOff)) }
             else if physical.count>1 { postSharedNotice(SharedNotice(kind:.multipleMonitors)) }
@@ -118,7 +118,7 @@ extension Model {
             case .success(let n):
                 self.pendingSpacesNeeded=nil
                 if case .missingSpaces? = self.sharedNotice?.kind { self.sharedNotice=nil }
-                self.showToast?(Toast(icon:"plus.rectangle.on.rectangle",tone:.success,title:"已自动补了 \(n) 个桌面",detail:"正在按桌面顺序恢复窗口。",duration:4))
+                self.showToast?(Toast(icon:"plus.rectangle.on.rectangle",tone:.success,title:lk("已自动补了 %@ 个桌面", "\(n)"),detail:lk("正在按桌面顺序恢复窗口。"),duration:4))
                 let outcome=self.directRestore(.automatic)
                 if let toast=self.restoreToast(outcome,trigger:.automatic) { self.showToast?(toast) }
             case .failure(let e):
@@ -142,7 +142,7 @@ extension Model {
             switch result {
             case .success(let n):
                 let left=moved-n
-                self.showToast?(Toast(icon:"rectangle.stack.badge.minus",tone:.success,title:"已自动删掉 \(n) 个空桌面",detail:left>0 ? "还有 \(left) 个里面有窗口或正在使用，没有动。" : "内置屏恢复干净了。",duration:5))
+                self.showToast?(Toast(icon:"rectangle.stack.badge.minus",tone:.success,title:lk("已自动删掉 %@ 个空桌面", "\(n)"),detail:left>0 ? lk("还有 %@ 个里面有窗口或正在使用，没有动。", "\(left)") : lk("内置屏恢复干净了。"),duration:5))
             case .failure(let e):
                 NSLog("LayoutKeeper auto remove Spaces stopped: %@",e.description)
                 var notice=SharedNotice(kind:.migrated(moved)); notice.autoFailure=e.description
@@ -152,18 +152,18 @@ extension Model {
         return true
     }
     func inspectMissionControl() {
-        missionControlReport="正在读取…"
+        missionControlReport=lk("正在读取…")
         autoSpaces.inspect { [weak self] in self?.missionControlReport=$0 }
     }
     func runAutoSpacesTrial() {
-        guard let token=externalDisplayToken ?? builtInDisplayToken else { autoSpacesTrialMessage="找不到屏幕"; return }
+        guard let token=externalDisplayToken ?? builtInDisplayToken else { autoSpacesTrialMessage=lk("找不到屏幕"); return }
         if let all=try? spaces.spaces(displays:MacEnvironment.displays()),AutoSpaces.fullScreenActive(all) { autoSpacesTrialMessage=AutoSpaces.Blocker.fullScreenActive.description; return }
         let alert=NSAlert()
-        alert.messageText="试一下自动加、删桌面？"
-        alert.informativeText="会打开调度中心，在\(externalDisplayToken != nil ? "外接屏" : "内置屏")上按「+」加一个桌面，确认加上后再把这个新桌面删掉。其它桌面和窗口都不会动。"
-        alert.addButton(withTitle:"开始"); alert.addButton(withTitle:"取消")
+        alert.messageText=lk("试一下自动加、删桌面？")
+        alert.informativeText=lk("会打开调度中心，在%@上按「+」加一个桌面，确认加上后再把这个新桌面删掉。其它桌面和窗口都不会动。", "\(externalDisplayToken != nil ? lk("外接屏") : lk("内置屏"))")
+        alert.addButton(withTitle:lk("开始")); alert.addButton(withTitle:lk("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        autoSpacesTrialMessage="正在测试…"
+        autoSpacesTrialMessage=lk("正在测试…")
         autoSpaces.trial(token:token) { [weak self] in self?.autoSpacesTrialMessage=$0 }
     }
 }

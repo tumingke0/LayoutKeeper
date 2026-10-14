@@ -26,10 +26,10 @@ public struct MonitorLayoutRecord: Codable {
         if let captureReport {try captureReport.validate(capturedCount:profile.windows.count);guard completeness==captureReport.completeness else{throw LayoutError.invalidProfile}}
     }
     public var captureSummary:String {
-        if let captureReport {return "保存当时的采集统计："+captureReport.summary}
+        if let captureReport {return lk("保存当时的采集统计：")+captureReport.summary}
         let groups=coverage?.representedDesktopCount ?? Set(profile.windows.map(\.desktopLabel)).count
         let total=coverage?.ordinaryDesktopCount ?? groups
-        return "已保存 \(profile.windows.count) 个窗口，覆盖 \(groups)/\(total) 个普通桌面。完整性未确认；旧记录没有逐阶段统计。"
+        return lk("已保存 %@ 个窗口，覆盖 %@/%@ 个普通桌面。完整性未确认；旧记录没有逐阶段统计。", "\(profile.windows.count)", "\(groups)", "\(total)")
     }
 }
 public struct ExternalCaptureCoverage: Codable, Equatable {
@@ -71,7 +71,7 @@ public enum ExternalLayoutCapture {
         var saved=[SavedWindow](),issues=[String](),labels=[UInt64:String]()
         for w in selected {
             let bundle=w.selector.bundleID
-            func reject(_ reason:CaptureReason){report.exclude(reason,bundleID:bundle);decisions[w.token]=reason.rawValue;issues.append("\(bundle)：\(reason.rawValue)")}
+            func reject(_ reason:CaptureReason){report.exclude(reason,bundleID:bundle);decisions[w.token]=reason.rawValue;issues.append(lk("%@：%@", "\(bundle)", "\(reason.rawValue)"))}
             guard w.ordinary else{reject(.notOrdinary);continue}
             guard !w.minimized else{reject(.minimized);continue}
             guard !w.fullScreen else{reject(.fullscreen);continue}
@@ -84,7 +84,7 @@ public enum ExternalLayoutCapture {
             guard w.selector.usable else{reject(.unusableSelector);continue}
             guard selected.filter({w.selector.matches($0.selector)}).count==1 else{reject(.ambiguousSelector);continue}
             report.increment(.uniqueSelector,bundleID:bundle)
-            let label=labels[source.id] ?? "窗口组-\(UUID().uuidString)";labels[source.id]=label
+            let label=labels[source.id] ?? lk("窗口组-%@", "\(UUID().uuidString)");labels[source.id]=label
             saved.append(SavedWindow(selector:w.selector,displayRole:.external,desktopLabel:label,normalizedFrame:normalized,desktopIndex:slot+1))
             report.noteCaptured(bundleID:bundle,spaceIndex:slot+1);decisions[w.token]="captured"
         }

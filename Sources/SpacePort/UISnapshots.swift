@@ -17,17 +17,17 @@ final class SnapshotWindow: NSWindow {
 enum UISnapshots {
     static let monitor=MonitorIdentity(vendor:4268,model:53378,serial:1,name:"DELL SE2416H")
     static func saved(_ bundle: String,_ title: String,slot: Int,_ f: Rect) -> SavedWindow {
-        SavedWindow(selector:WindowSelector(bundleID:bundle,title:title),displayRole:.external,desktopLabel:"组\(slot)",normalizedFrame:f,desktopIndex:slot)
+        SavedWindow(selector:WindowSelector(bundleID:bundle,title:title),displayRole:.external,desktopLabel:lk("组%@", "\(slot)"),normalizedFrame:f,desktopIndex:slot)
     }
     static func sampleRecord() -> MonitorLayoutRecord {
         let windows=[
-            saved("com.google.Chrome","项目计划",slot:3,Rect(0.02,0.03,0.96,0.94)),
-            saved("com.google.Chrome","阅读清单",slot:2,Rect(0.02,0.04,0.55,0.92)),
-            saved("com.apple.Safari","开发者文档",slot:4,Rect(0.05,0.05,0.6,0.9)),
-            saved("com.apple.Terminal","示例项目 — zsh",slot:1,Rect(0.0,0.0,1,1)),
-            saved("com.apple.systempreferences","系统设置",slot:1,Rect(0.62,0.18,0.36,0.62)),
-            saved("com.apple.finder","下载",slot:2,Rect(0.6,0.2,0.38,0.5)),
-            saved("com.apple.Notes","备忘录",slot:4,Rect(0.55,0.1,0.43,0.8)),
+            saved("com.google.Chrome",lk("项目计划"),slot:3,Rect(0.02,0.03,0.96,0.94)),
+            saved("com.google.Chrome",lk("阅读清单"),slot:2,Rect(0.02,0.04,0.55,0.92)),
+            saved("com.apple.Safari",lk("开发者文档"),slot:4,Rect(0.05,0.05,0.6,0.9)),
+            saved("com.apple.Terminal",lk("示例项目 — zsh"),slot:1,Rect(0.0,0.0,1,1)),
+            saved("com.apple.systempreferences",lk("系统设置"),slot:1,Rect(0.62,0.18,0.36,0.62)),
+            saved("com.apple.finder",lk("下载"),slot:2,Rect(0.6,0.2,0.38,0.5)),
+            saved("com.apple.Notes",lk("备忘录"),slot:4,Rect(0.55,0.1,0.43,0.8)),
         ]
         var r=MonitorLayoutRecord(monitor:monitor,profile:Profile(location:monitor.name,windows:windows))
         r.savedAt=Calendar.current.date(bySettingHour:9,minute:42,second:0,of:Date()) ?? Date()
@@ -49,11 +49,11 @@ enum UISnapshots {
     }
     /// Two saved screens (this one connected, a home screen not connected) and a few versions; no files are read.
     static func sampleLibrary(_ m: Model,record: MonitorLayoutRecord?) {
-        m.monitorPreferences.setDisplayName("公司",for:monitor.key,seenName:monitor.name)
-        m.monitorPreferences.setDisplayName("家里",for:homeMonitor.key,seenName:homeMonitor.name)
+        m.monitorPreferences.setDisplayName(lk("公司"),for:monitor.key,seenName:monitor.name)
+        m.monitorPreferences.setDisplayName(lk("家里"),for:homeMonitor.key,seenName:homeMonitor.name)
         let connected=m.currentExternalMonitor != nil
-        let current=SavedScreen(key:monitor.key,monitor:monitor,name:"公司",savedAt:record?.savedAt ?? .distantPast,windowCount:record?.profile.windows.count ?? 0,desktopCount:4,connected:connected)
-        let home=SavedScreen(key:homeMonitor.key,monitor:homeMonitor,name:"家里",savedAt:day(-1,21,15),windowCount:5,desktopCount:3,connected:false)
+        let current=SavedScreen(key:monitor.key,monitor:monitor,name:lk("公司"),savedAt:record?.savedAt ?? .distantPast,windowCount:record?.profile.windows.count ?? 0,desktopCount:4,connected:connected)
+        let home=SavedScreen(key:homeMonitor.key,monitor:homeMonitor,name:lk("家里"),savedAt:day(-1,21,15),windowCount:5,desktopCount:3,connected:false)
         m.savedScreens=(record != nil || connected ? [current] : [])+[home]
         m.selectedScreenKey=m.savedScreens.first?.key
         m.selectedRecord=record
@@ -61,26 +61,26 @@ enum UISnapshots {
         func v(_ n: Int,_ date: Date,_ w: Int,_ d: Int,current: Bool = false) -> LayoutVersion {
             LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/\(n).json"),savedAt:date,windowCount:w,desktopCount:d,isCurrent:current)
         }
-        var labelled=v(3,day(-3,10,12),4,3); labelled.label="季度汇报前"
-        var cur=v(0,record.savedAt,record.profile.windows.count,4,current:true); cur.originName="写代码"
-        var meeting=v(1,day(-1,18,3),3,2); meeting.originName="开会"
-        var coding=v(4,day(-6,14,48),7,4); coding.originName="写代码"
+        var labelled=v(3,day(-3,10,12),4,3); labelled.label=lk("季度汇报前")
+        var cur=v(0,record.savedAt,record.profile.windows.count,4,current:true); cur.originName=lk("写代码")
+        var meeting=v(1,day(-1,18,3),3,2); meeting.originName=lk("开会")
+        var coding=v(4,day(-6,14,48),7,4); coding.originName=lk("写代码")
         m.screenVersions=[cur,meeting,v(2,day(-1,9,30),6,3),labelled,coding]
         func n(_ i: Int,_ name: String,_ w: Int,_ d: Int,active: Bool = false) -> NamedLayout {
             NamedLayout(url:URL(fileURLWithPath:"/tmp/lk-sample/n\(i).json"),name:name,savedAt:day(-2,9,0),windowCount:w,desktopCount:d,isActive:active)
         }
-        m.namedLayouts=[n(1,"写代码",record.profile.windows.count,4,active:true),n(2,"开会",3,2),n(3,"专注阅读",2,1)]
+        m.namedLayouts=[n(1,lk("写代码"),record.profile.windows.count,4,active:true),n(2,lk("开会"),3,2),n(3,lk("专注阅读"),2,1)]
     }
     /// The home screen selected: saved but not connected.
     static func selectHome(_ m: Model) {
         m.selectedScreenKey=homeMonitor.key
-        let windows=[saved("com.apple.Safari","阅读",slot:1,Rect(0.05,0.05,0.6,0.9)),saved("com.apple.Music","音乐",slot:1,Rect(0.6,0.1,0.38,0.6)),
-                     saved("com.apple.Terminal","zsh",slot:2,Rect(0,0,1,1)),saved("com.apple.Notes","备忘录",slot:3,Rect(0.1,0.1,0.5,0.8)),saved("com.apple.finder","下载",slot:3,Rect(0.6,0.3,0.38,0.5))]
+        let windows=[saved("com.apple.Safari",lk("阅读"),slot:1,Rect(0.05,0.05,0.6,0.9)),saved("com.apple.Music",lk("音乐"),slot:1,Rect(0.6,0.1,0.38,0.6)),
+                     saved("com.apple.Terminal","zsh",slot:2,Rect(0,0,1,1)),saved("com.apple.Notes",lk("备忘录"),slot:3,Rect(0.1,0.1,0.5,0.8)),saved("com.apple.finder",lk("下载"),slot:3,Rect(0.6,0.3,0.38,0.5))]
         var r=MonitorLayoutRecord(monitor:homeMonitor,profile:Profile(location:homeMonitor.name,windows:windows)); r.savedAt=day(-1,21,15)
         m.selectedRecord=r
         m.screenVersions=[LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/h0.json"),savedAt:r.savedAt,windowCount:5,desktopCount:3,isCurrent:true),
                           LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/h1.json"),savedAt:day(-8,20,40),windowCount:4,desktopCount:3,isCurrent:false)]
-        m.namedLayouts=[NamedLayout(url:URL(fileURLWithPath:"/tmp/lk-sample/hn1.json"),name:"周末娱乐",savedAt:day(-8,20,0),windowCount:5,desktopCount:3,isActive:true)]
+        m.namedLayouts=[NamedLayout(url:URL(fileURLWithPath:"/tmp/lk-sample/hn1.json"),name:lk("周末娱乐"),savedAt:day(-8,20,0),windowCount:5,desktopCount:3,isActive:true)]
     }
     static func sampleJournal() -> RestoreJournal? {
         let w=ObservedWindow(token:"1:1",selector:WindowSelector(bundleID:"com.google.Chrome",title:"x"),frame:Rect(0,0,800,600),spaceIDs:[1],processStartedAt:Date(timeIntervalSince1970:1000))
@@ -96,17 +96,17 @@ enum UISnapshots {
             ObservedWindow(token:token,selector:WindowSelector(bundleID:bundle,title:title),frame:f,spaceIDs:[space],processStartedAt:started ? Date(timeIntervalSince1970:1000) : nil)
         }
         let s=Snapshot(session:UUID(),topology:"t",
-            displays:[Display(token:"builtin",name:"内建",role:.builtIn,visible:Rect(0,1050,1512,945)),Display(token:"ext",name:monitor.name,role:.external,visible:visible)],
+            displays:[Display(token:"builtin",name:lk("内建"),role:.builtIn,visible:Rect(0,1050,1512,945)),Display(token:"ext",name:monitor.name,role:.external,visible:visible)],
             spaces:[Space(id:10,displayToken:"builtin",active:true),Space(id:101,displayToken:"ext",active:true),Space(id:102,displayToken:"ext"),Space(id:103,displayToken:"ext"),Space(id:104,displayToken:"ext")],
             windows:[
-                live("1:1","com.google.Chrome","项目计划",space:101,Rect(200,100,1000,700)),
-                live("1:2","com.google.Chrome","阅读清单",space:102,Rect(0.02,0.04,0.55,0.92).fitted(in:visible)),
-                live("5:1","com.apple.Safari","开发者文档",space:10,Rect(40,1100,900,700)),
-                live("2:1","com.apple.Terminal","示例项目 — zsh",space:102,Rect(100,100,1400,900)),
-                live("3:1","com.apple.systempreferences","系统设置",space:101,Rect(300,200,700,650)),
-                live("691:1","com.apple.finder","下载",space:103,Rect(500,300,700,500),started:false),
-                live("4:1","com.apple.Notes","备忘录",space:103,Rect(900,100,800,800)),
-                live("4:2","com.apple.Notes","备忘录",space:101,Rect(100,500,600,400)),
+                live("1:1","com.google.Chrome",lk("项目计划"),space:101,Rect(200,100,1000,700)),
+                live("1:2","com.google.Chrome",lk("阅读清单"),space:102,Rect(0.02,0.04,0.55,0.92).fitted(in:visible)),
+                live("5:1","com.apple.Safari",lk("开发者文档"),space:10,Rect(40,1100,900,700)),
+                live("2:1","com.apple.Terminal",lk("示例项目 — zsh"),space:102,Rect(100,100,1400,900)),
+                live("3:1","com.apple.systempreferences",lk("系统设置"),space:101,Rect(300,200,700,650)),
+                live("691:1","com.apple.finder",lk("下载"),space:103,Rect(500,300,700,500),started:false),
+                live("4:1","com.apple.Notes",lk("备忘录"),space:103,Rect(900,100,800,800)),
+                live("4:2","com.apple.Notes",lk("备忘录"),space:101,Rect(100,500,600,400)),
             ])
         m.quickRecord=record; m.quickSnapshot=s; m.quickDisplayToken="ext"; m.quickMonitor=monitor
         m.quickPlan=try? QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:"ext",snapshot:s,allowCrossSpace:true)
@@ -132,7 +132,7 @@ enum UISnapshots {
             ObservedWindow(token:"\(i+1):1",selector:w.selector,frame:w.normalizedFrame.fitted(in:visible),spaceIDs:[UInt64(100+(w.desktopIndex ?? 1))],processStartedAt:Date(timeIntervalSince1970:1000))
         }
         return Snapshot(session:UUID(),topology:"t",
-            displays:[Display(token:"builtin",name:"内建",role:.builtIn,visible:Rect(0,1050,1512,945)),Display(token:"ext",name:monitor.name,role:.external,visible:visible)],
+            displays:[Display(token:"builtin",name:lk("内建"),role:.builtIn,visible:Rect(0,1050,1512,945)),Display(token:"ext",name:monitor.name,role:.external,visible:visible)],
             spaces:[Space(id:10,displayToken:"builtin",active:true),Space(id:101,displayToken:"ext",active:true),Space(id:102,displayToken:"ext"),Space(id:103,displayToken:"ext"),Space(id:104,displayToken:"ext")],
             windows:windows)
     }
@@ -170,13 +170,13 @@ enum UISnapshots {
         do {
             let sh=MonitorIdentity.sharedExternal
             let ws=[
-                saved("com.apple.Terminal","示例项目 — zsh",slot:1,Rect(0.0,0.0,0.62,1)),
-                saved("com.apple.Safari","开发者文档",slot:1,Rect(0.63,0.0,0.37,1)),
-                saved("com.google.Chrome","项目计划",slot:2,Rect(0.02,0.03,0.6,0.94)),
-                saved("com.apple.Notes","备忘录",slot:2,Rect(0.64,0.1,0.34,0.8)),
-                saved("com.apple.mail","收件箱",slot:3,Rect(0.03,0.05,0.6,0.9)),
-                saved("com.apple.iCal","日历",slot:3,Rect(0.6,0.15,0.38,0.7)),
-                saved("com.apple.Music","音乐",slot:4,Rect(0.1,0.1,0.8,0.8)),
+                saved("com.apple.Terminal",lk("示例项目 — zsh"),slot:1,Rect(0.0,0.0,0.62,1)),
+                saved("com.apple.Safari",lk("开发者文档"),slot:1,Rect(0.63,0.0,0.37,1)),
+                saved("com.google.Chrome",lk("项目计划"),slot:2,Rect(0.02,0.03,0.6,0.94)),
+                saved("com.apple.Notes",lk("备忘录"),slot:2,Rect(0.64,0.1,0.34,0.8)),
+                saved("com.apple.mail",lk("收件箱"),slot:3,Rect(0.03,0.05,0.6,0.9)),
+                saved("com.apple.iCal",lk("日历"),slot:3,Rect(0.6,0.15,0.38,0.7)),
+                saved("com.apple.Music",lk("音乐"),slot:4,Rect(0.1,0.1,0.8,0.8)),
             ]
             var rec=MonitorLayoutRecord(monitor:sh,profile:Profile(location:sh.name,windows:ws))
             rec.savedAt=day(0,9,42)
@@ -193,15 +193,15 @@ enum UISnapshots {
             func v(_ n: Int,_ date: Date,_ w: Int,_ d: Int,current: Bool = false) -> LayoutVersion {
                 LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/r\(n).json"),savedAt:date,windowCount:w,desktopCount:d,isCurrent:current)
             }
-            var cur=v(0,rec.savedAt,7,4,current:true); cur.originName="写代码"
-            var meet=v(1,day(-1,14,30),4,2); meet.originName="开会"
-            var lab=v(3,day(-4,10,12),5,3); lab.label="季度汇报前"
-            var read=v(4,day(-6,20,5),3,1); read.originName="专注阅读"
+            var cur=v(0,rec.savedAt,7,4,current:true); cur.originName=lk("写代码")
+            var meet=v(1,day(-1,14,30),4,2); meet.originName=lk("开会")
+            var lab=v(3,day(-4,10,12),5,3); lab.label=lk("季度汇报前")
+            var read=v(4,day(-6,20,5),3,1); read.originName=lk("专注阅读")
             m.screenVersions=[cur,meet,v(2,day(-2,18,20),6,4),lab,read]
             func n(_ i: Int,_ name: String,_ w: Int,_ d: Int,active: Bool = false) -> NamedLayout {
                 NamedLayout(url:URL(fileURLWithPath:"/tmp/lk-sample/rn\(i).json"),name:name,savedAt:day(-2,9,0),windowCount:w,desktopCount:d,isActive:active)
             }
-            m.namedLayouts=[n(1,"写代码",7,4,active:true),n(2,"开会",4,2),n(3,"专注阅读",3,1)]
+            m.namedLayouts=[n(1,lk("写代码"),7,4,active:true),n(2,lk("开会"),4,2),n(3,lk("专注阅读"),3,1)]
             shot("40-readme-main.png",MainView(model:m))
             shot("41-readme-main-dark.png",MainView(model:m),dark:true)
             MonitorRecognition.layoutMode = .perMonitor
@@ -221,7 +221,7 @@ enum UISnapshots {
             shot("10-toast-auto-restore-dark.png",ToastView(toast:toast,actions:toast.actions).padding(16),dark:true)
         }
         shot("11-ask-once.png",ReconnectPanelView(prompt:ReconnectCoordinator.askOncePrompt(name:monitor.name,automatic:{},askEachTime:{},never:{})))
-        shot("12-ask-each-time.png",ReconnectPanelView(prompt:ReconnectCoordinator.askPrompt(name:"公司",restore:{},preview:{})))
+        shot("12-ask-each-time.png",ReconnectPanelView(prompt:ReconnectCoordinator.askPrompt(name:lk("公司"),restore:{},preview:{})))
 
         // Standalone preview / results panel.
         let sheet=sampleModel(record:record)
@@ -229,7 +229,7 @@ enum UISnapshots {
         shot("13-preview-panel.png",QuickRestoreSheet(model:sheet,onClose:{}))
         shot("14-preview-panel-details.png",QuickRestoreSheet(model:sheet,onClose:{},showDetails:true))
         if let plan=sheet.quickPlan {
-            for item in plan.items where item.state == .ready { sheet.quickResults[item.savedIndex]=RestoreResult(title:item.savedTitle,outcome:.verified,detail:"已回读确认") }
+            for item in plan.items where item.state == .ready { sheet.quickResults[item.savedIndex]=RestoreResult(title:item.savedTitle,outcome:.verified,detail:lk("已回读确认")) }
             if var after=sheet.quickSnapshot {
                 for item in plan.items where item.state == .ready {
                     guard let token=item.chosenToken,let i=after.windows.firstIndex(where:{$0.token==token}) else { continue }
@@ -239,15 +239,15 @@ enum UISnapshots {
                 sheet.quickSnapshot=after
                 sheet.quickPlan=try? QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:"ext",snapshot:after,allowCrossSpace:true)
             }
-            sheet.quickMessage="已恢复 \(plan.readyCount)/\(plan.readyCount) 个窗口（桌面、位置和大小均已回读确认）。"
+            sheet.quickMessage=lk("已恢复 %@/%@ 个窗口（桌面、位置和大小均已回读确认）。", "\(plan.readyCount)", "\(plan.readyCount)")
         }
         shot("15-preview-results.png",QuickRestoreSheet(model:sheet,onClose:{}))
 
         // Settings (general shows hotkeys, remembered screens, pause; one hotkey shows a conflict example).
         let settings=sampleModel(record:record)
-        settings.monitorPreferences.setDisplayName("公司",for:monitor.key,seenName:monitor.name)
+        settings.monitorPreferences.setDisplayName(lk("公司"),for:monitor.key,seenName:monitor.name)
         settings.monitorPreferences.setRestore(.auto,for:monitor.key)
-        settings.hotkeyStatus=[.save:.active,.restore:.active,.undo:.conflict("⌃⌥⌘Z 注册失败：可能已被系统或其他应用占用，请换一个")]
+        settings.hotkeyStatus=[.save:.active,.restore:.active,.undo:.conflict(lk("⌃⌥⌘Z 注册失败：可能已被系统或其他应用占用，请换一个"))]
         for (i,tab) in SettingsTab.allCases.enumerated() {
             settings.settingsTab=tab
             shot("\(16+i)-settings-\(tab.rawValue).png",SettingsView(model:settings))
@@ -266,7 +266,7 @@ enum UISnapshots {
             let toast=shared.sharedNoticeToast(notice)
             shot(name,ToastView(toast:toast,actions:toast.actions).padding(16))
         }
-        let reconnectToast=ReconnectCoordinator.reconnectNotice(name:"公司",restore:{})
+        let reconnectToast=ReconnectCoordinator.reconnectNotice(name:lk("公司"),restore:{})
         shot("31-toast-reconnect.png",ToastView(toast:reconnectToast,actions:reconnectToast.actions).padding(16))
         shot("32-toast-reconnect-dark.png",ToastView(toast:reconnectToast,actions:reconnectToast.actions).padding(16),dark:true)
         // First-run guide (sample models; nothing is requested from the system).

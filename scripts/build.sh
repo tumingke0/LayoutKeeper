@@ -61,6 +61,10 @@ otool -l "$app_dir/Contents/MacOS/LayoutKeeper" | grep -q "@executable_path/../F
 # Drop debug-symbol (stab) entries: they embed absolute build paths, which would leak the builder's home folder.
 strip -S "$app_dir/Contents/MacOS/LayoutKeeper" "$out_dir/layoutkeeperctl"
 cp "$project_dir/Resources/AppIcon.icns" "$app_dir/Contents/Resources/AppIcon.icns.new" && mv -f "$app_dir/Contents/Resources/AppIcon.icns.new" "$app_dir/Contents/Resources/AppIcon.icns"
+# UI strings: English table plus an (empty) zh-Hans localization so macOS picks the language from the system.
+for lproj in "$project_dir"/Resources/*.lproj(N); do
+  rm -rf "$app_dir/Contents/Resources/${lproj:t}"; ditto "$lproj" "$app_dir/Contents/Resources/${lproj:t}"
+done
 cp "$project_dir/scripts/Info.plist" "$app_dir/Contents/Info.plist.new" && mv -f "$app_dir/Contents/Info.plist.new" "$app_dir/Contents/Info.plist"
 # App icon. AppIcon.icns is the classic icon; macOS 26+ resolves CFBundleIconName from an asset catalog,
 # so also compile Assets.car from the same artwork. Without actool, drop CFBundleIconName so it does not dangle.
