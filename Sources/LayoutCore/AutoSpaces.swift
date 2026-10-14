@@ -2,11 +2,13 @@
 // Copyright (C) 2026 LayoutKeeper contributors
 import Foundation
 
-/// Experimental (off by default): add / remove Spaces by driving Mission Control through Accessibility.
+/// 桌面管理 (shared layout mode only): add / remove Spaces by driving Mission Control through Accessibility.
 /// Pure decision logic lives here so every safeguard is unit tested; the AX driver is in MacAdapters.
 public enum AutoSpaces {
     public static let addPreferenceKey="autoAddSpaces"
     public static let removePreferenceKey="autoRemoveMigratedSpaces"
+    /// Default for new installs (an explicit user choice is always kept). On: both actions are guarded and fall back to notices.
+    public static let defaultEnabled=true
     /// Never add or remove more than this many Spaces in one run.
     public static let maxPerRun=6
     /// Whole run must finish within this many seconds.
@@ -18,7 +20,7 @@ public enum AutoSpaces {
         case disabled, fullScreenActive, tooMany(Int), nothingToDo, separateSpacesOff
         public var description: String {
             switch self {
-            case .disabled: return "实验开关未打开"
+            case .disabled: return "开关未打开"
             case .fullScreenActive: return "有全屏或分屏 App，暂不自动操作桌面"
             case .tooMany(let n): return "需要处理 \(n) 个桌面，超过单次上限 \(maxPerRun)"
             case .nothingToDo: return "无需操作"

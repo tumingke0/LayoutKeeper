@@ -36,7 +36,6 @@ extension Model {
             return ("clock.arrow.circlepath",text,r.failed>0 || r.needsConfirmation>0 ? .warning : .neutral,false)
         }
         if let record=externalRecord,record.profile.windows.contains(where:{$0.desktopIndex==nil}) { return ("arrow.clockwise.circle.fill","布局来自旧版本，请重新保存一次",.warning,false) }
-        if let until=pausedUntil,Date()<until { return ("pause.circle","自动恢复已暂停至 \(RelativeTime.clock(until))",.neutral,false) }
         if crossSpaceSupport.isUntested { return ("checkmark.seal","此系统版本建议在设置 → 诊断里自检一次",.neutral,false) }
         return ("checkmark.seal","接上屏幕时：\(currentExternalMonitor.flatMap{ monitorPreferences.restore($0.identity.key) }?.title ?? autoRestoreMode.title)",.neutral,false)
     }

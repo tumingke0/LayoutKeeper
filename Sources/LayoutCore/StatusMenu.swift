@@ -92,13 +92,6 @@ public enum StatusMenuModel {
             modes.append(MenuItemModel(kind:.action,id:"mode.forget",title:"改回跟随上面的设置"))
         }
         items.append(MenuItemModel(kind:.submenu,id:"mode",title:"接上屏幕时",symbol:"cable.connector.horizontal",children:modes))
-        if let until=s.pausedUntil,s.now<until {
-            items.append(MenuItemModel(kind:.submenu,id:"pause",title:"自动恢复已暂停（至 \(RelativeTime.clock(until,now:s.now))）",symbol:"pause.circle.fill",
-                                       children:[MenuItemModel(kind:.action,id:"resume",title:"恢复自动",symbol:"play.circle")]))
-        } else {
-            items.append(MenuItemModel(kind:.submenu,id:"pause",title:"暂停自动恢复",symbol:"pause.circle",
-                                       children:AutoRestorePause.allCases.map{ MenuItemModel(kind:.action,id:"pause.\($0.rawValue)",title:$0.title) }))
-        }
         items.append(.separator("sep2"))
         items.append(MenuItemModel(kind:.action,id:"open",title:"打开 LayoutKeeper…",symbol:"macwindow"))
         items.append(MenuItemModel(kind:.action,id:"checkUpdates",title:"检查更新…",symbol:"arrow.down.circle"))

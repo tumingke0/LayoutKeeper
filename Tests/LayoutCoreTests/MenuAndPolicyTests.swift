@@ -17,7 +17,7 @@ final class StatusMenuModelTests: XCTestCase {
     func testNormalOrderShortcutsAndStatusLine() {
         var s=state(); s.canUndo=true
         let items=StatusMenuModel.build(s)
-        XCTAssertEqual(ids(items),["status","save","restore","undo","sep1","mode","pause","sep2","open","checkUpdates","settings","quit"])
+        XCTAssertEqual(ids(items),["status","save","restore","undo","sep1","mode","sep2","open","checkUpdates","settings","quit"])
         XCTAssertTrue(item(items,"status")!.title.hasPrefix("公司 · 7 个窗口 · "))
         XCTAssertTrue(item(items,"status")!.title.hasSuffix("09:42"))
         XCTAssertFalse(item(items,"status")!.enabled)
@@ -59,11 +59,9 @@ final class StatusMenuModelTests: XCTestCase {
         XCTAssertEqual(modes.filter(\.checked).map(\.id),["mode.ask"])
         XCTAssertEqual(item(modes,"mode.override")?.title,"公司：自动恢复（已记住）")
         XCTAssertNotNil(item(modes,"mode.forget"))
-        let pause=item(items,"pause")!
-        XCTAssertTrue(pause.title.contains("已暂停"))
-        XCTAssertEqual(ids(pause.children),["resume"])
+        XCTAssertNil(item(items,"pause"))   // 暂停自动恢复 was removed (0.6.4)
         s.pausedUntil=nil
-        XCTAssertEqual(ids(item(StatusMenuModel.build(s),"pause")!.children),["pause.oneHour","pause.untilTomorrow"])
+        XCTAssertNil(item(StatusMenuModel.build(s),"pause"))
     }
 }
 
