@@ -91,6 +91,12 @@ final class Model: ObservableObject {
     /// Notices from shared mode (too few Spaces / Spaces moved to the built-in screen); shown in the main window too.
     @Published var sharedNotice: SharedNotice?
     var pendingSpacesNeeded: Int?
+    /// 实验功能 (off by default): add missing Spaces / remove empty migrated Spaces through Mission Control.
+    @Published var autoAddSpaces=Prefs.store?.bool(forKey:AutoSpaces.addPreferenceKey) ?? false { didSet { Prefs.store?.set(autoAddSpaces,forKey:AutoSpaces.addPreferenceKey) } }
+    @Published var autoRemoveSpaces=Prefs.store?.bool(forKey:AutoSpaces.removePreferenceKey) ?? false { didSet { Prefs.store?.set(autoRemoveSpaces,forKey:AutoSpaces.removePreferenceKey) } }
+    lazy var autoSpaces=AutoSpacesRunner(spaces:spaces)
+    @Published var missionControlReport=""
+    @Published var autoSpacesTrialMessage=""
     /// Snapshot rendering only: pretend the system setting is off to show the hint.
     var snapshotSeparateSpacesOff=false
     @Published var monitorPreferences=Prefs.monitorPreferences() { didSet { Prefs.save(monitorPreferences,key:Prefs.monitorPreferencesKey) } }
