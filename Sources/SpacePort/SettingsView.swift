@@ -40,6 +40,14 @@ struct GeneralSettings: View {
                         .font(.caption).foregroundStyle(Tone.warning.color).fixedSize(horizontal:false,vertical:true)
                 }
             }
+            if model.layoutMode == .sharedExternal {
+                Section("实验功能（默认关闭）") {
+                    Toggle("实验：接上外接屏时自动补齐缺少的桌面",isOn:$model.autoAddSpaces)
+                    Toggle("实验：拔掉外接屏后自动删掉挪到内置屏上的空桌面",isOn:$model.autoRemoveSpaces)
+                    Text("通过辅助功能操作调度中心完成，屏幕会闪一下调度中心。每次最多 \(AutoSpaces.maxPerRun) 个，每一步都核对桌面数；只删从外接屏挪过来、里面没有窗口、且不在使用中的桌面。有全屏 App 时不操作；任何一步不对就停下，改为提示你手动处理。")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                }
+            }
             Section("接上屏幕时") {
                 Picker("默认",selection:$model.autoRestoreMode) { ForEach(AutoRestoreMode.allCases,id:\.self) { Text($0.title).tag($0) } }
                 Text(model.autoRestoreMode == .auto ? "屏幕稳定、窗口停止移动后自动恢复能唯一确认的窗口；需要确认或在另一块屏幕上的窗口不会动。右上角提示可撤销。"
@@ -144,6 +152,19 @@ struct DiagnosticsSettings: View {
                         if !model.captureInspectionMessage.isEmpty { Text(model.captureInspectionMessage).font(.caption).foregroundStyle(.secondary) }
                         if let report=model.captureInspection ?? model.externalRecord?.captureReport { CaptureStatsView(model:model,report:report) }
                         if !model.externalMessage.isEmpty { Text(model.externalMessage).font(.caption).foregroundStyle(.secondary) }
+                    }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
+                }
+                GroupBox("自动加减桌面（实验）") {
+                    VStack(alignment:.leading,spacing:8) {
+                        HStack {
+                            Button("检查调度中心结构（只读）") { model.inspectMissionControl() }.disabled(!model.trusted || model.autoSpaces.running)
+                            Button("试一次：加一个桌面再删掉") { model.runAutoSpacesTrial() }.disabled(!model.trusted || model.autoSpaces.running)
+                        }
+                        if !model.autoSpacesTrialMessage.isEmpty { Text(model.autoSpacesTrialMessage).font(.caption) }
+                        if !model.missionControlReport.isEmpty {
+                            Button("复制结构到剪贴板") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.missionControlReport,forType:.string) }.controlSize(.small)
+                            DisclosureGroup("调度中心结构") { Text(model.missionControlReport).font(.system(.caption2,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading) }.font(.caption)
+                        }
                     }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
                 }
                 GroupBox("技术信息") {

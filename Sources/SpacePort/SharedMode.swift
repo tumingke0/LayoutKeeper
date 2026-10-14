@@ -8,6 +8,8 @@ import MacAdapters
 struct SharedNotice: Equatable {
     enum Kind: Equatable { case missingSpaces(Int), migrated(Int), separateSpacesOff, multipleMonitors }
     var kind: Kind
+    /// Set when the experimental automatic add/remove gave up; shown above the manual steps.
+    var autoFailure: String?=nil
     var title: String {
         switch kind {
         case .missingSpaces(let n): return "外接屏少 \(n) 个桌面"
@@ -17,6 +19,10 @@ struct SharedNotice: Equatable {
         }
     }
     var detail: String {
+        let prefix=autoFailure.map{ "自动操作没完成（\($0)），已停下。" } ?? ""
+        return prefix+manualDetail
+    }
+    var manualDetail: String {
         switch kind {
         case .missingSpaces(let n): return "多出来的窗口先放在最后一个桌面。打开调度中心，在顶部按「+」补 \(n) 个桌面，补好后会自动再恢复一次。"
         case .migrated: return "这是拔掉外接屏时 macOS 挪过来的。不需要的话，在调度中心把它们删掉即可；共用布局按桌面顺序保存，删了也不会丢，下次接上外接屏照样恢复。"
@@ -87,11 +93,78 @@ extension Model {
         guard sharedModeActive else { return }
         if plan.missingDesktops>0 {
             pendingSpacesNeeded=plan.desktopsNeeded
-            postSharedNotice(SharedNotice(kind:.missingSpaces(plan.missingDesktops)))
+            if !tryAutoAddSpaces(needed:plan.desktopsNeeded,available:plan.desktopsNeeded-plan.missingDesktops) {
+                postSharedNotice(SharedNotice(kind:.missingSpaces(plan.missingDesktops)))
+            }
         } else {
             pendingSpacesNeeded=nil
             if case .missingSpaces? = sharedNotice?.kind { sharedNotice=nil }
         }
+    }
+}
+
+extension Model {
+    var builtInDisplayToken: String? { MacEnvironment.displays().first{ $0.role == .builtIn }?.token }
+    var externalDisplayToken: String? { let e=MacEnvironment.displays().filter{ $0.role == .external }; return e.count==1 ? e[0].token : nil }
+    /// 实验：自动补桌面. Returns true when a run was started (the notice is then shown only if it fails).
+    func tryAutoAddSpaces(needed: Int,available: Int) -> Bool {
+        guard !RenderMode.snapshot,trusted,SeparateSpaces.enabled,let token=externalDisplayToken,
+              let all=try? spaces.spaces(displays:MacEnvironment.displays()),
+              case .success(let count)=AutoSpaces.planAdd(enabled:autoAddSpaces,needed:needed,available:available,spaces:all) else { return false }
+        let missing=needed-available
+        autoSpaces.add(count:count,token:token) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let n):
+                self.pendingSpacesNeeded=nil
+                if case .missingSpaces? = self.sharedNotice?.kind { self.sharedNotice=nil }
+                self.showToast?(Toast(icon:"plus.rectangle.on.rectangle",tone:.success,title:"已自动补了 \(n) 个桌面",detail:"正在按桌面顺序恢复窗口。",duration:4))
+                let outcome=self.directRestore(.automatic)
+                if let toast=self.restoreToast(outcome,trigger:.automatic) { self.showToast?(toast) }
+            case .failure(let e):
+                NSLog("LayoutKeeper auto add Spaces stopped: %@",e.description)
+                var notice=SharedNotice(kind:.missingSpaces(missing)); notice.autoFailure=e.description
+                self.postSharedNotice(notice)
+            }
+        }
+        return true
+    }
+    /// 实验：拔屏后自动删掉挪到内置屏上的空桌面. Returns true when a run was started.
+    func tryAutoRemoveSpaces(before: SpaceCensus,after: SpaceCensus) -> Bool {
+        guard !RenderMode.snapshot,trusted,let token=builtInDisplayToken,
+              let all=try? spaces.spaces(displays:MacEnvironment.displays()),
+              let occupied=SpaceOccupancy.occupied(spaces:spaces) else { return false }
+        let active=Set(all.filter(\.active).map(\.id))
+        guard case .success(let ids)=AutoSpaces.planRemove(enabled:autoRemoveSpaces,before:before,after:after,occupied:occupied,active:active,spaces:all) else { return false }
+        let moved=SpaceCensus.migratedToBuiltIn(before:before,after:after)
+        autoSpaces.remove(ids:ids,token:token) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let n):
+                let left=moved-n
+                self.showToast?(Toast(icon:"rectangle.stack.badge.minus",tone:.success,title:"已自动删掉 \(n) 个空桌面",detail:left>0 ? "还有 \(left) 个里面有窗口或正在使用，没有动。" : "内置屏恢复干净了。",duration:5))
+            case .failure(let e):
+                NSLog("LayoutKeeper auto remove Spaces stopped: %@",e.description)
+                var notice=SharedNotice(kind:.migrated(moved)); notice.autoFailure=e.description
+                self.postSharedNotice(notice)
+            }
+        }
+        return true
+    }
+    func inspectMissionControl() {
+        missionControlReport="正在读取…"
+        autoSpaces.inspect { [weak self] in self?.missionControlReport=$0 }
+    }
+    func runAutoSpacesTrial() {
+        guard let token=externalDisplayToken ?? builtInDisplayToken else { autoSpacesTrialMessage="找不到屏幕"; return }
+        if let all=try? spaces.spaces(displays:MacEnvironment.displays()),AutoSpaces.fullScreenActive(all) { autoSpacesTrialMessage=AutoSpaces.Blocker.fullScreenActive.description; return }
+        let alert=NSAlert()
+        alert.messageText="试一下自动加、删桌面？"
+        alert.informativeText="会打开调度中心，在\(externalDisplayToken != nil ? "外接屏" : "内置屏")上按「+」加一个桌面，确认加上后再把这个新桌面删掉。其它桌面和窗口都不会动。"
+        alert.addButton(withTitle:"开始"); alert.addButton(withTitle:"取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        autoSpacesTrialMessage="正在测试…"
+        autoSpaces.trial(token:token) { [weak self] in self?.autoSpacesTrialMessage=$0 }
     }
 }
 
@@ -138,12 +211,12 @@ final class SharedSpaceWatcher {
                 guard let self,let model=self.model,model.layoutMode == .sharedExternal,let after=self.census(),after.externalCount==0 else { return }
                 self.last=after
                 let moved=SpaceCensus.migratedToBuiltIn(before:previous,after:after)
-                if moved>0 { model.postSharedNotice(SharedNotice(kind:.migrated(moved))) }
+                if moved>0 && !model.tryAutoRemoveSpaces(before:previous,after:after) { model.postSharedNotice(SharedNotice(kind:.migrated(moved))) }
             }
             return
         }
         if now.externalCount==1,previous.externalCount==1,now.external.count>previous.external.count,
-           let needed=model.pendingSpacesNeeded,model.sharedModeActive,!model.busy,!model.showingQuickRestore {
+           let needed=model.pendingSpacesNeeded,model.sharedModeActive,!model.busy,!model.showingQuickRestore,!model.autoSpaces.running {
             if let until=model.pausedUntil,Date()<until { return }
             _=needed   // the user added Spaces after our notice: restore again (only unambiguous windows, undoable)
             let outcome=model.directRestore(.automatic)
