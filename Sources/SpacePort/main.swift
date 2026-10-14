@@ -404,7 +404,9 @@ if let index=CommandLine.arguments.firstIndex(of:"--dump-mission-control"),Comma
     NSApplication.shared.setActivationPolicy(.accessory)
     MissionControlProbe.run(out:URL(fileURLWithPath:CommandLine.arguments[index+1])); exit(0)
 }
-if let index=CommandLine.arguments.firstIndex(of:"--test-add-remove-space"),CommandLine.arguments.count>index+1 {
+// Developer-only: changes Spaces, so it also requires LAYOUTKEEPER_DEV_SPACE_TEST=1 in the environment.
+if let index=CommandLine.arguments.firstIndex(of:"--test-add-remove-space"),CommandLine.arguments.count>index+1,
+   ProcessInfo.processInfo.environment["LAYOUTKEEPER_DEV_SPACE_TEST"]=="1" {
     NSApplication.shared.setActivationPolicy(.accessory)
     AddRemoveSpaceTest.run(out:URL(fileURLWithPath:CommandLine.arguments[index+1])); exit(0)
 }

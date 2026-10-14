@@ -41,9 +41,9 @@ struct GeneralSettings: View {
                 }
             }
             if model.layoutMode == .sharedExternal {
-                Section("实验功能") {
-                    Toggle("接上外接屏时自动补齐缺少的桌面",isOn:$model.autoAddSpaces)
-                    Toggle("拔掉外接屏后自动删掉挪到内置屏上的空桌面",isOn:$model.autoRemoveSpaces)
+                Section("实验功能（默认关闭）") {
+                    Toggle("实验：接上外接屏时自动补齐缺少的桌面",isOn:$model.autoAddSpaces)
+                    Toggle("实验：拔掉外接屏后自动删掉挪到内置屏上的空桌面",isOn:$model.autoRemoveSpaces)
                     Text("通过辅助功能操作调度中心完成，屏幕会闪一下调度中心。每次最多 \(AutoSpaces.maxPerRun) 个，每一步都核对桌面数；只删从外接屏挪过来、里面没有窗口、且不在使用中的桌面。有全屏 App 时不操作；任何一步不对就停下，改为提示你手动处理。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 }
