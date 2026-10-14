@@ -27,8 +27,24 @@ struct GeneralSettings: View {
         let b=Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? lk("未打包")
         return "\(v) (\(b))"
     }
+    @State private var language=AppLanguage.current
     var body: some View {
         Form {
+            Section(lk("语言")) {
+                Picker(lk("语言"),selection:$language) {
+                    Text(lk("跟随系统")).tag(AppLanguage.system)
+                    Text(verbatim:"English").tag(AppLanguage.english)
+                    Text(verbatim:"简体中文").tag(AppLanguage.chinese)
+                }
+                .onChange(of:language) { _,value in AppLanguage.current=value }
+                if language != AppLanguage.atLaunch {
+                    HStack {
+                        Text(lk("重启 LayoutKeeper 后生效。")).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(lk("立即重启")) { AppLanguage.relaunch() }.controlSize(.small)
+                    }
+                }
+            }
             Section(lk("布局模式")) {
                 Picker(lk("布局模式"),selection:$model.layoutMode) { ForEach(LayoutMode.allCases,id:\.self) { Text($0.title).tag($0) } }
                     .pickerStyle(.radioGroup)
@@ -117,7 +133,16 @@ struct GeneralSettings: View {
             Section(lk("关于")) {
                 LabeledContent(lk("版本"),value:version)
                 LabeledContent(lk("系统"),value:"macOS \(model.systemBuildText)")
-                LabeledContent(lk("安装位置"),value:AppInstallation.role(bundleURL:Bundle.main.bundleURL))
+                LabeledContent(lk("安装位置")) {
+                    HStack(spacing:8) {
+                        if AppInstallation.isDevelopmentBuild(bundleURL:Bundle.main.bundleURL) {
+                            Text(lk("开发构建")).font(.caption.weight(.medium)).foregroundStyle(Tone.warning.color)
+                                .padding(.horizontal,6).padding(.vertical,1).background(Capsule().fill(Tone.warning.color.opacity(0.15)))
+                        }
+                        Text(AppInstallation.location(bundleURL:Bundle.main.bundleURL)).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Button(lk("在 Finder 中显示")) { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }.controlSize(.small)
+                    }
+                }
                 LabeledContent(lk("数据文件夹"),value:"~/Library/Application Support/LayoutKeeper")
                 Text(AppMigration.statusText).font(.caption).foregroundStyle(.secondary)
             }

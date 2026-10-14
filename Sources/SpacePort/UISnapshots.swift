@@ -261,6 +261,8 @@ enum UISnapshots {
         shot("26-settings-layout-mode-hint.png",SettingsView(model:shared))
         let perMonitor=sampleModel(record:record); perMonitor.settingsTab = .general
         shot("27-settings-layout-mode-per-monitor.png",SettingsView(model:perMonitor))
+        // Whole General tab in one tall image (language at the top, About with the install location at the bottom).
+        shot("33-settings-general-full.png",GeneralSettings(model:perMonitor).frame(width:640,height:1900))
         for (name,notice) in [("28-toast-missing-spaces.png",SharedNotice(kind:.missingSpaces(2))),("29-toast-spaces-moved.png",SharedNotice(kind:.migrated(5))),
                               ("30-toast-separate-spaces-off.png",SharedNotice(kind:.separateSpacesOff))] {
             let toast=shared.sharedNoticeToast(notice)

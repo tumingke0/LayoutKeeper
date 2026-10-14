@@ -782,3 +782,9 @@
 "（超时）" = " (timed out)";
 "；" = "; ";
 "；排除：%@" = "; excluded: %@";
+"语言" = "Language";
+"跟随系统" = "Follow System";
+"重启 LayoutKeeper 后生效。" = "Takes effect after LayoutKeeper relaunches.";
+"立即重启" = "Relaunch Now";
+"开发构建" = "Development build";
+"已安装" = "Installed";

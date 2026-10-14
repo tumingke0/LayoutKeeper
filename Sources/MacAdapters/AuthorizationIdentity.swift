@@ -14,7 +14,7 @@ public enum AuthorizationIdentity {
             "bundlePath":Bundle.main.bundleURL.resolvingSymlinksInPath().path,
             "bundleIdentifier":Bundle.main.bundleIdentifier ?? "unbundled",
             "permissionOwner":gui ? "LayoutKeeper GUI process" : "Calling CLI/probe process; does not measure GUI permission",
-            "installationRole":gui ? AppInstallation.role(bundleURL:Bundle.main.bundleURL) : "CLI/probe",
+            "installationRole":gui ? (AppInstallation.isDevelopmentBuild(bundleURL:Bundle.main.bundleURL) ? "development build" : "installed") : "CLI/probe",
             "callingProcessAccessibilityTrusted":trusted ?? AXIsProcessTrusted(),
             "permissionPromptIssued":false,"helperPresent":false]
         var live: SecCode?

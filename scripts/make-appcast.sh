@@ -33,6 +33,12 @@ mkdir -p "$out"
 zip="$out/LayoutKeeper-$version-$name.zip"
 rm -f "$zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+# Release notes shown in the update dialog: short HTML from docs/releases/<version>.md, Chinese and English,
+# embedded in the appcast (no GitHub page). Sparkle picks the description matching the app's language.
+notes="docs/releases/$version.md"
+[[ -f $notes ]] || { print -u2 "missing $notes"; exit 1 }
+notes_en=$(python3 scripts/release-notes-html.py "$notes" --lang en --version "$version")
+notes_zh=$(python3 scripts/release-notes-html.py "$notes" --lang zh --version "$version")
 sig=$("$bin/sign_update" --account layoutkeeper "$zip")
 [[ "$sig" == *edSignature=* ]] || { print -u2 "sign_update failed"; exit 1 }
 cat > "$out/appcast-$arch.xml" <<XML
@@ -47,7 +53,9 @@ cat > "$out/appcast-$arch.xml" <<XML
       <sparkle:version>$build</sparkle:version>
       <sparkle:shortVersionString>$version</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>$minos</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/tumingke0/LayoutKeeper/releases/tag/v$version</sparkle:releaseNotesLink>
+      <description><![CDATA[$notes_en]]></description>
+      <description xml:lang="en"><![CDATA[$notes_en]]></description>
+      <description xml:lang="zh-Hans"><![CDATA[$notes_zh]]></description>
       <enclosure url="$base/${zip:t}" type="application/octet-stream" $sig />
     </item>
   </channel>

@@ -22,7 +22,9 @@ final class Model: ObservableObject {
     var versionLabel: String {
         let version=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? lk("开发版本")
         let build=Bundle.main.object(forInfoDictionaryKey:"CFBundleVersion") as? String ?? lk("未打包")
-        return lk("版本 %@ (%@) · %@", "\(version)", "\(build)", "\(AppInstallation.role(bundleURL:Bundle.main.bundleURL))")
+        let url=Bundle.main.bundleURL
+        let dev=AppInstallation.isDevelopmentBuild(bundleURL:url) ? " · "+lk("开发构建") : ""
+        return lk("版本 %@ (%@) · %@", "\(version)", "\(build)", "\(AppInstallation.location(bundleURL:url))")+dev
     }
     func refreshAuthorization() { accessState=accessMonitor.check() }
     func openControlSettings() {

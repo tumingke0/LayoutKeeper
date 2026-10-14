@@ -52,8 +52,20 @@ public enum AppInstallation {
     public static func fixedBundleURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         home.appendingPathComponent("Applications",isDirectory:true).appendingPathComponent("LayoutKeeper.app",isDirectory:true)
     }
+    /// Where this copy runs from, with the home folder shown as "~" (e.g. "/Applications/LayoutKeeper.app").
+    public static func location(bundleURL: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> String {
+        let path=bundleURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let homePath=home.resolvingSymlinksInPath().standardizedFileURL.path
+        return path.hasPrefix(homePath+"/") ? "~"+path.dropFirst(homePath.count) : path
+    }
+    /// A copy built from source: `scripts/build.sh` output (build-products) or a bare `swift build` binary (no .app bundle).
+    public static func isDevelopmentBuild(bundleURL: URL) -> Bool {
+        let path=bundleURL.resolvingSymlinksInPath().standardizedFileURL.path
+        return !path.hasSuffix(".app") || path.contains("/build-products/") || path.contains("/.build/")
+    }
+    /// Short role for diagnostics: "已安装" (installed) or "开发构建" (development build).
     public static func role(bundleURL: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> String {
-        bundleURL.resolvingSymlinksInPath().standardizedFileURL == fixedBundleURL(home:home).resolvingSymlinksInPath().standardizedFileURL ? lk("固定安装入口") : lk("测试候选")
+        isDevelopmentBuild(bundleURL:bundleURL) ? lk("开发构建") : lk("已安装")
     }
     public static let dataFolderName="LayoutKeeper"
     public static let legacyDataFolderName="SpacePort"
