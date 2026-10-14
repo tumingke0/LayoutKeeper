@@ -144,7 +144,7 @@ struct HUDPlacementMock: View {
             VStack(spacing:0) {
                 HStack(spacing:14) { Image(systemName:"apple.logo"); Text("访达").bold(); Text("文件"); Text("编辑"); Spacer(); Image(systemName:"rectangle.3.group"); Text("周三 16:20") }
                     .font(.system(size:12)).padding(.horizontal,14).frame(height:26).background(Color.primary.opacity(0.08))
-                BrightnessHUD(name:"DELL S2421HSX",percent:0.31).padding(.top,12)
+                BrightnessHUD(name:"DELL SE2416H",percent:0.31).padding(.top,12)
                 Spacer()
             }
         }.frame(width:900,height:380)
@@ -157,7 +157,7 @@ enum BrightnessMockups {
         var ok=true
         func shot<V: View>(_ n: String,_ v: V,dark: Bool) { ok=UISnapshots.render(v,to:dir.appendingPathComponent(n),dark:dark) && ok }
         let menu=BrightnessMenuMock(rows:[
-            .init(name:"DELL S2421HSX",badge:"DDC",badgeTone:.success,brightness:0.38,volume:0.55,note:nil),
+            .init(name:"DELL SE2416H",badge:"DDC",badgeTone:.success,brightness:0.38,volume:0.55,note:nil),
             .init(name:"内建显示屏",badge:"内建",badgeTone:.neutral,brightness:0.42,volume:nil,note:nil),
         ])
         let fallback=BrightnessMenuMock(rows:[
@@ -168,8 +168,8 @@ enum BrightnessMockups {
             shot("01-menu-displays-\(s).png",menu,dark:dark)
             shot("02-menu-software-dimming-\(s).png",fallback,dark:dark)
             shot("03-hud-builtin-\(s).png",MockDesktop { BrightnessHUD(name:"内建显示屏",percent:0.56,nits:92) },dark:dark)
-            shot("04-hud-external-ddc-\(s).png",MockDesktop { BrightnessHUD(name:"DELL S2421HSX",percent:0.38) },dark:dark)
-            shot("05-hud-volume-\(s).png",MockDesktop { BrightnessHUD(name:"DELL S2421HSX",percent:0.55,kind:.volume); BrightnessHUD(name:"DELL S2421HSX",percent:0.55,kind:.muted) },dark:dark)
+            shot("04-hud-external-ddc-\(s).png",MockDesktop { BrightnessHUD(name:"DELL SE2416H",percent:0.38) },dark:dark)
+            shot("05-hud-volume-\(s).png",MockDesktop { BrightnessHUD(name:"DELL SE2416H",percent:0.55,kind:.volume); BrightnessHUD(name:"DELL SE2416H",percent:0.55,kind:.muted) },dark:dark)
             shot("07-hud-top-placement-\(s).png",HUDPlacementMock(),dark:dark)
             shot("06-hud-software-dimming-\(s).png",MockDesktop { BrightnessHUD(name:"LG HDR 4K",percent:0.70,note:"软件调暗") },dark:dark)
         }

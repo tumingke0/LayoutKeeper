@@ -6,9 +6,11 @@
 
 **接回外接显示器，窗口自动回到原来的位置，连原来在第几个桌面都一样。**
 
+<p align="center"><img src="docs/images/main-window.png" width="720" alt="主窗口：共用布局、版式和历史版本"></p>
+
 <p align="center">
-  <img src="docs/images/main-window.png" width="440" alt="主窗口：已保存的屏幕、版式和历史版本">
-  <img src="docs/images/menu.png" width="440" alt="菜单栏：保存、恢复、切换版式">
+  <img src="docs/images/menu.png" width="300" alt="菜单栏：亮度和音量滑块、保存和恢复">
+  <img src="docs/images/brightness-hud.png" width="520" alt="屏幕上方的亮度提示">
 </p>
 
 ## 解决什么问题
@@ -34,8 +36,8 @@ LayoutKeeper 常驻菜单栏，记住外接屏上每个窗口的位置，**包�
 - **自动更新**（Sparkle）：更新包有签名校验，更新后辅助功能权限不会丢。
 
 <p align="center">
-  <img src="docs/images/preview.png" width="440" alt="恢复预览">
-  <img src="docs/images/onboarding.png" width="440" alt="首次使用引导：辅助功能权限">
+  <img src="docs/images/settings-general.png" width="440" alt="设置：共用布局模式和桌面管理">
+  <img src="docs/images/settings-display.png" width="440" alt="设置：显示器、亮度和音量键">
 </p>
 
 ## 安装

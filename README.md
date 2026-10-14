@@ -6,9 +6,11 @@
 
 **Your windows go back where they were when you plug your external monitor back in, on the same desktop (Space) as before.**
 
+<p align="center"><img src="docs/images/main-window.png" width="720" alt="Main window: shared layout, named layouts and version history"></p>
+
 <p align="center">
-  <img src="docs/images/main-window.png" width="440" alt="Main window: saved monitors, layouts and version history">
-  <img src="docs/images/menu.png" width="440" alt="Menu bar: save, restore, switch layout">
+  <img src="docs/images/menu.png" width="300" alt="Menu bar: brightness and volume sliders, save and restore">
+  <img src="docs/images/brightness-hud.png" width="520" alt="Brightness indicator at the top of the screen">
 </p>
 
 ## The problem it solves
@@ -34,8 +36,8 @@ LayoutKeeper lives in the menu bar. It remembers where each window was on your e
 - **Automatic updates** via Sparkle. Updates are signed and keep your Accessibility permission.
 
 <p align="center">
-  <img src="docs/images/preview.png" width="440" alt="Restore preview">
-  <img src="docs/images/onboarding.png" width="440" alt="First-run guide: Accessibility permission">
+  <img src="docs/images/settings-general.png" width="440" alt="Settings: shared layout mode and desktop management">
+  <img src="docs/images/settings-display.png" width="440" alt="Settings: displays, brightness and volume keys">
 </p>
 
 ## Install

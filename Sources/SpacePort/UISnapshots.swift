@@ -166,6 +166,47 @@ enum UISnapshots {
         let empty=sampleModel(record:nil,undo:false); empty.externalMonitors=[]; empty.savedScreens=[]; empty.selectedScreenKey=nil
         shot("05d-main-empty.png",MainView(model:empty))
 
+        // README: shared mode, rich sample data (generic titles only).
+        do {
+            let sh=MonitorIdentity.sharedExternal
+            let ws=[
+                saved("com.apple.Terminal","示例项目 — zsh",slot:1,Rect(0.0,0.0,0.62,1)),
+                saved("com.apple.Safari","开发者文档",slot:1,Rect(0.63,0.0,0.37,1)),
+                saved("com.google.Chrome","项目计划",slot:2,Rect(0.02,0.03,0.6,0.94)),
+                saved("com.apple.Notes","备忘录",slot:2,Rect(0.64,0.1,0.34,0.8)),
+                saved("com.apple.mail","收件箱",slot:3,Rect(0.03,0.05,0.6,0.9)),
+                saved("com.apple.iCal","日历",slot:3,Rect(0.6,0.15,0.38,0.7)),
+                saved("com.apple.Music","音乐",slot:4,Rect(0.1,0.1,0.8,0.8)),
+            ]
+            var rec=MonitorLayoutRecord(monitor:sh,profile:Profile(location:sh.name,windows:ws))
+            rec.savedAt=day(0,9,42)
+            let m=sampleModel(record:rec)
+            m.layoutMode = .sharedExternal
+            m.externalMonitors=[ConnectedMonitor(identity:sh,runtimeDisplayToken:"ext")]
+            setLive(m,try? QuickRestorePlanner.plan(record:rec,monitor:sh,displayToken:"ext",snapshot:matchingSnapshot(rec),allowCrossSpace:true))
+            m.lastRestoreSummary=RestoreSummary(at:day(0,9,50),restored:7,needsConfirmation:0,failed:0)
+            m.savedScreens=[SavedScreen(key:MonitorIdentity.sharedExternalKey,monitor:sh,name:sh.name,savedAt:rec.savedAt,windowCount:7,desktopCount:4,connected:true),
+                            SavedScreen(key:monitor.key,monitor:monitor,name:monitor.name,savedAt:day(-2,18,20),windowCount:6,desktopCount:4,connected:false),
+                            SavedScreen(key:homeMonitor.key,monitor:homeMonitor,name:homeMonitor.name,savedAt:day(-3,21,15),windowCount:5,desktopCount:3,connected:false)]
+            m.selectedScreenKey=MonitorIdentity.sharedExternalKey
+            m.selectedRecord=rec
+            func v(_ n: Int,_ date: Date,_ w: Int,_ d: Int,current: Bool = false) -> LayoutVersion {
+                LayoutVersion(url:URL(fileURLWithPath:"/tmp/lk-sample/r\(n).json"),savedAt:date,windowCount:w,desktopCount:d,isCurrent:current)
+            }
+            var cur=v(0,rec.savedAt,7,4,current:true); cur.originName="写代码"
+            var meet=v(1,day(-1,14,30),4,2); meet.originName="开会"
+            var lab=v(3,day(-4,10,12),5,3); lab.label="季度汇报前"
+            var read=v(4,day(-6,20,5),3,1); read.originName="专注阅读"
+            m.screenVersions=[cur,meet,v(2,day(-2,18,20),6,4),lab,read]
+            func n(_ i: Int,_ name: String,_ w: Int,_ d: Int,active: Bool = false) -> NamedLayout {
+                NamedLayout(url:URL(fileURLWithPath:"/tmp/lk-sample/rn\(i).json"),name:name,savedAt:day(-2,9,0),windowCount:w,desktopCount:d,isActive:active)
+            }
+            m.namedLayouts=[n(1,"写代码",7,4,active:true),n(2,"开会",4,2),n(3,"专注阅读",3,1)]
+            shot("40-readme-main.png",MainView(model:m))
+            shot("41-readme-main-dark.png",MainView(model:m),dark:true)
+            MonitorRecognition.layoutMode = .perMonitor
+        }
+
         // Menu bar menu, from the same item model as the real NSMenu.
         let menuModel=sampleModel(record:record)
         shot("06-menu.png",MenuReplica(items:StatusMenuModel.build(menuModel.menuState(optionHeld:false)),expand:"mode"))

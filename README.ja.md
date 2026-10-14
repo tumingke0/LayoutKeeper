@@ -6,9 +6,11 @@
 
 **外部モニターをつなぎ直すと、ウインドウが元の位置に戻ります。元のデスクトップ（操作スペース）にも戻ります。**
 
+<p align="center"><img src="docs/images/main-window.png" width="720" alt="メインウインドウ：共通レイアウト、名前付きレイアウト、履歴"></p>
+
 <p align="center">
-  <img src="docs/images/main-window.png" width="440" alt="メインウインドウ：保存したモニター、レイアウト、履歴">
-  <img src="docs/images/menu.png" width="440" alt="メニューバー：保存・復元・レイアウト切り替え">
+  <img src="docs/images/menu.png" width="300" alt="メニューバー：輝度・音量スライダー、保存と復元">
+  <img src="docs/images/brightness-hud.png" width="520" alt="画面上部の輝度表示">
 </p>
 
 ## どんな問題を解決するか
@@ -34,8 +36,8 @@ LayoutKeeper はメニューバーに常駐し、外部モニター上の各ウ�
 - **自動アップデート**（Sparkle）：アップデートは署名で検証され、アクセシビリティの許可もそのまま残ります。
 
 <p align="center">
-  <img src="docs/images/preview.png" width="440" alt="復元プレビュー">
-  <img src="docs/images/onboarding.png" width="440" alt="初回ガイド：アクセシビリティの許可">
+  <img src="docs/images/settings-general.png" width="440" alt="設定：共通レイアウトモードとデスクトップ管理">
+  <img src="docs/images/settings-display.png" width="440" alt="設定：ディスプレイ、輝度・音量キー">
 </p>
 
 ## インストール

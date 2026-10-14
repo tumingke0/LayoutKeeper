@@ -6,9 +6,11 @@
 
 **Cắm lại màn hình ngoài, các cửa sổ tự trở về đúng chỗ cũ, kể cả đúng màn hình nền (Space) như trước.**
 
+<p align="center"><img src="docs/images/main-window.png" width="720" alt="Cửa sổ chính: bố cục dùng chung, bố cục có tên và lịch sử"></p>
+
 <p align="center">
-  <img src="docs/images/main-window.png" width="440" alt="Cửa sổ chính: các màn hình đã lưu, bố cục và lịch sử">
-  <img src="docs/images/menu.png" width="440" alt="Thanh menu: lưu, khôi phục, đổi bố cục">
+  <img src="docs/images/menu.png" width="300" alt="Thanh menu: thanh trượt độ sáng, âm lượng, lưu và khôi phục">
+  <img src="docs/images/brightness-hud.png" width="520" alt="Chỉ báo độ sáng ở phía trên màn hình">
 </p>
 
 ## Ứng dụng giải quyết vấn đề gì
@@ -34,8 +36,8 @@ LayoutKeeper nằm trên thanh menu và ghi nhớ vị trí từng cửa sổ tr
 - **Tự động cập nhật** qua Sparkle. Bản cập nhật được kiểm tra chữ ký và giữ nguyên quyền Trợ năng.
 
 <p align="center">
-  <img src="docs/images/preview.png" width="440" alt="Xem trước khôi phục">
-  <img src="docs/images/onboarding.png" width="440" alt="Hướng dẫn lần đầu: quyền Trợ năng">
+  <img src="docs/images/settings-general.png" width="440" alt="Cài đặt: chế độ bố cục dùng chung và quản lý màn hình nền">
+  <img src="docs/images/settings-display.png" width="440" alt="Cài đặt: màn hình, phím độ sáng và âm lượng">
 </p>
 
 ## Cài đặt

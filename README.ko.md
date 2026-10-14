@@ -6,9 +6,11 @@
 
 **외장 모니터를 다시 연결하면 창이 원래 자리로 돌아갑니다. 원래 있던 데스크탑(Space)으로도 돌아갑니다.**
 
+<p align="center"><img src="docs/images/main-window.png" width="720" alt="메인 창: 공용 레이아웃, 이름 있는 레이아웃, 기록"></p>
+
 <p align="center">
-  <img src="docs/images/main-window.png" width="440" alt="메인 창: 저장된 모니터, 레이아웃, 기록">
-  <img src="docs/images/menu.png" width="440" alt="메뉴 막대: 저장, 복원, 레이아웃 전환">
+  <img src="docs/images/menu.png" width="300" alt="메뉴 막대: 밝기·음량 슬라이더, 저장과 복원">
+  <img src="docs/images/brightness-hud.png" width="520" alt="화면 위쪽의 밝기 표시">
 </p>
 
 ## 어떤 문제를 해결하나요
@@ -34,8 +36,8 @@ LayoutKeeper는 메뉴 막대에 상주하면서 외장 모니터의 각 창 위
 - **자동 업데이트**(Sparkle): 업데이트는 서명으로 검증되며, 업데이트 후에도 손쉬운 사용 권한이 유지됩니다.
 
 <p align="center">
-  <img src="docs/images/preview.png" width="440" alt="복원 미리 보기">
-  <img src="docs/images/onboarding.png" width="440" alt="첫 실행 안내: 손쉬운 사용 권한">
+  <img src="docs/images/settings-general.png" width="440" alt="설정: 공용 레이아웃 모드와 데스크탑 관리">
+  <img src="docs/images/settings-display.png" width="440" alt="설정: 디스플레이, 밝기·음량 키">
 </p>
 
 ## 설치
