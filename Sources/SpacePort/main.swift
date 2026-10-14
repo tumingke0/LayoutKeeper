@@ -400,6 +400,10 @@ if CommandLine.arguments.contains("--update-check-and-install") {
     DispatchQueue.main.asyncAfter(deadline:.now()+120) { HeadlessUpdateDriver.log("timed out"); exit(5) }
     app.run(); exit(0)
 }
+if let index=CommandLine.arguments.firstIndex(of:"--dump-mission-control"),CommandLine.arguments.count>index+1 {
+    NSApplication.shared.setActivationPolicy(.accessory)
+    MissionControlProbe.run(out:URL(fileURLWithPath:CommandLine.arguments[index+1])); exit(0)
+}
 AppMigration.runAtLaunch()
 let application=NSApplication.shared
 application.setActivationPolicy(.accessory)

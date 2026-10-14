@@ -28,9 +28,12 @@ public final class MissionControlDriver {
     }
     public init() {}
 
-    private var dock: AXUIElement? {
-        NSRunningApplication.runningApplications(withBundleIdentifier:"com.apple.dock").first.map { AXUIElementCreateApplication($0.processIdentifier) }
+    /// macOS ≤15: Mission Control lives in the Dock. macOS 27: the live UI is in WindowManager (com.apple.WindowManager);
+    /// the Dock still exposes an empty zero-frame mc group. Search both, WindowManager first.
+    private var hosts: [AXUIElement] {
+        ["com.apple.WindowManager","com.apple.dock"].compactMap { NSRunningApplication.runningApplications(withBundleIdentifier:$0).first.map { AXUIElementCreateApplication($0.processIdentifier) } }
     }
+    private var dock: AXUIElement? { hosts.last }
     static func attr(_ e: AXUIElement,_ k: String) -> AnyObject? { var v: AnyObject?; return AXUIElementCopyAttributeValue(e,k as CFString,&v) == .success ? v : nil }
     static func children(_ e: AXUIElement) -> [AXUIElement] {
         var out=[AXUIElement]()
@@ -53,10 +56,17 @@ public final class MissionControlDriver {
         return children(e).flatMap { find($0,id:id,depth:depth+1) }
     }
 
-    private var mcRoot: AXUIElement? { dock.flatMap { Self.find($0,id:"mc").first } }
+    private var mcRoot: AXUIElement? {
+        let all=hosts.flatMap { h -> [AXUIElement] in
+            let top=Self.find(h,id:"mc"); if !top.isEmpty { return top }
+            // WindowManager may expose mc.display groups directly under the application.
+            return Self.find(h,id:"mc.display").isEmpty ? [] : [h]
+        }
+        return all.first(where:{ Self.isReady($0) }) ?? all.first
+    }
     /// The mc group exists briefly before Mission Control is laid out; only count it as open once it has content or a frame.
     public var isOpen: Bool { guard let r=mcRoot else { return false }; return Self.isReady(r) }
-    static func isReady(_ r: AXUIElement) -> Bool { !children(r).isEmpty || (frame(r).map{ $0.width>0 && $0.height>0 } ?? false) }
+    static func isReady(_ r: AXUIElement) -> Bool { !find(r,id:"mc.display").isEmpty }
     var mcPresent: Bool { mcRoot != nil }
 
     /// Whether the system Mission Control shortcut (symbolic hot key 32, default ⌃↑) is enabled. Missing entry = default = on.
@@ -131,7 +141,7 @@ public final class MissionControlDriver {
     public func inspect() -> String {
         var lines=["macOS \(ProcessInfo.processInfo.operatingSystemVersionString)","trusted=\(AXIsProcessTrusted())"]
         do { try open() } catch { lines.append("调度中心未就绪：\(error)（仍然导出当前结构）") }
-        guard let dock else { return (lines+["找不到程序坞进程"]).joined(separator:"\n") }
+        guard let dock=mcRoot ?? dock else { return (lines+["找不到程序坞进程"]).joined(separator:"\n") }
         var count=0
         func walk(_ e: AXUIElement,_ d: Int) {
             guard count<4000 else { return }
