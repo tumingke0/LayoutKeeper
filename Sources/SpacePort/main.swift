@@ -91,9 +91,9 @@ final class Model: ObservableObject {
     /// Notices from shared mode (too few Spaces / Spaces moved to the built-in screen); shown in the main window too.
     @Published var sharedNotice: SharedNotice?
     var pendingSpacesNeeded: Int?
-    /// 实验功能 (off by default): add missing Spaces / remove empty migrated Spaces through Mission Control.
-    @Published var autoAddSpaces=Prefs.store?.bool(forKey:AutoSpaces.addPreferenceKey) ?? false { didSet { Prefs.store?.set(autoAddSpaces,forKey:AutoSpaces.addPreferenceKey) } }
-    @Published var autoRemoveSpaces=Prefs.store?.bool(forKey:AutoSpaces.removePreferenceKey) ?? false { didSet { Prefs.store?.set(autoRemoveSpaces,forKey:AutoSpaces.removePreferenceKey) } }
+    /// 桌面管理 (shared mode only): add missing Spaces / remove empty migrated Spaces through Mission Control.
+    @Published var autoAddSpaces=Prefs.store?.object(forKey:AutoSpaces.addPreferenceKey) as? Bool ?? AutoSpaces.defaultEnabled { didSet { Prefs.store?.set(autoAddSpaces,forKey:AutoSpaces.addPreferenceKey) } }
+    @Published var autoRemoveSpaces=Prefs.store?.object(forKey:AutoSpaces.removePreferenceKey) as? Bool ?? AutoSpaces.defaultEnabled { didSet { Prefs.store?.set(autoRemoveSpaces,forKey:AutoSpaces.removePreferenceKey) } }
     lazy var autoSpaces=AutoSpacesRunner(spaces:spaces)
     /// Brightness / volume control (显示器).
     let displayControl=DisplayControl()
@@ -102,7 +102,8 @@ final class Model: ObservableObject {
     /// Snapshot rendering only: pretend the system setting is off to show the hint.
     var snapshotSeparateSpacesOff=false
     @Published var monitorPreferences=Prefs.monitorPreferences() { didSet { Prefs.save(monitorPreferences,key:Prefs.monitorPreferencesKey) } }
-    @Published var pausedUntil: Date?=Prefs.store?.object(forKey:Prefs.pausedUntilKey) as? Date {
+    /// 暂停自动恢复 was removed in 0.6.4; any stored pause is cleared at launch so it can never block a restore.
+    @Published var pausedUntil: Date?={ Prefs.store?.removeObject(forKey:Prefs.pausedUntilKey); return nil }() {
         didSet { if let pausedUntil { Prefs.store?.set(pausedUntil,forKey:Prefs.pausedUntilKey) } else { Prefs.store?.removeObject(forKey:Prefs.pausedUntilKey) } }
     }
     @Published var hotkeySettings=Prefs.hotkeys() { didSet { Prefs.save(hotkeySettings,key:Prefs.hotkeysKey); applyHotkeys?() } }
@@ -314,9 +315,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "mode.ask": model.autoRestoreMode = .ask
         case "mode.auto": model.autoRestoreMode = .auto
         case "mode.forget": if let key=model.currentExternalMonitor?.identity.key { model.monitorPreferences.setRestore(nil,for:key) }
-        case "pause.oneHour": model.pausedUntil=AutoRestorePause.oneHour.until(from:Date())
-        case "pause.untilTomorrow": model.pausedUntil=AutoRestorePause.untilTomorrow.until(from:Date())
-        case "resume": model.pausedUntil=nil
         case "open": show()
         case "settings": showSettings(.general)
         case "checkUpdates": updater?.checkForUpdates()

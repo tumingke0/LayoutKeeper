@@ -42,10 +42,10 @@ struct GeneralSettings: View {
                 }
             }
             if model.layoutMode == .sharedExternal {
-                Section("实验功能（默认关闭）") {
-                    Toggle("实验：接上外接屏时自动补齐缺少的桌面",isOn:$model.autoAddSpaces)
-                    Toggle("实验：拔掉外接屏后自动删掉挪到内置屏上的空桌面",isOn:$model.autoRemoveSpaces)
-                    Text("通过辅助功能操作调度中心完成，屏幕会闪一下调度中心。每次最多 \(AutoSpaces.maxPerRun) 个，每一步都核对桌面数；只删从外接屏挪过来、里面没有窗口、且不在使用中的桌面。有全屏 App 时不操作；任何一步不对就停下，改为提示你手动处理。")
+                Section("桌面管理") {
+                    Toggle("接上外接屏时自动补齐缺少的桌面",isOn:$model.autoAddSpaces)
+                    Toggle("拔掉外接屏后自动删掉挪到内置屏上的空桌面",isOn:$model.autoRemoveSpaces)
+                    Text("通过调度中心自动完成，操作时会闪一下。只删从外接屏挪过来的空桌面；有全屏 App 或任何一步不对时会停下，改为提示你手动处理。")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 }
             }
@@ -66,17 +66,6 @@ struct GeneralSettings: View {
                                 ForEach(AutoRestoreMode.allCases,id:\.self) { Text($0.title).tag($0.rawValue) }
                             }.labelsHidden().fixedSize()
                         }
-                    }
-                }
-                HStack {
-                    if let until=model.pausedUntil,Date()<until {
-                        Label("自动恢复已暂停至 \(RelativeTime.clock(until))",systemImage:"pause.circle").foregroundStyle(.secondary)
-                        Spacer()
-                        Button("恢复自动") { model.pausedUntil=nil }
-                    } else {
-                        Text("暂停自动恢复")
-                        Spacer()
-                        ForEach(AutoRestorePause.allCases,id:\.self) { option in Button(option.title) { model.pausedUntil=option.until(from:Date()) } }
                     }
                 }
             }
