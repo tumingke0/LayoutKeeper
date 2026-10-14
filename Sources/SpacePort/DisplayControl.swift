@@ -224,24 +224,35 @@ final class MediaKeyTap {
     }
 }
 
-/// Bottom-centre HUD on the display that changed. Non-activating, click-through, on every Space; fades after 1.5 s.
+/// Top-centre HUD (just below the menu bar / notch) on the display that changed. Glassy: NSVisualEffectView with
+/// behind-window blur, low tint, hairline border and soft shadow. Non-activating, click-through, on every Space.
 final class BrightnessHUDCenter {
     private var panel: NSPanel?
     private var hide: DispatchWorkItem?
+    static let radius: CGFloat=22
     func show(_ d: ControlledDisplay,kind: BrightnessHUD.Kind) {
-        let view=BrightnessHUD(name:d.name,percent:kind == .brightness ? d.brightness : (d.volume ?? 0),kind:kind,note:d.method == .software && kind == .brightness ? "软件调暗" : nil).padding(24)
+        let view=BrightnessHUD(name:d.name,percent:kind == .brightness ? d.brightness : (d.volume ?? 0),kind:kind,
+                               note:d.method == .software && kind == .brightness ? "软件调暗" : nil,liveGlass:true)
         let p=panel ?? {
             let p=NSPanel(contentRect:.zero,styleMask:[.nonactivatingPanel,.borderless],backing:.buffered,defer:false)
             p.isFloatingPanel=true; p.level = .statusBar; p.hidesOnDeactivate=false; p.isReleasedWhenClosed=false
-            p.backgroundColor = .clear; p.isOpaque=false; p.hasShadow=false; p.ignoresMouseEvents=true
+            p.backgroundColor = .clear; p.isOpaque=false; p.hasShadow=true; p.ignoresMouseEvents=true
             p.collectionBehavior=[.canJoinAllSpaces,.fullScreenAuxiliary,.stationary,.ignoresCycle]
             panel=p; return p
         }()
         let hosting=NSHostingView(rootView:view)
         let size=hosting.fittingSize
-        p.contentView=hosting
+        let glass=NSVisualEffectView(frame:NSRect(origin:.zero,size:size))
+        glass.material = .hudWindow; glass.blendingMode = .behindWindow; glass.state = .active
+        glass.wantsLayer=true; glass.layer?.cornerRadius=Self.radius; glass.layer?.cornerCurve = .continuous; glass.layer?.masksToBounds=true
+        glass.alphaValue=0.92
+        let container=NSView(frame:glass.frame)
+        container.addSubview(glass)
+        hosting.frame=glass.frame; container.addSubview(hosting)
+        p.contentView=container
         let screen=NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value==d.id } ?? NSScreen.main
-        if let f=screen?.visibleFrame { p.setFrame(NSRect(x:f.midX-size.width/2,y:f.minY+f.height*0.10,width:size.width,height:size.height),display:true) }
+        if let f=screen?.visibleFrame { p.setFrame(NSRect(x:f.midX-size.width/2,y:f.maxY-size.height-12,width:size.width,height:size.height),display:true) }
+        p.invalidateShadow()
         p.alphaValue=1; p.orderFrontRegardless()
         hide?.cancel()
         let work=DispatchWorkItem { [weak p] in NSAnimationContext.runAnimationGroup({ $0.duration=0.3; p?.animator().alphaValue=0 },completionHandler:{ p?.orderOut(nil) }) }
