@@ -59,24 +59,42 @@ public final class MissionControlDriver {
     static func isReady(_ r: AXUIElement) -> Bool { !children(r).isEmpty || (frame(r).map{ $0.width>0 && $0.height>0 } ?? false) }
     var mcPresent: Bool { mcRoot != nil }
 
-    /// Opens Mission Control and waits until its AX tree appears.
-    public func open(timeout: TimeInterval=3.5) throws {
+    /// Whether the system Mission Control shortcut (symbolic hot key 32, default ⌃↑) is enabled. Missing entry = default = on.
+    static var ctrlUpEnabled: Bool {
+        let d=UserDefaults(suiteName:"com.apple.symbolichotkeys")?.dictionary(forKey:"AppleSymbolicHotKeys")
+        return ((d?["32"] as? [String:Any])?["enabled"] as? Bool) ?? true
+    }
+    private func waitReady(_ seconds: TimeInterval) -> Bool {
+        let end=Date().addingTimeInterval(seconds)
+        while Date()<end { if isOpen { return true }; Thread.sleep(forTimeInterval:0.1) }
+        return isOpen
+    }
+    /// Opens Mission Control and polls (≤5 s) until the mc group has children. The Dock always exposes an empty
+    /// zero-frame mc group, so presence alone is not "open". First launches Mission Control.app (same as `open -a`),
+    /// then, if nothing appears, posts ⌃↑ when that shortcut is enabled.
+    public func open(timeout: TimeInterval=5) throws {
         guard AXIsProcessTrusted() else { throw Failure.notTrusted }
         guard dock != nil else { throw Failure.dockMissing }
         if isOpen { return }
-        if !mcPresent { NSWorkspace.shared.open(URL(fileURLWithPath:"/System/Applications/Mission Control.app")) }
-        let end=Date().addingTimeInterval(timeout)
-        while Date()<end { if isOpen { Thread.sleep(forTimeInterval:0.5); return }; Thread.sleep(forTimeInterval:0.1) }
+        let app=URL(fileURLWithPath:"/System/Applications/Mission Control.app")
+        let cfg=NSWorkspace.OpenConfiguration(); cfg.activates=true
+        NSWorkspace.shared.openApplication(at:app,configuration:cfg) { _,_ in }
+        if waitReady(timeout*0.5) { Thread.sleep(forTimeInterval:0.5); return }
+        if Self.ctrlUpEnabled {
+            let src=CGEventSource(stateID:.hidSystemState)
+            for down in [true,false] { let e=CGEvent(keyboardEventSource:src,virtualKey:126,keyDown:down); e?.flags = .maskControl; e?.post(tap:.cghidEventTap) }
+        }
+        if waitReady(timeout*0.5) { Thread.sleep(forTimeInterval:0.5); return }
         throw Failure.didNotOpen
     }
     /// Closes Mission Control with Escape (falls back to toggling it once more).
     public func close() {
-        guard mcPresent else { return }
+        guard isOpen else { return }
         let src=CGEventSource(stateID:.hidSystemState)
         CGEvent(keyboardEventSource:src,virtualKey:53,keyDown:true)?.post(tap:.cghidEventTap)
         CGEvent(keyboardEventSource:src,virtualKey:53,keyDown:false)?.post(tap:.cghidEventTap)
         let end=Date().addingTimeInterval(1.5)
-        while Date()<end { if !mcPresent { return }; Thread.sleep(forTimeInterval:0.1) }
+        while Date()<end { if !isOpen { return }; Thread.sleep(forTimeInterval:0.1) }
         NSWorkspace.shared.open(URL(fileURLWithPath:"/System/Applications/Mission Control.app"))
     }
 
@@ -114,7 +132,6 @@ public final class MissionControlDriver {
         var lines=["macOS \(ProcessInfo.processInfo.operatingSystemVersionString)","trusted=\(AXIsProcessTrusted())"]
         do { try open() } catch { lines.append("调度中心未就绪：\(error)（仍然导出当前结构）") }
         guard let dock else { return (lines+["找不到程序坞进程"]).joined(separator:"\n") }
-        if !isOpen, mcPresent { Thread.sleep(forTimeInterval:1) }
         var count=0
         func walk(_ e: AXUIElement,_ d: Int) {
             guard count<4000 else { return }
