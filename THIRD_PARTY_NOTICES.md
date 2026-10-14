@@ -94,3 +94,18 @@ Project: https://github.com/lwouis/alt-tab-macos
   inspired by the publicly described behaviour of SnapBack. No SnapBack source code is included;
   `Sources/LayoutCore/ReconnectWatch.swift`, `ReconnectPolicy.swift` and `FrameSettle.swift` are
   original.
+
+## MonitorControl (MIT) — approach only
+
+- Project: https://github.com/MonitorControl/MonitorControl
+- License: MIT
+- What LayoutKeeper uses: the general technique of sending DDC/CI (VESA MCCS) commands to external monitors on Apple
+  Silicon through `IOAVServiceCreateWithService` / `IOAVServiceWriteI2C` / `IOAVServiceReadI2C` (I2C address 0x37,
+  sub-address 0x51), and the idea of falling back to gamma-based software dimming. LayoutKeeper's implementation
+  (`Sources/MacAdapters/DisplayHardware.swift`, `Sources/LayoutCore/Brightness.swift`) was written independently from the
+  MCCS specification; no MonitorControl source code is included. Credit to the MonitorControl authors for documenting
+  the approach.
+
+## BetterDisplay — design inspiration only
+
+The on-screen brightness HUD layout is inspired by BetterDisplay. No BetterDisplay code, images or other assets are used.

@@ -5,13 +5,14 @@ import SwiftUI
 import LayoutCore
 import MacAdapters
 
-enum SettingsTab: String, CaseIterable { case general, diagnostics }
+enum SettingsTab: String, CaseIterable { case general, displays, diagnostics }
 
 struct SettingsView: View {
     @ObservedObject var model: Model
     var body: some View {
         TabView(selection:$model.settingsTab) {
             GeneralSettings(model:model).tabItem { Label("通用",systemImage:"gearshape") }.tag(SettingsTab.general)
+            DisplaySettings(control:model.displayControl).tabItem { Label("显示器",systemImage:"sun.max") }.tag(SettingsTab.displays)
             DiagnosticsSettings(model:model).tabItem { Label("诊断",systemImage:"stethoscope") }.tag(SettingsTab.diagnostics)
         }
         .frame(width:660,height:620)

@@ -95,6 +95,8 @@ final class Model: ObservableObject {
     @Published var autoAddSpaces=Prefs.store?.bool(forKey:AutoSpaces.addPreferenceKey) ?? false { didSet { Prefs.store?.set(autoAddSpaces,forKey:AutoSpaces.addPreferenceKey) } }
     @Published var autoRemoveSpaces=Prefs.store?.bool(forKey:AutoSpaces.removePreferenceKey) ?? false { didSet { Prefs.store?.set(autoRemoveSpaces,forKey:AutoSpaces.removePreferenceKey) } }
     lazy var autoSpaces=AutoSpacesRunner(spaces:spaces)
+    /// Brightness / volume control (显示器).
+    let displayControl=DisplayControl()
     @Published var missionControlReport=""
     @Published var autoSpacesTrialMessage=""
     /// Snapshot rendering only: pretend the system setting is off to show the hint.
@@ -180,6 +182,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         DispatchQueue.main.asyncAfter(deadline:.now()+1.5) { [weak self] in self?.model.beginSelfTest(trigger:"url") }
     }
     let spaceWatcher=SharedSpaceWatcher()
+    lazy var displayCoordinator=DisplayControlCoordinator(control:model.displayControl)
     func applicationDidFinishLaunching(_ notification: Notification) {
         MonitorRecognition.layoutMode=model.layoutMode
         model.configureEmptyWindowTrial()
@@ -219,7 +222,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         } else { show() }
         reconnect=ReconnectCoordinator(model:model,showMain:{ [weak self] in self?.show() })
         spaceWatcher.start(model:model)
-        let timer=Timer(timeInterval:2,repeats:true) { [weak self] _ in self?.model.refreshAuthorization() }
+        displayCoordinator.start(trusted:{ AXIsProcessTrusted() })
+        let timer=Timer(timeInterval:2,repeats:true) { [weak self] _ in
+            self?.model.refreshAuthorization()
+            self?.displayCoordinator.evaluate(trusted:AXIsProcessTrusted())
+        }
         authorizationTimer=timer
         RunLoop.main.add(timer,forMode:.common)
         if let index=CommandLine.arguments.firstIndex(of:"--approved-fixture-test"),CommandLine.arguments.count > index+1 {
@@ -324,6 +331,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         if let until=model.pausedUntil,until<=Date() { model.pausedUntil=nil }
         menu.removeAllItems()
         let optionHeld=NSEvent.modifierFlags.contains(.option)
+        if model.displayControl.showInMenu {
+            model.displayControl.refresh()
+            let item=NSMenuItem(); let host=NSHostingView(rootView:DisplayMenuSection(control:model.displayControl))
+            host.frame=NSRect(origin:.zero,size:host.fittingSize); item.view=host
+            menu.addItem(item); menu.addItem(.separator())
+        }
         StatusMenuBuilder.make(StatusMenuModel.build(model.menuState(optionHeld:optionHeld)),target:self,action:#selector(menuAction(_:))).forEach(menu.addItem)
     }
     @objc func show() { window.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps:true); scheduleLiveCheck(after:0.3,force:true) }
@@ -384,9 +397,37 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
     /// Only our own activation re-checks (not every app switch): the check is a read-only scan on the main thread.
     func applicationDidBecomeActive(_ notification: Notification) { model.refreshExternalMonitor(); scheduleLiveCheck(after:0.6) }
-    func applicationWillTerminate(_ notification: Notification) { authorizationTimer?.invalidate(); hotkeys.unregisterAll() }
+    func applicationWillTerminate(_ notification: Notification) { authorizationTimer?.invalidate(); hotkeys.unregisterAll(); displayCoordinator.stop() }
     @objc func quit() { NSApplication.shared.terminate(nil) }
     @objc func checkForUpdates() { updater?.checkForUpdates() }
+}
+// Developer check of brightness hardware (DDC +1/restore, built-in set-same/restore). Requires LAYOUTKEEPER_DEV_DISPLAY_TEST=1.
+if let index=CommandLine.arguments.firstIndex(of:"--test-display-control"),CommandLine.arguments.count>index+1,
+   ProcessInfo.processInfo.environment["LAYOUTKEEPER_DEV_DISPLAY_TEST"]=="1" {
+    var log=[String](); let t0=Date()
+    func L(_ s: String) { log.append(String(format:"%6.3f ",Date().timeIntervalSince(t0))+s) }
+    for id in DisplayControl.onlineDisplays() {
+        let name=DisplayControl.name(id)
+        if CGDisplayIsBuiltin(id) != 0 {
+            guard let b=BuiltInBrightness.get(id) else { L("\(name): built-in brightness unreadable"); continue }
+            L("\(name): built-in brightness=\(b)")
+            let ok=BuiltInBrightness.set(id,b); usleep(300000)
+            L("  set same value ok=\(ok) readback=\(BuiltInBrightness.get(id) ?? -1)")
+            if let now=BuiltInBrightness.get(id),abs(now-b)>0.0005 { BuiltInBrightness.set(id,b); usleep(300000); L("  restored -> \(BuiltInBrightness.get(id) ?? -1)") }
+            continue
+        }
+        let svcs=DDCService.externalServices()
+        guard svcs.count==1,let s=svcs.first,let b=s.readVCP(DDCPacket.brightness) else { L("\(name): DDC unavailable (services=\(svcs.count))"); continue }
+        L("\(name): DDC brightness=\(b.current)/\(b.max) volume=\(s.readVCP(DDCPacket.volume).map{ "\($0.current)/\($0.max)" } ?? "n/a")")
+        let target=UInt16(b.current<b.max ? b.current+1 : b.current-1)
+        L("  write \(target) ok=\(s.writeVCP(DDCPacket.brightness,target))"); usleep(400000)
+        L("  readback=\(s.readVCP(DDCPacket.brightness).map{ "\($0.current)" } ?? "nil")")
+        L("  restore \(b.current) ok=\(s.writeVCP(DDCPacket.brightness,UInt16(b.current)))"); usleep(400000)
+        let fin=s.readVCP(DDCPacket.brightness)
+        L("  final=\(fin.map{ "\($0.current)" } ?? "nil") \(fin?.current==b.current ? "RESTORED" : "MISMATCH")")
+    }
+    try? log.joined(separator:"\n").write(toFile:CommandLine.arguments[index+1],atomically:true,encoding:.utf8)
+    exit(0)
 }
 if let index=CommandLine.arguments.firstIndex(of:"--render-brightness-mockups"),CommandLine.arguments.count>index+1 {
     NSApplication.shared.setActivationPolicy(.prohibited)
