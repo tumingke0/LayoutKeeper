@@ -3,6 +3,7 @@
 import AppKit
 import ApplicationServices
 import MacAdapters
+import LayoutCore
 
 /// Hidden diagnostic: `LayoutKeeper --dump-mission-control <out.txt>`. Read only (opens/closes Mission Control, never adds or removes Spaces).
 enum MissionControlProbe {
@@ -79,4 +80,50 @@ enum MissionControlProbe {
         write(log,out)
     }
     static func write(_ log: [String],_ out: URL) { try? log.joined(separator:"\n").write(to:out,atomically:true,encoding:.utf8) }
+}
+
+/// Hidden, user-approved test: `LayoutKeeper --test-add-remove-space <log.txt>`. Adds ONE Space on the external display
+/// through the normal AutoSpacesRunner path, then removes that same new Space (one retry). Nothing else is touched.
+enum AddRemoveSpaceTest {
+    static func run(out: URL) {
+        var log=[String](); let t0=Date()
+        func L(_ s: String) { log.append(String(format:"%7.3f ",Date().timeIntervalSince(t0))+s); try? log.joined(separator:"\n").write(to:out,atomically:true,encoding:.utf8) }
+        let spaces=ReadOnlySpaces(); let runner=AutoSpacesRunner(spaces:spaces)
+        func census() -> (ext: [UInt64],bi: [UInt64],all: [Space])? {
+            let d=MacEnvironment.displays()
+            guard let all=try? spaces.spaces(displays:d) else { return nil }
+            let e=Set(d.filter{ $0.role == .external }.map(\.token)),b=Set(d.filter{ $0.role == .builtIn }.map(\.token))
+            return (all.filter{ e.contains($0.displayToken) && $0.kind == .ordinary }.map(\.id),all.filter{ b.contains($0.displayToken) && $0.kind == .ordinary }.map(\.id),all)
+        }
+        let ext=MacEnvironment.displays().filter{ $0.role == .external }
+        L("trusted=\(AXIsProcessTrusted()) externals=\(ext.count)")
+        guard ext.count==1,let before=census() else { L("ABORT: need exactly one external display and readable Spaces"); return }
+        L("before: external=\(before.ext.count) \(before.ext) builtIn=\(before.bi.count) \(before.bi)")
+        guard !AutoSpaces.fullScreenActive(before.all) else { L("ABORT: full-screen Space active"); return }
+        let token=ext[0].token
+        var done=false
+        func finish() { done=true }
+        runner.add(count:1,token:token) { r in
+            L("add result: \(r)")
+            guard case .success=r,let mid=census() else { finish(); return }
+            L("after add: external=\(mid.ext.count) \(mid.ext) builtIn=\(mid.bi.count)")
+            guard AutoSpaces.verifyAdded(before:before.ext,after:mid.ext),let new=mid.ext.first(where:{ !before.ext.contains($0) }) else { L("cannot identify new Space; NOT removing anything"); finish(); return }
+            L("new Space id=\(new); removing it")
+            func attempt(_ n: Int) {
+                runner.remove(ids:[new],token:token) { r2 in
+                    L("remove attempt \(n): \(r2)")
+                    if case .failure=r2,n<2 { Thread.sleep(forTimeInterval:1); attempt(n+1); return }
+                    if let end=census() {
+                        L("final: external=\(end.ext.count) \(end.ext) builtIn=\(end.bi.count) \(end.bi)")
+                        L(end.ext==before.ext && end.bi==before.bi ? "PASS: counts and ids identical to before" : "MISMATCH vs before")
+                    }
+                    finish()
+                }
+            }
+            attempt(1)
+        }
+        let deadline=Date().addingTimeInterval(90)
+        while !done && Date()<deadline { RunLoop.main.run(until:Date().addingTimeInterval(0.1)) }
+        if !done { L("TIMEOUT") }
+    }
 }
