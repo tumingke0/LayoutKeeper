@@ -105,7 +105,15 @@ final class AutoSpacesRunner {
     /// Diagnostics: read-only dump of the Mission Control AX tree.
     func inspect(completion: @escaping (String) -> Void) {
         guard !running else { return completion("正在操作桌面，请稍后") }
-        queue.async { [self] in let text=driver.inspect(); DispatchQueue.main.async { completion(text) } }
+        queue.async { [self] in
+            var text=driver.inspect()
+            let support=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0]
+            let dir=AppInstallation.dataDirectory(applicationSupport:support).appendingPathComponent("Diagnostics",isDirectory:true)
+            let url=dir.appendingPathComponent("mission-control-ax.txt")
+            do { try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true); try text.write(to:url,atomically:true,encoding:.utf8)
+                text="已保存到 \(url.path)\n"+text } catch { text="保存文件失败：\(error)\n"+text }
+            DispatchQueue.main.async { completion(text) }
+        }
     }
 
     /// Diagnostics: reversible trial. Adds one Space to `token`, then removes that same (new, empty) Space.

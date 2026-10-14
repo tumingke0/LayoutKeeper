@@ -162,6 +162,7 @@ struct DiagnosticsSettings: View {
                         }
                         if !model.autoSpacesTrialMessage.isEmpty { Text(model.autoSpacesTrialMessage).font(.caption) }
                         if !model.missionControlReport.isEmpty {
+                            Button("复制结构到剪贴板") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.missionControlReport,forType:.string) }.controlSize(.small)
                             DisclosureGroup("调度中心结构") { Text(model.missionControlReport).font(.system(.caption2,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading) }.font(.caption)
                         }
                     }.padding(8).frame(maxWidth:.infinity,alignment:.leading)

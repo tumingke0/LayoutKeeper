@@ -32,7 +32,13 @@ public final class MissionControlDriver {
         NSRunningApplication.runningApplications(withBundleIdentifier:"com.apple.dock").first.map { AXUIElementCreateApplication($0.processIdentifier) }
     }
     static func attr(_ e: AXUIElement,_ k: String) -> AnyObject? { var v: AnyObject?; return AXUIElementCopyAttributeValue(e,k as CFString,&v) == .success ? v : nil }
-    static func children(_ e: AXUIElement) -> [AXUIElement] { attr(e,kAXChildrenAttribute) as? [AXUIElement] ?? [] }
+    static func children(_ e: AXUIElement) -> [AXUIElement] {
+        var out=[AXUIElement]()
+        for key in [kAXChildrenAttribute as String,"AXChildrenInNavigationOrder",kAXVisibleChildrenAttribute as String] {
+            for c in attr(e,key) as? [AXUIElement] ?? [] where !out.contains(where:{ CFEqual($0,c) }) { out.append(c) }
+        }
+        return out
+    }
     static func identifier(_ e: AXUIElement) -> String { attr(e,"AXIdentifier") as? String ?? "" }
     static func actions(_ e: AXUIElement) -> [String] { var a: CFArray?; AXUIElementCopyActionNames(e,&a); return a as? [String] ?? [] }
     static func frame(_ e: AXUIElement) -> CGRect? {
@@ -43,31 +49,34 @@ public final class MissionControlDriver {
     }
     static func find(_ e: AXUIElement,id: String,depth: Int=0) -> [AXUIElement] {
         if identifier(e)==id { return [e] }
-        guard depth<8 else { return [] }
+        guard depth<14 else { return [] }
         return children(e).flatMap { find($0,id:id,depth:depth+1) }
     }
 
     private var mcRoot: AXUIElement? { dock.flatMap { Self.find($0,id:"mc").first } }
-    public var isOpen: Bool { mcRoot != nil }
+    /// The mc group exists briefly before Mission Control is laid out; only count it as open once it has content or a frame.
+    public var isOpen: Bool { guard let r=mcRoot else { return false }; return Self.isReady(r) }
+    static func isReady(_ r: AXUIElement) -> Bool { !children(r).isEmpty || (frame(r).map{ $0.width>0 && $0.height>0 } ?? false) }
+    var mcPresent: Bool { mcRoot != nil }
 
     /// Opens Mission Control and waits until its AX tree appears.
-    public func open(timeout: TimeInterval=2.5) throws {
+    public func open(timeout: TimeInterval=3.5) throws {
         guard AXIsProcessTrusted() else { throw Failure.notTrusted }
         guard dock != nil else { throw Failure.dockMissing }
         if isOpen { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath:"/System/Applications/Mission Control.app"))
+        if !mcPresent { NSWorkspace.shared.open(URL(fileURLWithPath:"/System/Applications/Mission Control.app")) }
         let end=Date().addingTimeInterval(timeout)
-        while Date()<end { if isOpen { Thread.sleep(forTimeInterval:0.4); return }; Thread.sleep(forTimeInterval:0.1) }
+        while Date()<end { if isOpen { Thread.sleep(forTimeInterval:0.5); return }; Thread.sleep(forTimeInterval:0.1) }
         throw Failure.didNotOpen
     }
     /// Closes Mission Control with Escape (falls back to toggling it once more).
     public func close() {
-        guard isOpen else { return }
+        guard mcPresent else { return }
         let src=CGEventSource(stateID:.hidSystemState)
         CGEvent(keyboardEventSource:src,virtualKey:53,keyDown:true)?.post(tap:.cghidEventTap)
         CGEvent(keyboardEventSource:src,virtualKey:53,keyDown:false)?.post(tap:.cghidEventTap)
         let end=Date().addingTimeInterval(1.5)
-        while Date()<end { if !isOpen { return }; Thread.sleep(forTimeInterval:0.1) }
+        while Date()<end { if !mcPresent { return }; Thread.sleep(forTimeInterval:0.1) }
         NSWorkspace.shared.open(URL(fileURLWithPath:"/System/Applications/Mission Control.app"))
     }
 
@@ -100,19 +109,26 @@ public final class MissionControlDriver {
         guard e == .success else { throw Failure.axError(e.rawValue) }
     }
 
-    /// Read-only: opens Mission Control, dumps its AX tree (roles, identifiers, actions, frames), closes it again.
+    /// Read-only: opens Mission Control, waits until it is laid out, dumps the whole Dock AX tree while it stays open, then closes it.
     public func inspect() -> String {
-        do { try open() } catch { return "无法打开调度中心：\(error)" }
-        defer { close() }
-        guard let root=mcRoot else { return "调度中心已打开，但找不到 id=mc 的元素" }
-        var lines=["macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"]
+        var lines=["macOS \(ProcessInfo.processInfo.operatingSystemVersionString)","trusted=\(AXIsProcessTrusted())"]
+        do { try open() } catch { lines.append("调度中心未就绪：\(error)（仍然导出当前结构）") }
+        guard let dock else { return (lines+["找不到程序坞进程"]).joined(separator:"\n") }
+        if !isOpen, mcPresent { Thread.sleep(forTimeInterval:1) }
+        var count=0
         func walk(_ e: AXUIElement,_ d: Int) {
-            let role=Self.attr(e,kAXRoleAttribute) as? String ?? "?",desc=Self.attr(e,kAXDescriptionAttribute) as? String ?? ""
+            guard count<4000 else { return }
+            count+=1
+            let role=Self.attr(e,kAXRoleAttribute) as? String ?? "?",sub=Self.attr(e,kAXSubroleAttribute) as? String ?? ""
+            let title=Self.attr(e,kAXTitleAttribute) as? String ?? "",desc=Self.attr(e,kAXDescriptionAttribute) as? String ?? ""
+            var names: CFArray?; AXUIElementCopyAttributeNames(e,&names)
             let f=Self.frame(e).map{ "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height))" } ?? ""
-            lines.append(String(repeating:"  ",count:d)+"\(role) id=\(Self.identifier(e)) desc=\(desc) actions=\(Self.actions(e).joined(separator:",")) [\(f)]")
-            if d<7 { for c in Self.children(e).prefix(30) { walk(c,d+1) } }
+            lines.append(String(repeating:"  ",count:d)+"\(role)/\(sub) id=\(Self.identifier(e)) title=\(title) desc=\(desc) actions=\(Self.actions(e).joined(separator:",")) [\(f)] attrs=\((names as? [String] ?? []).joined(separator:","))")
+            if d<16 { for c in Self.children(e) { walk(c,d+1) } }
         }
-        walk(root,0)
+        walk(dock,0)
+        lines.append("共 \(count) 个元素；调度中心就绪=\(isOpen)")
+        close()
         return lines.joined(separator:"\n")
     }
 }
