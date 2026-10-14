@@ -388,6 +388,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     @objc func quit() { NSApplication.shared.terminate(nil) }
     @objc func checkForUpdates() { updater?.checkForUpdates() }
 }
+if let index=CommandLine.arguments.firstIndex(of:"--render-brightness-mockups"),CommandLine.arguments.count>index+1 {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    exit(MainActor.assumeIsolated { BrightnessMockups.run(to:URL(fileURLWithPath:CommandLine.arguments[index+1])) })
+}
 if let index=CommandLine.arguments.firstIndex(of:"--render-ui-snapshots"),CommandLine.arguments.count>index+1 {
     // Offscreen PNG rendering with sample data; never touches other windows, AX, or saved layouts.
     NSApplication.shared.setActivationPolicy(.prohibited)
