@@ -243,9 +243,9 @@ final class BrightnessHUDCenter {
         let hosting=NSHostingView(rootView:view)
         let size=hosting.fittingSize
         let glass=NSVisualEffectView(frame:NSRect(origin:.zero,size:size))
-        glass.material = .hudWindow; glass.blendingMode = .behindWindow; glass.state = .active
+        glass.material = .popover; glass.blendingMode = .behindWindow; glass.state = .active
         glass.wantsLayer=true; glass.layer?.cornerRadius=Self.radius; glass.layer?.cornerCurve = .continuous; glass.layer?.masksToBounds=true
-        glass.alphaValue=0.92
+        glass.alphaValue=0.55
         let container=NSView(frame:glass.frame)
         container.addSubview(glass)
         hosting.frame=glass.frame; container.addSubview(hosting)

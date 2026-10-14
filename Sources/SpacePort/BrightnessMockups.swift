@@ -51,6 +51,7 @@ struct BrightnessHUD: View {
                 Image(systemName:highIcon).font(.system(size:16,weight:.medium)).foregroundStyle(.secondary).frame(width:22)
             }
         }
+        .shadow(color:(scheme == .dark ? Color.black : Color.white).opacity(0.45),radius:1.5)
         .padding(.horizontal,20).padding(.vertical,16)
         .frame(width:420)
         .background(RoundedRectangle(cornerRadius:22,style:.continuous).fill(tint))
@@ -60,8 +61,8 @@ struct BrightnessHUD: View {
     }
     /// Low tint so the blurred desktop shows through; text stays readable thanks to the vibrancy/blur underneath.
     private var tint: Color {
-        if liveGlass { return scheme == .dark ? Color.black.opacity(0.10) : Color.white.opacity(0.18) }
-        return scheme == .dark ? Color(white:0.12).opacity(0.45) : Color.white.opacity(0.50)
+        if liveGlass { return scheme == .dark ? Color.black.opacity(0.03) : Color.white.opacity(0.05) }
+        return scheme == .dark ? Color(white:0.12).opacity(0.22) : Color.white.opacity(0.28)
     }
 }
 

@@ -18,12 +18,13 @@ final class BrightnessTests: XCTestCase {
         XCTAssertNil(DDCPacket.parseReply(bad,code:0x10))
     }
     func testSteps() {
-        XCTAssertEqual(BrightnessStep.next(0.5,up:true),0.5625)
-        XCTAssertEqual(BrightnessStep.next(0.38,up:true),0.4375)
-        XCTAssertEqual(BrightnessStep.next(0.38,up:false),0.375)
+        XCTAssertEqual(BrightnessStep.next(0.51,up:true),0.54)
+        XCTAssertEqual(BrightnessStep.next(0.38,up:true),0.39)
+        XCTAssertEqual(BrightnessStep.next(0.38,up:false),0.36)
+        XCTAssertEqual(BrightnessStep.next(0.99,up:true),1)
         XCTAssertEqual(BrightnessStep.next(1,up:true),1)
         XCTAssertEqual(BrightnessStep.next(0,up:false),0)
-        XCTAssertEqual(BrightnessStep.next(0.5,up:true,fine:true),0.515625)
+        XCTAssertEqual(BrightnessStep.next(0.5,up:true,fine:true),0.51)
         XCTAssertEqual(BrightnessStep.toDDC(0.38,max:100),38)
         XCTAssertEqual(BrightnessStep.fromDDC(38,max:100),0.38,accuracy:1e-9)
     }

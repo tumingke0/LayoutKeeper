@@ -22,7 +22,7 @@ public enum DDCPacket {
 }
 
 public enum BrightnessStep {
-    public static let coarse=1.0/16, fine=1.0/64
+    public static let coarse=0.03, fine=0.01
     /// Next level, snapped to the step grid (like the HUD tick dots).
     public static func next(_ v: Double,up: Bool,fine isFine: Bool=false) -> Double {
         let s=isFine ? fine : coarse
