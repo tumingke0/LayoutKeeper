@@ -6,14 +6,13 @@ import MacAdapters
 
 /// A shared-mode notice. Posted as a notification and kept in the model until dismissed or resolved.
 struct SharedNotice: Equatable {
-    enum Kind: Equatable { case missingSpaces(Int), migrated(Int), separateSpacesOff, multipleMonitors }
+    enum Kind: Equatable { case missingSpaces(Int), separateSpacesOff, multipleMonitors }
     var kind: Kind
     /// Set when the experimental automatic add/remove gave up; shown above the manual steps.
     var autoFailure: String?=nil
     var title: String {
         switch kind {
         case .missingSpaces(let n): return lk("外接屏少 %@ 个桌面", "\(n)")
-        case .migrated(let n): return lk("%@ 个桌面被移到了内置屏", "\(n)")
         case .separateSpacesOff: return lk("「显示器具有单独的空间」已关闭")
         case .multipleMonitors: return lk("接了多块外接屏，已按每块屏单独记")
         }
@@ -25,7 +24,6 @@ struct SharedNotice: Equatable {
     var manualDetail: String {
         switch kind {
         case .missingSpaces(let n): return lk("多出来的窗口先放在最后一个桌面。打开调度中心，在顶部按「+」补 %@ 个桌面，补好后会自动再恢复一次。", "\(n)")
-        case .migrated: return lk("这是拔掉外接屏时 macOS 挪过来的。不需要的话，在调度中心把它们删掉即可；共用布局按桌面顺序保存，删了也不会丢，下次接上外接屏照样恢复。")
         case .separateSpacesOff: return lk("共用模式需要每块屏有自己的桌面。请在「系统设置 → 桌面与程序坞 → 调度中心」打开它，注销后生效。")
         case .multipleMonitors: return lk("共用模式只在接一块外接屏时生效。拔到只剩一块后会自动切回共用布局。")
         }
@@ -49,7 +47,7 @@ extension Model {
     func sharedNoticeContent(_ notice: SharedNotice) -> UserNotice {
         var actions=[UserNotice.Action]()
         switch notice.kind {
-        case .missingSpaces, .migrated: actions.append(UserNotice.Action(.openMissionControl) { MissionControl.open() })
+        case .missingSpaces: actions.append(UserNotice.Action(.openMissionControl) { MissionControl.open() })
         case .separateSpacesOff: actions.append(UserNotice.Action(.openSettings) { NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Desktop-Settings.extension")!) })
         case .multipleMonitors: break
         }
@@ -156,16 +154,12 @@ extension Model {
         logRestore("auto-remove spaces: start count=\(ids.count) migrated=\(moved)")
         autoSpaces.remove(ids:ids,token:token) { [weak self] result in
             guard let self else { return }
+            // Log only: the feature is hidden (AutoSpaces.removeAvailable) and the unplug notice was removed in 0.6.8.
             switch result {
-            case .success(let n):
-                self.logRestore("auto-remove spaces: removed \(n)")
-                let left=moved-n
-                self.notify?(UserNotice(title:lk("已自动删掉 %@ 个空桌面", "\(n)"),detail:left>0 ? lk("还有 %@ 个里面有窗口或正在使用，没有动。", "\(left)") : lk("内置屏恢复干净了。"),duration:5))
+            case .success(let n): self.logRestore("auto-remove spaces: removed \(n) of \(moved) migrated")
             case .failure(let e):
                 NSLog("LayoutKeeper auto remove Spaces stopped: %@",e.description)
                 self.logRestore("auto-remove spaces: failed (\(e.description.prefix(80)))")
-                var notice=SharedNotice(kind:.migrated(moved)); notice.autoFailure=e.description
-                self.postSharedNotice(notice)
             }
         }
         return true
@@ -231,8 +225,10 @@ final class SharedSpaceWatcher {
                 guard let self,let model=self.model,model.layoutMode == .sharedExternal,let after=self.census(),after.externalCount==0 else { self?.model?.logRestore("space-watch: unplug follow-up exit — mode changed, census unreadable or external is back"); return }
                 self.last=after
                 let moved=SpaceCensus.migratedToBuiltIn(before:previous,after:after)
-                model.logRestore("space-watch: unplug settled, migratedToBuiltIn=\(moved)")
-                if moved>0 && !model.tryAutoRemoveSpaces(before:previous,after:after) { model.postSharedNotice(SharedNotice(kind:.migrated(moved))) }
+                // 0.6.8: no notice. Telling the user these desktops are safe to delete was wrong: deleting one renumbers
+                // the desktops the saved layout refers to. Removal itself is forced off (see tryAutoRemoveSpaces).
+                model.logRestore("space-watch: unplug settled, migratedToBuiltIn=\(moved) notice=suppressed")
+                if moved>0 { _=model.tryAutoRemoveSpaces(before:previous,after:after) }
             }
             return
         }

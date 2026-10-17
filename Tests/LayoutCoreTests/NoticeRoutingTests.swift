@@ -59,3 +59,24 @@ final class NoticeRoutingTests: XCTestCase {
         XCTAssertEqual(items[1].title,"没有自动恢复"); XCTAssertEqual(items[1].reason,"这块屏幕尚未保存布局"); XCTAssertTrue(items[1].enabled)
     }
 }
+
+/// 0.6.8: the unplug notice "N 个桌面被移到了内置屏" is gone, and nothing may tell the user that deleting the desktops
+/// macOS moved to the built-in screen is safe (deleting one renumbers the desktops the saved layout refers to).
+final class MigratedDesktopNoticeTests: XCTestCase {
+    func testNoSourceOrStringSaysDeletingMigratedDesktopsIsSafe() throws {
+        let root=URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        var files=[root.appendingPathComponent("Resources/en.lproj/Localizable.strings")]
+        for dir in ["Sources","Resources"] {
+            let e=FileManager.default.enumerator(at:root.appendingPathComponent(dir),includingPropertiesForKeys:nil)
+            while let u=e?.nextObject() as? URL { if ["swift","strings"].contains(u.pathExtension) { files.append(u) } }
+        }
+        for name in ["README.md","README.zh-CN.md","README.ja.md","README.ko.md","README.vi.md"] { files.append(root.appendingPathComponent(name)) }
+        XCTAssertGreaterThan(files.count,20)
+        for f in files {
+            let text=try String(contentsOf:f,encoding:.utf8)
+            for banned in ["删了也不会丢","被移到了内置屏","已自动删掉 %@ 个空桌面","so nothing is lost"] {
+                XCTAssertFalse(text.contains(banned),"\(f.lastPathComponent) still contains \(banned)")
+            }
+        }
+    }
+}

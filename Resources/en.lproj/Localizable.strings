@@ -16,7 +16,6 @@
 "%@ 个在另一块屏幕上的窗口没有自动移动" = "%@ windows on another display weren't moved automatically";
 "%@ 个已枚举窗口无法回读，未保存其布局" = "%@ enumerated windows couldn't be read back; their layout wasn't saved";
 "%@ 个未通过，已回滚" = "%@ failed and were rolled back";
-"%@ 个桌面被移到了内置屏" = "%@ desktops were moved to the built-in display";
 "%@ 个窗口" = "%@ windows";
 "%@ 个窗口不在保存的位置" = "%@ windows aren't where they were saved";
 "%@ 个窗口在另一块屏幕上" = "%@ windows are on another display";
@@ -176,7 +175,6 @@
 "内建" = "Built-in";
 "内建显示屏" = "Built-in Display";
 "内置屏" = "Built-in display";
-"内置屏恢复干净了。" = "The built-in display is tidy again.";
 "再次移出后" = "After moving out again";
 "写代码" = "Coding";
 "写入前窗口或桌面改变，没有写入此窗口" = "Window or desktop changed before writing; this window was not written";
@@ -315,7 +313,6 @@
 "已撤销，当前布局已换回" = "Undone; the current layout is back";
 "已是保存的布局" = "Matches the saved layout";
 "已最小化" = "Minimized";
-"已自动删掉 %@ 个空桌面" = "Removed %@ empty desktops automatically";
 "已自动补了 %@ 个桌面" = "Added %@ desktops automatically";
 "已获得权限" = "Permission granted";
 "已获得权限，继续下一步…" = "Permission granted, continuing…";
@@ -696,7 +693,6 @@
 "辅助功能权限未生效：%@" = "Accessibility permission not in effect: %@";
 "辅助功能调用失败（%@）" = "Accessibility call failed (%@)";
 "返回当前" = "Back to Current";
-"还有 %@ 个里面有窗口或正在使用，没有动。" = "%@ others have windows or are in use and were left alone.";
 "还没有保存" = "Not saved yet";
 "还没有保存布局" = "No layout saved yet";
 "还没有保存的屏幕" = "No saved displays yet";
@@ -714,7 +710,6 @@
 "这块屏幕未连接，接上后才能恢复或更新布局" = "This display isn't connected; connect it to restore or update the layout";
 "这块屏幕（%@）还没有保存过布局。先把窗口摆好，再点「保存布局」。" = "No layout saved for this display (%@) yet. Arrange your windows, then click \"Save Layout\".";
 "这块屏幕（%@）还没有保存过布局。先把窗口摆好，再点「保存布局」。记录跟随屏幕硬件识别，不需要选择家或公司。" = "No layout saved for this display (%@) yet. Arrange your windows, then click \"Save Layout\". Layouts follow the display hardware, so there's no need to pick home or office.";
-"这是拔掉外接屏时 macOS 挪过来的。不需要的话，在调度中心把它们删掉即可；共用布局按桌面顺序保存，删了也不会丢，下次接上外接屏照样恢复。" = "macOS moved these over when the external display was unplugged. If you don't need them, remove them in Mission Control. The shared layout is saved by desktop order, so nothing is lost; it restores as usual next time you connect.";
 "这次不用" = "Not This Time";
 "进程身份未知" = "Process identity unknown";
 "连接外接屏后即可使用" = "Connect an external display to get started";
