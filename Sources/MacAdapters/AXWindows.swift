@@ -5,9 +5,11 @@ import ApplicationServices
 import Darwin
 import LayoutCore
 
-public struct AXFailure: Error, CustomStringConvertible {
+public struct AXFailure: Error, CustomStringConvertible, TransientFailure {
     public let operation: String; public let code: Int32
     public var description: String { "\(operation): AXError \(code)" }
+    /// -25204 (kAXErrorCannotComplete): the app did not answer in time. Usually a busy or just-woken app; worth retrying.
+    public var isTransient: Bool { code == AXError.cannotComplete.rawValue }
 }
 public final class AXWindows: WindowBackend {
     public let session=UUID()
@@ -248,8 +250,14 @@ public final class AXWindows: WindowBackend {
         }
         return Snapshot(session:session,topology:MacEnvironment.topology(displays:displays,spaces:found),displays:displays,spaces:found,windows:windows)
     }
+    /// Per-request time limit for window reads. Scans stay quick (0.25 s per app); during a restore or warm-up
+    /// reads wait longer, because a slow app (often Electron-based) otherwise looks broken and the move fails.
+    public var patientReads=false
+    public static let quickTimeout: Float=0.25
+    public static let patientTimeout: Float=1.5
     public func readWindow(token: String) throws -> ObservedWindow? {
         guard let h=handles[token] else{return nil}
+        _=AXUIElementSetMessagingTimeout(h.element,(patientReads || writesApproved) ? Self.patientTimeout : Self.quickTimeout)
         guard let app=NSRunningApplication(processIdentifier:h.pid),!app.isTerminated,app.bundleIdentifier==h.bundleID,app.launchDate==h.launchedAt else{exclude(.processIdentityUnavailable,h.bundleID);return nil}
         var actualPID: pid_t=0
         let pidStatus=AXUIElementGetPid(h.element,&actualPID)
@@ -277,6 +285,26 @@ public final class AXWindows: WindowBackend {
         let membership:[UInt64]
         do{membership=try spaces.membership(windowID:h.windowID)}catch{exclude(.membershipReadFailure,h.bundleID);throw error}
         return ObservedWindow(token:token,selector:WindowSelector(bundleID:h.bundleID,document:path,title:title),frame:Rect(point.x,point.y,dimensions.width,dimensions.height),spaceIDs:membership,ordinary:ordinary,minimized:minimized ?? false,fullScreen:fullscreen ?? false,processStartedAt:h.launchedAt)
+    }
+    /// Wakes the given apps before a restore and reports the ones that still do not answer.
+    /// Electron apps build their accessibility tree only when asked (`AXManualAccessibility`, the switch screen
+    /// readers and window managers use); it is turned on for those apps and left on. Read-only otherwise.
+    public func warmUp(bundleIDs: Set<String>,timeout: Float = 2) -> [String] {
+        guard AXIsProcessTrusted() else { return [] }
+        var silent=[String]()
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            guard let bundle=app.bundleIdentifier,bundleIDs.contains(bundle),app.processIdentifier != getpid() else { continue }
+            let element=AXUIElementCreateApplication(app.processIdentifier)
+            _=AXUIElementSetMessagingTimeout(element,timeout)
+            if Self.isElectron(bundleURL:app.bundleURL) { _=AXUIElementSetAttributeValue(element,"AXManualAccessibility" as CFString,kCFBooleanTrue) }
+            var value: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element,kAXWindowsAttribute as CFString,&value) == .cannotComplete { silent.append(bundle) }
+        }
+        return silent.sorted()
+    }
+    public static func isElectron(bundleURL: URL?) -> Bool {
+        guard let bundleURL else { return false }
+        return FileManager.default.fileExists(atPath:bundleURL.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
     }
     public func verifiedMoveWindow(_ window: ObservedWindow) throws -> VerifiedAXWindow {
         guard writesApproved,AXIsProcessTrusted() else { throw LayoutError.permissionRequired }

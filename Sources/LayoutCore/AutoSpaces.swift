@@ -9,6 +9,8 @@ public enum AutoSpaces {
     public static let removePreferenceKey="autoRemoveMigratedSpaces"
     /// Default for new installs (an explicit user choice is always kept). On: both actions are guarded and fall back to notices.
     public static let defaultEnabled=true
+    /// Removing migrated Spaces defaults to off: removing on unplug forces a re-add (Mission Control flash) on every replug.
+    public static let removeDefaultEnabled=false
     /// Never add or remove more than this many Spaces in one run.
     public static let maxPerRun=6
     /// Whole run must finish within this many seconds.

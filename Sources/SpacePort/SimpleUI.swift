@@ -79,6 +79,7 @@ extension Model {
             let assessed=try ExternalLayoutCapture.assess(monitor:monitor.identity,displayToken:monitor.runtimeDisplayToken,snapshot:s,report:windows.latestCaptureReport)
             windows.applyCaptureDecisions(assessed.decisions);captureTrace=windows.captureTrace
             var record=assessed.record
+            if let chrome=ChromeProfiles.load() { record.profile.windows=chrome.tag(record.profile.windows) }
             captureInspection=record.captureReport;captureInspectionMonitorKey=monitor.identity.key
             guard !record.profile.windows.isEmpty else {
                 actionNote=ActionNote(icon:"exclamationmark.triangle.fill",text:lk("没有读到可保存的窗口"),tone:.warning)

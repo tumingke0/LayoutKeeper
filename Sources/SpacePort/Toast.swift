@@ -79,17 +79,17 @@ struct ToastView: View {
                     .buttonStyle(.bordered)
             }
         }
-        .padding(.leading,14).padding(.trailing,26).padding(.vertical,12)
+        .padding(.leading,30).padding(.trailing,14).padding(.vertical,12)
         .frame(width:360)
         .background(ToastBackground())
         .clipShape(RoundedRectangle(cornerRadius:14,style:.continuous))
         .overlay(RoundedRectangle(cornerRadius:14,style:.continuous).strokeBorder(Color.primary.opacity(0.08)))
-        .overlay(alignment:.topTrailing) {
+        .overlay(alignment:.topLeading) {
             Button(action:close) {
                 Image(systemName:"xmark").font(.system(size:9,weight:.bold)).foregroundStyle(.secondary)
                     .frame(width:18,height:18).background(Circle().fill(Color.primary.opacity(0.08)))
             }
-            .buttonStyle(.plain).padding(6).help(lk("关闭")).accessibilityLabel(lk("关闭"))
+            .buttonStyle(.plain).padding(5).help(lk("关闭")).accessibilityLabel(lk("关闭"))
             .keyboardShortcut(.cancelAction)
         }
         .onHover(perform:hover)

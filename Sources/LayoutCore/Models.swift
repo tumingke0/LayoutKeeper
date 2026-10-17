@@ -53,6 +53,9 @@ public struct SavedWindow: Codable, Equatable {
     /// 1-based position of the window's ordinary desktop on its monitor when saved (an ordinal, never a Space ID).
     /// Records saved before 0.2.0 do not have it.
     public var desktopIndex: Int?
+    /// Chrome profile folder ("Default", "Profile 2", …) when it could be determined at save time. Display names can
+    /// repeat across Google accounts; the folder cannot. Local only, never synced.
+    public var browserProfile: String?=nil
     public init(selector: WindowSelector, displayRole: DisplayRole, desktopLabel: String, normalizedFrame: Rect, desktopIndex: Int? = nil) { self.selector=selector; self.displayRole=displayRole; self.desktopLabel=desktopLabel; self.normalizedFrame=normalizedFrame; self.desktopIndex=desktopIndex }
 }
 public struct Profile: Codable, Equatable {
@@ -90,6 +93,11 @@ public protocol SpacesBackend: AnyObject {
     var canMove: Bool { get }
     func move(window: ObservedWindow, to space: UInt64) throws
 }
+/// An error that may go away if the same read is tried again shortly, e.g. an app that did not answer an
+/// Accessibility request in time (AXError -25204). Restore retries these reads instead of failing the window.
+public protocol TransientFailure: Error { var isTransient: Bool { get } }
+public func isTransientFailure(_ error: Error) -> Bool { (error as? TransientFailure)?.isTransient == true }
+
 public protocol WindowBackend: AnyObject {
     func snapshot() throws -> Snapshot
     func setFrame(window: ObservedWindow, to frame: Rect) throws

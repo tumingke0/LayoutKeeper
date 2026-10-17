@@ -47,6 +47,10 @@ final class Model: ObservableObject {
     @Published var externalRestoreMessage=""
     @Published var lastRestoreJournal: RestoreJournal?
     var lastRestoreJournalURL: URL?
+    /// Windows the last restore could not move (app + reason), for the result notice.
+    var lastRestoreFailures: [RestoreFailure]=[]
+    /// Apps that failed a restore recently run last next time, so one slow app cannot hold up the others.
+    var recentlyFailedBundles: [String:Date]=[:]
     var lastRestorePermits: [SpaceMovePermit]=[]
     var fixtureSpaceJournalURL: URL?
     var fixtureSpacePermits: [SpaceMovePermit]=[]
@@ -93,9 +97,16 @@ final class Model: ObservableObject {
     /// Notices from shared mode (too few Spaces / Spaces moved to the built-in screen); shown in the main window too.
     @Published var sharedNotice: SharedNotice?
     var pendingSpacesNeeded: Int?
+    /// Trigger of the restore in progress; a follow-up restore after auto-adding desktops uses the same trigger.
+    var lastRestoreTrigger: RestoreTrigger = .manual
+    /// Set by ReconnectCoordinator while an attach session's restore runs: auto-add desktops hands its result back
+    /// so the follow-up restore runs inside that session. Captured when the add starts.
+    var autoSpacesFollowUp: ((Result<Int,AutoSpacesFailure>) -> Void)?
+    /// Set when a restore started an auto-add of desktops (reset by the caller before the restore).
+    var autoSpacesStartedByRestore=false
     /// 桌面管理 (shared mode only): add missing Spaces / remove empty migrated Spaces through Mission Control.
     @Published var autoAddSpaces=Prefs.store?.object(forKey:AutoSpaces.addPreferenceKey) as? Bool ?? AutoSpaces.defaultEnabled { didSet { Prefs.store?.set(autoAddSpaces,forKey:AutoSpaces.addPreferenceKey) } }
-    @Published var autoRemoveSpaces=Prefs.store?.object(forKey:AutoSpaces.removePreferenceKey) as? Bool ?? AutoSpaces.defaultEnabled { didSet { Prefs.store?.set(autoRemoveSpaces,forKey:AutoSpaces.removePreferenceKey) } }
+    @Published var autoRemoveSpaces=Prefs.store?.object(forKey:AutoSpaces.removePreferenceKey) as? Bool ?? AutoSpaces.removeDefaultEnabled { didSet { Prefs.store?.set(autoRemoveSpaces,forKey:AutoSpaces.removePreferenceKey) } }
     lazy var autoSpaces=AutoSpacesRunner(spaces:spaces)
     /// Brightness / volume control (显示器).
     let displayControl=DisplayControl()
@@ -224,6 +235,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             showOnboarding(reason)
         } else { show() }
         reconnect=ReconnectCoordinator(model:model,showMain:{ [weak self] in self?.show() })
+        model.logSession("app launch")
         spaceWatcher.start(model:model)
         displayCoordinator.start(trusted:{ AXIsProcessTrusted() })
         let timer=Timer(timeInterval:2,repeats:true) { [weak self] _ in
@@ -454,6 +466,14 @@ if let index=CommandLine.arguments.firstIndex(of:"--test-add-remove-space"),Comm
    ProcessInfo.processInfo.environment["LAYOUTKEEPER_DEV_SPACE_TEST"]=="1" {
     NSApplication.shared.setActivationPolicy(.accessory)
     AddRemoveSpaceTest.run(out:URL(fileURLWithPath:CommandLine.arguments[index+1])); exit(0)
+}
+if ProcessInfo.processInfo.environment["LAYOUTKEEPER_DEV_DIAG"]=="1" {
+    NSApplication.shared.setActivationPolicy(.accessory)
+    let args=CommandLine.arguments
+    if let i=args.firstIndex(of:"--test-chrome-profiles"),args.count>i+1 { DevDiagnostics.chromeProfiles(out:URL(fileURLWithPath:args[i+1])); exit(0) }
+    if let i=args.firstIndex(of:"--restore-harness"),args.count>i+1 { DevDiagnostics.restoreHarness(out:URL(fileURLWithPath:args[i+1])); exit(0) }
+    if args.contains("--close-test-windows") { DevDiagnostics.closeTestWindows(); exit(0) }
+    if let i=args.firstIndex(of:"--dry-run-plan"),args.count>i+2 { DevDiagnostics.dryRun(layout:URL(fileURLWithPath:args[i+1]),out:URL(fileURLWithPath:args[i+2])); exit(0) }
 }
 AppMigration.runAtLaunch()
 let application=NSApplication.shared

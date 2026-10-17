@@ -11,14 +11,20 @@ import MacAdapters
 final class ReconnectCoordinator {
     let model: Model
     let showMain: () -> Void
-    private var watch: ReconnectWatch
+    private var session: AttachSession
     private var timer: Timer?
     private var settleTimer: Timer?
     private var panel: NSPanel?
+    /// True while finishAuto runs directRestore. Its retry pumps the run loop, so display events and timers can fire
+    /// inside it; evaluate must not start the same session a second time meanwhile.
+    private var attemptInFlight=false
     init(model: Model,showMain: @escaping () -> Void) {
         self.model=model; self.showMain=showMain
-        watch=ReconnectWatch(initialMonitorKey:model.currentExternalMonitor?.identity.key,settleInterval:3)
+        session=AttachSession(initialMonitorKey:model.currentExternalMonitor.map(Self.physicalKey),settleInterval:3)
     }
+    /// Layout key + this display's runtime UUID. Two different monitors can share one layout key (shared-external),
+    /// so the key alone would make "unplug A, plug B within 3 s" look like a blip on the same monitor.
+    static func physicalKey(_ m: ConnectedMonitor) -> String { "\(m.identity.key)@\(RestoreLog.d(m.runtimeDisplayToken))" }
     static func screenFingerprint() -> String {
         NSScreen.screens.map { screen in
             let id=(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
@@ -26,44 +32,77 @@ final class ReconnectCoordinator {
             return "\(id):\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height))"
         }.sorted().joined(separator:"|")
     }
+    private var eventCount=0
+    private var eventStarted: Date?
     func note(_ event: ReconnectWatch.Event) {
-        settleTimer?.invalidate()
-        watch.note(event,at:Date(),fingerprint:Self.screenFingerprint())
-        schedule(after:watch.settleInterval+0.2)
+        eventCount+=1
+        let fp=Self.screenFingerprint()
+        model.refreshExternalMonitor()
+        let keyNow=model.currentExternalMonitor.map(Self.physicalKey)
+        if !session.isPending && settleTimer == nil { eventStarted=Date(); model.logSession("display event \(event) (#\(eventCount))") }
+        model.logRestore("event \(event) #\(eventCount) fingerprint=\(RestoreLog.hash(fp)) screens=\(NSScreen.screens.count) monitorNow=\(RestoreLog.key(keyNow)) pendingAlready=\(session.isPending) sinceFirst=\(eventStarted.map{ String(format:"%.2fs",Date().timeIntervalSince($0)) } ?? "-") lastSettled=\(RestoreLog.key(session.lastSettledKey)) openSession=\(session.open.map{ "#\($0.id)" } ?? "-")")
+        if let t=settleTimer,t.isValid { model.logRestore("cancel: window-settle wait interrupted by a new display event; attach #\(session.open?.id ?? 0) goes back to waiting (not dropped)") }
+        settleTimer?.invalidate(); settleTimer=nil
+        // Busy timeout is per attempt: a display event restarts the attempt, so its busy clock starts over (AttachSession.note).
+        session.note(wake:event == .wake,at:Date(),fingerprint:fp,monitorKeyNow:keyNow)
+        schedule(after:session.settleInterval+0.2)
     }
     private func schedule(after delay: TimeInterval) {
         timer?.invalidate()
         let t=Timer(timeInterval:max(delay,0.2),repeats:false) { [weak self] _ in self?.evaluate() }
         timer=t; RunLoop.main.add(t,forMode:.common)
     }
+    /// Back to waiting: the same session starts again after `delay`.
+    private func requeue(_ why: String,delay: TimeInterval) {
+        model.logRestore("attach #\(session.open?.id ?? 0): back to waiting — \(why)")
+        session.requeue(at:Date(),delay:delay)
+        schedule(after:delay+0.05)
+    }
+    private func close(_ id: Int,_ result: String) {
+        if let line=session.finish(id:id,result:result) { model.logRestore(line); model.logSession(line) }
+    }
     private func evaluate() {
+        if attemptInFlight { model.logRestore("reconnect: restore in progress, evaluating again in 1s"); schedule(after:1); return }
         model.refreshExternalMonitor()
         let monitor=model.currentExternalMonitor
-        let hasLayout=model.externalRecord != nil
-        // The global mode is only one input to the policy (a remembered per-monitor choice overrides it), so the
-        // debounce itself always runs and the policy below decides.
-        let decision=watch.evaluate(at:Date(),fingerprint:Self.screenFingerprint(),monitorKey:monitor?.identity.key,hasLayout:hasLayout,mode:.ask)
+        var decision=session.evaluate(at:Date(),fingerprint:Self.screenFingerprint(),monitorKey:monitor.map(Self.physicalKey))
+        if case .closed(_,let line)=decision { model.logRestore(line); model.logSession(line); decision=session.startOpened() }
         switch decision {
-        case .wait(let until): schedule(after:until.timeIntervalSinceNow+0.1)
-        case .trigger(let key): if let monitor,monitor.identity.key==key { trigger(monitor) }
-        case .idle, .settled: break
+        case .wait(let until): model.logRestore(String(format:"reconnect: screens still changing, wait %.2fs more",until.timeIntervalSinceNow)); schedule(after:until.timeIntervalSinceNow+0.1)
+        case .idle, .closed: break
+        case .ignored(let note):
+            model.logRestore("reconnect: \(note)")
+        case .start(let id,let key,let retry):
+            model.logRestore("attach #\(id) start\(retry ? " (retry)" : ""): screens settled after \(eventStarted.map{ String(format:"%.2fs",Date().timeIntervalSince($0)) } ?? "?"), monitor=\(RestoreLog.key(key))")
+            model.logRestoreLines(model.environmentLines(label:"settled"))
+            guard let monitor,Self.physicalKey(monitor)==key else { requeue("monitor not readable at start",delay:1); return }
+            trigger(monitor,id:id)
         }
     }
-    private func trigger(_ monitor: ConnectedMonitor) {
-        guard !model.busy,!model.showingQuickRestore else { return }
-        model.refreshAuthorization(); guard model.trusted else { return }
+    private func trigger(_ monitor: ConnectedMonitor,id: Int) {
+        if model.busy || model.showingQuickRestore {
+            if session.noteBusy(at:Date()) { close(id,"skipped reason=busy-for-\(Int(AttachSession.busyTimeout))s (\(model.busyText))"); return }
+            requeue("another task is running (\(model.busyText)), retry in 1s",delay:1); return
+        }
+        session.notBusy()
+        model.refreshAuthorization(); guard model.trusted else { close(id,"skipped reason=no-accessibility-permission"); return }
+        guard model.externalRecord != nil else { close(id,"skipped reason=no-saved-layout-for-\(RestoreLog.key(monitor.identity.key))"); return }
         let name=model.monitorPreferences.displayName(monitor.identity)
         let action=ReconnectPolicy.action(global:model.autoRestoreMode,perMonitor:model.monitorPreferences.restore(monitor.identity.key),pausedUntil:model.pausedUntil,now:Date())
+        model.logRestore("attach #\(id): policy=\(action) (global=\(model.autoRestoreMode) perMonitor=\(model.monitorPreferences.restore(monitor.identity.key).map{"\($0)"} ?? "-") pausedUntil=\(model.pausedUntil.map{"\($0)"} ?? "-") choicePrompt=\(Self.choicePromptEnabled))")
         switch action {
-        case .none, .paused: return
-        case .auto: waitForWindowsThenRestore(monitor)
+        case .none: close(id,"skipped reason=policy-off")
+        case .paused: close(id,"skipped reason=paused")
+        case .auto: waitForWindowsThenRestore(monitor,id:id)
         case .ask where !Self.choicePromptEnabled, .askOnce where !Self.choicePromptEnabled:
             // 0.6.2: the choice panel is disabled. A closable notice with one button replaces it; nothing is remembered.
+            close(id,"notice-shown reason=ask-mode (no automatic restore)")
             model.showToast?(Self.reconnectNotice(name:name,restore:{ [weak self] in self?.model.quickRestore() }))
-        case .ask: askNow(monitor,name:name)
+        case .ask: close(id,"prompt-shown reason=ask-mode"); askNow(monitor,name:name)
         case .askOnce:
+            close(id,"prompt-shown reason=ask-once")
             present(Self.askOncePrompt(name:name,
-                automatic:{ [weak self] in self?.remember(.automatic,monitor); self?.waitForWindowsThenRestore(monitor) },
+                automatic:{ [weak self] in self?.remember(.automatic,monitor); self?.model.quickRestore() },
                 askEachTime:{ [weak self] in self?.remember(.askEachTime,monitor); self?.askNow(monitor,name:name) },
                 never:{ [weak self] in self?.remember(.never,monitor) }))
         }
@@ -90,31 +129,121 @@ final class ReconnectCoordinator {
     private func askNow(_ monitor: ConnectedMonitor,name: String) {
         present(Self.askPrompt(name:name,restore:{ [weak self] in self?.model.quickRestore() },preview:{ [weak self] in self?.model.openPreviewPanel?(true) }))
     }
-    /// Stage 2: read the saved apps' window frames until they are unchanged for ~1 s (max ~5 s), read-only.
-    private func waitForWindowsThenRestore(_ monitor: ConnectedMonitor) {
+    /// Wake the saved apps, then read their window frames until they are unchanged for 1 s (max 6 s), read-only.
+    /// Any interruption sends the session back to waiting; it is never dropped here.
+    private func waitForWindowsThenRestore(_ monitor: ConnectedMonitor,id: Int) {
         settleTimer?.invalidate()
-        guard let record=model.externalRecord,let snapshot=try? model.externalLayoutSnapshot() else { finishAuto(monitor); return }
+        guard let record=model.externalRecord else { close(id,"skipped reason=no-saved-layout"); return }
+        let started=Date()
+        model.warmUpSavedApps(record)
+        model.windows.patientReads=true
+        let read: Snapshot?
+        do { read=try model.externalLayoutSnapshot() } catch { read=nil; model.logRestore("attach #\(id): window scan error \(String(describing:error).prefix(120))") }
+        model.windows.patientReads=false
+        model.logRestore(String(format:"attach #\(id): warm-up + first scan took %.2fs, scan issues=%d",Date().timeIntervalSince(started),model.windows.issues.count))
+        guard let snapshot=read else { model.logRestore("attach #\(id): window scan failed, restoring anyway"); finishAuto(monitor,id:id); return }
         let bundles=Set(record.profile.windows.map(\.selector.bundleID))
         let tokens=snapshot.windows.filter{bundles.contains($0.selector.bundleID)}.map(\.token)
-        var settle=FrameSettle()
+        var settle=FrameSettle(quiet:1.0,maxWait:6)
         func sample() -> [String:Rect] {
             var frames=[String:Rect]()
             for token in tokens { if let w=try? model.windows.readWindow(token:token) { frames[token]=w.frame } }
             return frames
         }
-        _=settle.observe(sample(),at:Date())
+        let first=sample()
+        model.logRestore("attach #\(id): waiting for windows to settle tracked=\(tokens.count) readable=\(first.count) apps=\(bundles.sorted()) quiet=1s max=6s")
+        _=settle.observe(first,at:Date())
+        let settleStart=Date()
+        var samples=0, last=first
         let t=Timer(timeInterval:0.25,repeats:true) { [weak self] timer in
             guard let self else { timer.invalidate(); return }
-            guard self.model.currentExternalMonitor?.identity.key == monitor.identity.key else { timer.invalidate(); return }
-            if settle.observe(sample(),at:Date()) != .waiting { timer.invalidate(); self.finishAuto(monitor) }
+            self.model.refreshExternalMonitor()
+            guard self.model.currentExternalMonitor.map(Self.physicalKey) == Self.physicalKey(monitor) else { timer.invalidate(); self.settleTimer=nil; self.requeue("monitor changed while waiting for windows (now \(RestoreLog.key(self.model.currentExternalMonitor?.identity.key)))",delay:self.session.settleInterval); return }
+            let now=sample(); samples+=1
+            let moved=now.filter{ last[$0.key] != $0.value }.map(\.key)
+            if !moved.isEmpty { self.model.logRestore(String(format:"attach #\(id): +%.2fs windows still moving: ",Date().timeIntervalSince(settleStart))+moved.prefix(8).map{ "\($0)\(RestoreLog.r(now[$0]))" }.joined(separator:" ")) }
+            last=now
+            let decision=settle.observe(now,at:Date())
+            if decision != .waiting { timer.invalidate(); self.settleTimer=nil; self.model.logRestore(String(format:"attach #\(id): windows %@ after %.2fs (%d samples)",decision == .settled ? "settled" : "still moving after 6 s",Date().timeIntervalSince(settleStart),samples)); self.finishAuto(monitor,id:id) }
         }
         settleTimer=t; RunLoop.main.add(t,forMode:.common)
     }
-    private func finishAuto(_ monitor: ConnectedMonitor) {
-        guard !model.busy,model.currentExternalMonitor?.identity.key == monitor.identity.key else { return }
-        if let until=model.pausedUntil,Date()<until { return }
-        let outcome=model.directRestore(.automatic)
-        if let toast=model.restoreToast(outcome,trigger:.automatic) { model.showToast?(toast) }
+    static let followUpTimeout: TimeInterval = 30
+    private var followUpTimer: Timer?
+    private func resultLine(_ o: DirectRestoreOutcome,toast: Toast?,extra: String = "") -> String {
+        "\(o.error == nil ? "ran" : "error") restored=\(o.restored) attempted=\(o.attempted) notConfident=\(o.skippedAuto) needsConfirmation=\(o.needsConfirmation) failures=\(o.failures.map{ "\($0.bundleID):\($0.reason.rawValue)" }) error=\(o.error.map{ String($0.prefix(60)) } ?? "-")\(extra) toast=\(toast == nil ? "none" : "shown")"
+    }
+    /// Step 1 restores what fits now. If it had to auto-add desktops, the session stays open (in flight) until the
+    /// add finishes; step 2 restores again in the same session and one result line covers both.
+    private func finishAuto(_ monitor: ConnectedMonitor,id: Int) {
+        // The preview panel shares quickPlan with directRestore: treat it as busy, like trigger does.
+        if model.busy || model.showingQuickRestore {
+            if session.noteBusy(at:Date()) { close(id,"skipped reason=busy-for-\(Int(AttachSession.busyTimeout))s (\(model.busyText))"); return }
+            requeue("busy at restore time (\(model.busyText)), retry in 1s",delay:1); return
+        }
+        model.refreshExternalMonitor()
+        guard model.currentExternalMonitor.map(Self.physicalKey) == Self.physicalKey(monitor) else { requeue("screen changed before restore (now \(RestoreLog.key(model.currentExternalMonitor?.identity.key)))",delay:session.settleInterval); return }
+        if let until=model.pausedUntil,Date()<until { close(id,"skipped reason=paused-until-\(until)"); return }
+        model.logRestore("attach #\(id): step 1 restore (same code as manual, confident windows only)")
+        attemptInFlight=true
+        model.autoSpacesStartedByRestore=false; earlyFollowUp=nil
+        model.autoSpacesFollowUp={ [weak self] result in self?.autoSpacesDone(result,monitor:monitor,id:id) }
+        var outcome=model.directRestore(.automatic)
+        // A slow app (often right after wake) can still miss the first run: try once more a little later.
+        if outcome.failures.contains(where:{ $0.reason == .notResponding }) {
+            model.logRestore("attach #\(id): retrying once for apps that did not respond")
+            RunLoop.current.run(until:Date(timeIntervalSinceNow:2))
+            model.refreshExternalMonitor()
+            if !model.busy,model.currentExternalMonitor.map(Self.physicalKey) == Self.physicalKey(monitor) {
+                outcome=Self.merge(outcome,model.directRestore(.automatic))
+            }
+        }
+        model.autoSpacesFollowUp=nil
+        if model.autoSpacesStartedByRestore,session.beginFollowUp(id:id) {
+            model.logRestore("attach #\(id): step 1 done (restored=\(outcome.restored)); waiting for auto-add desktops (max \(Int(Self.followUpTimeout))s)")
+            step1=outcome
+            if let early=earlyFollowUp { earlyFollowUp=nil; autoSpacesDone(early,monitor:monitor,id:id); return }
+            followUpTimer?.invalidate()
+            let t=Timer(timeInterval:Self.followUpTimeout,repeats:false) { [weak self] _ in
+                guard let self,self.session.followUpArrived(id:id) else { return }
+                let toast=self.model.restoreToast(outcome,trigger:.automatic)
+                self.endInFlight(); self.close(id,self.resultLine(outcome,toast:toast,extra:" autoSpaces=timeout"))
+                if let toast { self.model.showToast?(toast) }
+            }
+            followUpTimer=t; RunLoop.main.add(t,forMode:.common)
+            return
+        }
+        let toast=model.restoreToast(outcome,trigger:.automatic)
+        endInFlight(); close(id,resultLine(outcome,toast:toast))
+        if let toast { model.showToast?(toast) }
+    }
+    private var step1=DirectRestoreOutcome()
+    private func endInFlight() { attemptInFlight=false; followUpTimer?.invalidate(); followUpTimer=nil }
+    /// An add that finishes while step 1 is still running (its slow-app retry pumps the run loop) is held here and
+    /// handled as soon as step 1 hands over, instead of being lost.
+    private var earlyFollowUp: Result<Int,AutoSpacesFailure>?
+    private func autoSpacesDone(_ result: Result<Int,AutoSpacesFailure>,monitor: ConnectedMonitor,id: Int) {
+        if attemptInFlight,session.open?.id == id,!session.awaitingFollowUp { model.logRestore("attach #\(id): auto-add finished during step 1; handled after it"); earlyFollowUp=result; return }
+        guard session.followUpArrived(id:id) else { model.logRestore("attach #\(id): late auto-add result ignored (session already ended)"); return }
+        followUpTimer?.invalidate(); followUpTimer=nil
+        var outcome=step1, extra: String
+        switch result {
+        case .success(let n):
+            model.refreshExternalMonitor()
+            if model.currentExternalMonitor.map(Self.physicalKey) == Self.physicalKey(monitor),!model.busy {
+                model.logRestore("attach #\(id): step 2 restore after adding \(n) desktop(s)")
+                outcome=Self.merge(step1,model.directRestore(.automatic)); extra=" autoSpaces=added\(n)"
+            } else { extra=" autoSpaces=added\(n) step2=skipped(screen changed or busy)" }
+        case .failure(let e): extra=" autoSpaces=failed(\(e.description.prefix(40)))"
+        }
+        let toast=model.restoreToast(outcome,trigger:.automatic)
+        endInFlight(); close(id,resultLine(outcome,toast:toast,extra:extra))
+        if let toast { model.showToast?(toast) }
+    }
+    /// Step totals per window (RestoreTally: the latest step decides each window); what is still left (not confident, needs confirmation, failures, error)
+    /// comes from the latest step, which saw the newest state.
+    static func merge(_ a: DirectRestoreOutcome,_ b: DirectRestoreOutcome) -> DirectRestoreOutcome {
+        var o=b; o.tally=a.tally; o.tally.add(b.tally); o.restored=o.tally.restored; o.attempted=o.tally.attempted; return o
     }
     private func present(_ prompt: ReconnectPrompt) {
         panel?.close()

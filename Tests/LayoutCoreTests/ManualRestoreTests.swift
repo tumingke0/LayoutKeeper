@@ -151,20 +151,64 @@ final class ManualRestoreTests: XCTestCase {
         XCTAssertEqual(report.journal?.entries[0].state,.rolledBack)
         XCTAssertEqual(b.state.windows[0].frame,original); XCTAssertEqual(b.writes,2)
     }
-    func testFailedLaterWindowRollsBackEarlierWindowAndStops() throws {
+    func twoWindows() throws -> (MemoryWindows,MonitorLayoutRecord) {
         let (b,record)=fixture(); var r=record
         var second=b.state.windows[0]; second.token="100:2"; second.selector=WindowSelector(bundleID:"test.chat",title:"测试聊天")
         b.state.windows.append(second); r.profile.windows.append(SavedWindow(selector:second.selector,displayRole:.external,desktopLabel:"组甲",normalizedFrame:Rect(0.6,0.2,0.3,0.4)))
+        return (b,r)
+    }
+    func testFailedLaterWindowIsUndoneAloneAndEarlierWindowStaysRestored() throws {
+        let (b,r)=try twoWindows()
         let original=b.state.windows.map(\.frame); b.failOnWrite=2
         let report=ManualRestorer.execute(try plan(b,r),windows:b,approved:true,persist:{_ in})
-        XCTAssertEqual(b.state.windows.map(\.frame),original)
-        XCTAssertTrue(try XCTUnwrap(report.journal).entries.allSatisfy{$0.state == .rolledBack})
+        let journal=try XCTUnwrap(report.journal)
+        XCTAssertEqual(journal.entries.map(\.state),[.verified,.rolledBack])
+        XCTAssertNotEqual(b.state.windows[0].frame,original[0]); XCTAssertEqual(b.state.windows[1].frame,original[1])
+        XCTAssertEqual(report.failures,[RestoreFailure(bundleID:"test.chat",reason:.failed)])
     }
-    func testReadbackNoOpFailsWithoutPretendingSuccess() throws {
+    func testFirstWindowFailingDoesNotStopTheRest() throws {
+        // The 0.6.6 home case: the first window failed and every later window was skipped.
+        let (b,r)=try twoWindows(); b.failOnWrite=1
+        let report=ManualRestorer.execute(try plan(b,r),windows:b,approved:true,persist:{_ in})
+        XCTAssertEqual(try XCTUnwrap(report.journal).entries.map(\.state),[.rolledBack,.verified])
+        XCTAssertEqual(report.results.map(\.outcome),[.failed,.verified])
+    }
+    func testSlowAppIsRetriedInsteadOfFailing() throws {
+        let (b,r)=fixture(); let p=try plan(b,r)
+        b.transientReads=2   // two "app did not answer" errors, then it answers
+        let report=ManualRestorer.execute(p,windows:b,approved:true,persist:{_ in})
+        XCTAssertEqual(report.results[0].outcome,.verified); XCTAssertTrue(report.failures.isEmpty)
+    }
+    func testAppThatNeverAnswersIsReportedAndOthersStillRun() throws {
+        let (b,r)=try twoWindows(); let p=try plan(b,r)
+        b.unresponsiveTokens=["100:1"]
+        let report=ManualRestorer.execute(p,windows:b,approved:true,persist:{_ in})
+        XCTAssertEqual(report.results.map(\.outcome),[.blocked,.verified])
+        XCTAssertEqual(report.failures,[RestoreFailure(bundleID:"test.editor",reason:.notResponding)])
+        XCTAssertTrue(report.results[0].detail.contains("没有响应"))
+    }
+    func testDeferredAppRunsLast() throws {
+        let (b,r)=try twoWindows(); var order=[String]()
+        b.beforeWriteToken={ order.append($0) }
+        _=ManualRestorer.execute(try plan(b,r),windows:b,approved:true,deferredBundles:["test.editor"],persist:{_ in})
+        XCTAssertEqual(order,["100:2","100:1"])
+    }
+    func testWindowThatNeverMovedIsReportedAsNotMoved() throws {
         let (b,r)=fixture(); b.noOp=true
         let report=ManualRestorer.execute(try plan(b,r),windows:b,approved:true,persist:{_ in})
         XCTAssertEqual(report.results[0].outcome,.failed)
-        XCTAssertEqual(report.journal?.entries[0].state,.rolledBack)
+        XCTAssertEqual(report.journal?.entries[0].state,.notMoved)
+        XCTAssertTrue(report.results[0].detail.contains("未移动")); XCTAssertFalse(report.journal?.canUndo ?? true)
+    }
+    func testUnreadableWindowAfterFailedMoveThatNeverMovedIsNotMovedNotRollbackFailed() throws {
+        // Write sent, readback shows the window unmoved, then the app stops answering during undo.
+        let (b,r)=fixture(); b.noOp=true; let original=b.state.windows[0].frame
+        var journal=ManualRestorer.execute(try plan(b,r),windows:b,approved:true,persist:{_ in}).journal!
+        journal.entries[0].state = .rollbackFailed   // as recorded by 0.6.6
+        b.unresponsiveTokens=["100:1"]
+        let undo=ManualRestorer.undo(journal,windows:b,approved:true,persist:{_ in})
+        XCTAssertEqual(undo.journal?.entries[0].state,.notMoved); XCTAssertTrue(undo.results[0].detail.contains("未移动"))
+        XCTAssertEqual(b.state.windows[0].frame,original)
     }
     func testUndoDoesNotOverwriteSubsequentUserMove() throws {
         let (b,r)=fixture()
@@ -245,14 +289,21 @@ final class ManualRestoreTests: XCTestCase {
     }
 }
 
+struct SlowAppError: TransientFailure { var isTransient: Bool { true } }
 final class MemoryWindows: WindowBackend {
     var state: Snapshot; var writes=0; var noOp=false; var failOnWrite: Int?; var failRollback=false
-    var beforeWrite: (() -> Void)?
+    var beforeWrite: (() -> Void)?; var beforeWriteToken: ((String) -> Void)?
+    /// Next N window reads fail as "app did not answer"; tokens in `unresponsiveTokens` never answer.
+    var transientReads=0; var unresponsiveTokens=Set<String>()
     init(_ state: Snapshot) { self.state=state }
     func snapshot() throws -> Snapshot { state }
-    func readWindow(token: String) throws -> ObservedWindow? { state.windows.first{$0.token==token} }
+    func readWindow(token: String) throws -> ObservedWindow? {
+        if unresponsiveTokens.contains(token) { throw SlowAppError() }
+        if transientReads>0 { transientReads -= 1; throw SlowAppError() }
+        return state.windows.first{$0.token==token}
+    }
     func setFrame(window: ObservedWindow,to frame: Rect) throws {
-        beforeWrite?(); writes += 1
+        beforeWrite?(); beforeWriteToken?(window.token); writes += 1
         if failRollback && writes>1 { throw LayoutError.unsupported }
         guard let index=state.windows.firstIndex(where:{$0.token==window.token}) else { throw LayoutError.readbackUnavailable }
         if failOnWrite==writes { state.windows[index].frame.width=frame.width; throw LayoutError.unsupported }

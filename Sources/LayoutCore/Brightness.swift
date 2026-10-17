@@ -22,10 +22,11 @@ public enum DDCPacket {
 }
 
 public enum BrightnessStep {
-    public static let coarse=0.03, fine=0.01
-    /// Next level, snapped to the step grid (like the HUD tick dots).
-    public static func next(_ v: Double,up: Bool,fine isFine: Bool=false) -> Double {
-        let s=isFine ? fine : coarse
+    /// Brightness keys move 5% per press; volume keys keep 3%. ⌥⇧ fine-tunes both by 1%.
+    public static let coarse=0.05, volumeCoarse=0.03, fine=0.01
+    /// Next level, snapped to the step grid.
+    public static func next(_ v: Double,up: Bool,fine isFine: Bool=false,coarse c: Double=coarse) -> Double {
+        let s=isFine ? fine : c
         let idx=(v/s).rounded(); let snapped=idx*s
         var n: Double
         if abs(snapped-v)<1e-6 { n=snapped+(up ? s : -s) } else { n=up ? (v/s).rounded(.up)*s : (v/s).rounded(.down)*s }

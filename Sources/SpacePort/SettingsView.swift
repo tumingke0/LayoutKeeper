@@ -157,6 +157,7 @@ struct DiagnosticsSettings: View {
         ScrollView {
             VStack(alignment:.leading,spacing:14) {
                 SelfTestSection(model:model)
+                RestoreLogSection(model:model)
                 GroupBox(lk("可保存窗口检查（只读）")) {
                     VStack(alignment:.leading,spacing:8) {
                         HStack {
@@ -249,5 +250,44 @@ struct HotkeyRow: View {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor=nil; model.recordingHotkey=nil
         if apply { model.suspendHotkeys?(false) }
+    }
+}
+
+/// Diagnostics → 恢复记录: the last reconnects and restores (app IDs, counts and error codes only).
+struct RestoreLogSection: View {
+    @ObservedObject var model: Model
+    @State private var lines: [String]=[]
+    var body: some View {
+        GroupBox(lk("恢复记录")) {
+            VStack(alignment:.leading,spacing:8) {
+                Text(lk("最近的接屏和恢复过程，只记录应用标识、数量和错误码，不含窗口标题。恢复没成功时，可以把这里的内容发给开发者。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                if lines.isEmpty {
+                    Text(lk("还没有记录")).font(.caption).foregroundStyle(.tertiary)
+                } else {
+                    ScrollView {
+                        Text(lines.joined(separator:"\n")).font(.system(.caption2,design:.monospaced)).textSelection(.enabled)
+                            .frame(maxWidth:.infinity,alignment:.leading)
+                    }.frame(height:120)
+                }
+                HStack {
+                    Button(lk("刷新")) { reload() }.controlSize(.small)
+                    Button(lk("复制")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(lines.joined(separator:"\n"),forType:.string) }.controlSize(.small).disabled(lines.isEmpty)
+                    if let url=model.restoreLog?.url,FileManager.default.fileExists(atPath:url.path) {
+                        Button(lk("在 Finder 中显示")) { NSWorkspace.shared.activateFileViewerSelecting([url]) }.controlSize(.small)
+                    }
+                }
+            }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
+        }
+        .onAppear { reload() }
+    }
+    private func reload() {
+        lines=model.restoreLog?.tail(40) ?? (RenderMode.snapshot ? [
+            "2026-10-14 21:43:20  reconnect: screens settled, layout=shared-external",
+            "2026-10-14 21:43:20  reconnect: policy=auto",
+            "2026-10-14 21:43:22  reconnect: windows settled",
+            "2026-10-14 21:43:25  restore auto windows=5 [verified=4] failures=[com.example.editor:notResponding]",
+            "2026-10-14 21:43:27  reconnect: retrying once for apps that did not respond",
+            "2026-10-14 21:43:29  restore auto windows=5 [verified=1]"] : [])
     }
 }

@@ -165,7 +165,7 @@ final class DisplayControl: ObservableObject {
         guard volumeKeys,let d=displayUnderMouse,d.method == .ddc,let vol=d.volume else { return false }
         switch key {
         case .mute: toggleMute(d.id)
-        default: setVolume(d.id,BrightnessStep.next(vol,up:key == .volumeUp,fine:fine),hud:true)
+        default: setVolume(d.id,BrightnessStep.next(vol,up:key == .volumeUp,fine:fine,coarse:BrightnessStep.volumeCoarse),hud:true)
         }
         return true
     }

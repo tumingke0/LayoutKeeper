@@ -5,6 +5,10 @@ import XCTest
 
 final class AutoSpacesTests: XCTestCase {
     let ord=[Space(id:1,displayToken:"B"),Space(id:2,displayToken:"E")]
+    func testDefaults() {
+        XCTAssertTrue(AutoSpaces.defaultEnabled)          // auto-add stays on for new installs
+        XCTAssertFalse(AutoSpaces.removeDefaultEnabled)   // auto-remove is off: avoids a Mission Control flash on every plug/unplug
+    }
     func testAddDisabledByDefaultAndGuards() {
         XCTAssertEqual(AutoSpaces.planAdd(enabled:false,needed:4,available:2,spaces:ord),.failure(BlockerError(.disabled)))
         XCTAssertEqual(AutoSpaces.planAdd(enabled:true,needed:2,available:2,spaces:ord),.failure(BlockerError(.nothingToDo)))

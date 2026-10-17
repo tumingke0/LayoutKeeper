@@ -18,9 +18,18 @@ final class BrightnessTests: XCTestCase {
         XCTAssertNil(DDCPacket.parseReply(bad,code:0x10))
     }
     func testSteps() {
-        XCTAssertEqual(BrightnessStep.next(0.51,up:true),0.54)
-        XCTAssertEqual(BrightnessStep.next(0.38,up:true),0.39)
-        XCTAssertEqual(BrightnessStep.next(0.38,up:false),0.36)
+        XCTAssertEqual(BrightnessStep.coarse,0.05)
+        XCTAssertEqual(BrightnessStep.next(0.50,up:true),0.55)
+        XCTAssertEqual(BrightnessStep.next(0.50,up:false),0.45)
+        XCTAssertEqual(BrightnessStep.next(0.51,up:true),0.55)
+        XCTAssertEqual(BrightnessStep.next(0.38,up:true),0.40)
+        XCTAssertEqual(BrightnessStep.next(0.38,up:false),0.35)
+        XCTAssertEqual(BrightnessStep.next(0.97,up:true),1)
+        XCTAssertEqual(BrightnessStep.next(0.03,up:false),0)
+        // Volume keeps 3% per press.
+        XCTAssertEqual(BrightnessStep.next(0.51,up:true,coarse:BrightnessStep.volumeCoarse),0.54)
+        XCTAssertEqual(BrightnessStep.next(0.38,up:true,coarse:BrightnessStep.volumeCoarse),0.39)
+        XCTAssertEqual(BrightnessStep.next(0.38,up:false,coarse:BrightnessStep.volumeCoarse),0.36)
         XCTAssertEqual(BrightnessStep.next(0.99,up:true),1)
         XCTAssertEqual(BrightnessStep.next(1,up:true),1)
         XCTAssertEqual(BrightnessStep.next(0,up:false),0)
