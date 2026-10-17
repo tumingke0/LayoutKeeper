@@ -106,7 +106,10 @@ final class Model: ObservableObject {
     var autoSpacesStartedByRestore=false
     /// 桌面管理 (shared mode only): add missing Spaces / remove empty migrated Spaces through Mission Control.
     @Published var autoAddSpaces=Prefs.store?.object(forKey:AutoSpaces.addPreferenceKey) as? Bool ?? AutoSpaces.defaultEnabled { didSet { Prefs.store?.set(autoAddSpaces,forKey:AutoSpaces.addPreferenceKey) } }
-    @Published var autoRemoveSpaces=Prefs.store?.object(forKey:AutoSpaces.removePreferenceKey) as? Bool ?? AutoSpaces.removeDefaultEnabled { didSet { Prefs.store?.set(autoRemoveSpaces,forKey:AutoSpaces.removePreferenceKey) } }
+    /// 0.6.8: no UI changes this any more; the stored value is kept as it was but only counts through `autoRemoveSpacesEffective`.
+    let autoRemoveSpacesStored=Prefs.store?.object(forKey:AutoSpaces.removePreferenceKey) as? Bool ?? AutoSpaces.removeDefaultEnabled
+    /// The only switch that lets LayoutKeeper delete Spaces after an unplug. Forced off while the feature is hidden.
+    var autoRemoveSpacesEffective: Bool { AutoSpaces.removeEffective(stored:autoRemoveSpacesStored) }
     lazy var autoSpaces=AutoSpacesRunner(spaces:spaces)
     /// Brightness / volume control (显示器).
     let displayControl=DisplayControl()
@@ -126,7 +129,10 @@ final class Model: ObservableObject {
     @Published var livePlan: QuickRestorePlan?
     var livePlanKey: String?
     @Published var lastRestoreSummary: RestoreSummary?
-    var showToast: ((Toast) -> Void)?
+    var notify: ((UserNotice) -> Void)?
+    /// Latest notice macOS would not show as a banner; listed in the menu-bar menu until clicked or replaced.
+    @Published var undeliveredNotice: UserNotice?
+    @Published var notificationPermission: NotificationPermission = .notDetermined
     var openPreviewPanel: ((Bool) -> Void)?
     var applyHotkeys: (() -> Void)?
     var openOnboarding: (() -> Void)?
@@ -181,12 +187,18 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     var onboardingWindow: NSWindow?
     var onboarding: OnboardingController?
     var authorizationTimer: Timer?
-    let toasts=ToastCenter()
+    let notifier=SystemNotifier()
     var updater: AppUpdater?
     let hotkeys=GlobalHotkeys()
     private var liveTimer: Timer?
     private var lastAction: [String:Date]=[:]
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before launch finishes, so a notification click that launched the app is delivered to the notifier.
+        notifier.showMain={ [weak self] in self?.showFromNotification() }
+        notifier.log={ [weak self] line in self?.model.logRestore(line) }
+        notifier.onMenuFallback={ [weak self] notice in self?.model.undeliveredNotice=notice }
+        notifier.onPermission={ [weak self] p in self?.model.notificationPermission=p; self?.model.logRestore("notifications: permission=\(p.rawValue)") }
+        notifier.start()
         NSAppleEventManager.shared().setEventHandler(self,andSelector:#selector(handleURL(_:reply:)),forEventClass:AEEventClass(kInternetEventClass),andEventID:AEEventID(kAEGetURL))
     }
     /// layoutkeeper://self-test (and the legacy spaceport://self-test) only opens the self-test confirmation; nothing moves without the user's click.
@@ -207,7 +219,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         item.menu=menu
         NSApp.mainMenu=buildMainMenu()
         model.openSettings={ [weak self] tab in self?.showSettings(tab) }
-        model.showToast={ [weak self] toast in self?.toasts.show(toast) }
+        model.notify={ [weak self] notice in self?.notifier.show(notice) }
         model.openPreviewPanel={ [weak self] rescan in self?.showPreviewPanel(rescan:rescan) }
         model.requestLiveCheck={ [weak self] in self?.scheduleLiveCheck(after:0.6,force:true) }
         model.openOnboarding={ [weak self] in self?.showOnboarding(.reopened) }
@@ -292,7 +304,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         controller.startPolling()
         w.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps:true)
     }
-    /// "下次接上外接屏时提醒我": once the screens have settled, a gentle toast if this monitor has no saved layout.
+    /// "下次接上外接屏时提醒我": once the screens have settled, a gentle notification if this monitor has no saved layout.
     private var reminderTimer: Timer?
     func scheduleFirstLayoutReminder() {
         guard Prefs.store?.bool(forKey:FirstLayoutReminder.key) == true else { return }
@@ -303,8 +315,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             guard FirstLayoutReminder.shouldRemind(flag:true,monitorConnected:self.model.currentExternalMonitor != nil,hasLayout:self.model.externalRecord != nil,trusted:self.model.trusted) else { return }
             Prefs.store?.removeObject(forKey:FirstLayoutReminder.key)
             let name=self.model.currentMonitorName ?? lk("外接屏")
-            self.toasts.show(Toast(icon:"square.and.arrow.down",tone:.info,title:lk("接上了「%@」", "\(name)"),detail:lk("摆好窗口后保存一次，以后就能一键恢复"),
-                                   actions:[Toast.Action(title:lk("现在保存")) { [weak self] in self?.model.quickSave() }],duration:12))
+            self.notifier.show(UserNotice(title:lk("接上了「%@」", "\(name)"),detail:lk("摆好窗口后保存一次，以后就能一键恢复"),
+                                   actions:[UserNotice.Action(.saveNow) { [weak self] in self?.model.quickSave() }],duration:12))
         }
         reminderTimer=t; RunLoop.main.add(t,forMode:.common)
     }
@@ -330,6 +342,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "mode.auto": model.autoRestoreMode = .auto
         case "mode.forget": if let key=model.currentExternalMonitor?.identity.key { model.monitorPreferences.setRestore(nil,for:key) }
         case "open": show()
+        case "notice":
+            let notice=model.undeliveredNotice; model.undeliveredNotice=nil
+            if let open=notice?.open { open() } else { show() }
         case "settings": showSettings(.general)
         case "checkUpdates": updater?.checkForUpdates()
         case "quit": NSApplication.shared.terminate(nil)
@@ -350,6 +365,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             menu.addItem(item); menu.addItem(.separator())
         }
         StatusMenuBuilder.make(StatusMenuModel.build(model.menuState(optionHeld:optionHeld)),target:self,action:#selector(menuAction(_:))).forEach(menu.addItem)
+    }
+    /// A notification click can arrive while the app is still launching: wait for the main window.
+    func showFromNotification() {
+        guard window != nil else { DispatchQueue.main.asyncAfter(deadline:.now()+0.3) { [weak self] in self?.showFromNotification() }; return }
+        if let w=onboardingWindow,w.isVisible { w.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps:true); return }
+        show()
     }
     @objc func show() { window.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps:true); scheduleLiveCheck(after:0.3,force:true) }
     func windowDidBecomeKey(_ notification: Notification) { if (notification.object as? NSWindow) == window { scheduleLiveCheck(after:0.5) } }
@@ -408,7 +429,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         return main
     }
     /// Only our own activation re-checks (not every app switch): the check is a read-only scan on the main thread.
-    func applicationDidBecomeActive(_ notification: Notification) { model.refreshExternalMonitor(); scheduleLiveCheck(after:0.6) }
+    func applicationDidBecomeActive(_ notification: Notification) { model.refreshExternalMonitor(); notifier.refreshPermission(); scheduleLiveCheck(after:0.6) }
     func applicationWillTerminate(_ notification: Notification) { authorizationTimer?.invalidate(); hotkeys.unregisterAll(); displayCoordinator.stop() }
     @objc func quit() { NSApplication.shared.terminate(nil) }
     @objc func checkForUpdates() { updater?.checkForUpdates() }
@@ -472,6 +493,7 @@ if ProcessInfo.processInfo.environment["LAYOUTKEEPER_DEV_DIAG"]=="1" {
     let args=CommandLine.arguments
     if let i=args.firstIndex(of:"--test-chrome-profiles"),args.count>i+1 { DevDiagnostics.chromeProfiles(out:URL(fileURLWithPath:args[i+1])); exit(0) }
     if let i=args.firstIndex(of:"--restore-harness"),args.count>i+1 { DevDiagnostics.restoreHarness(out:URL(fileURLWithPath:args[i+1])); exit(0) }
+    if let i=args.firstIndex(of:"--test-notification"),args.count>i+1 { SystemNotifier.selfCheck(out:URL(fileURLWithPath:args[i+1])); exit(0) }
     if args.contains("--close-test-windows") { DevDiagnostics.closeTestWindows(); exit(0) }
     if let i=args.firstIndex(of:"--dry-run-plan"),args.count>i+2 { DevDiagnostics.dryRun(layout:URL(fileURLWithPath:args[i+1]),out:URL(fileURLWithPath:args[i+2])); exit(0) }
 }

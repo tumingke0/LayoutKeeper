@@ -4,7 +4,7 @@ import AppKit
 import LayoutCore
 import MacAdapters
 
-/// A shared-mode notice. Shown as a closable toast and kept in the model until dismissed or resolved.
+/// A shared-mode notice. Posted as a notification and kept in the model until dismissed or resolved.
 struct SharedNotice: Equatable {
     enum Kind: Equatable { case missingSpaces(Int), migrated(Int), separateSpacesOff, multipleMonitors }
     var kind: Kind
@@ -30,15 +30,6 @@ struct SharedNotice: Equatable {
         case .multipleMonitors: return lk("共用模式只在接一块外接屏时生效。拔到只剩一块后会自动切回共用布局。")
         }
     }
-    var icon: String {
-        switch kind {
-        case .missingSpaces: return "plus.rectangle.on.rectangle"
-        case .migrated: return "rectangle.stack.badge.minus"
-        case .separateSpacesOff: return "exclamationmark.triangle.fill"
-        case .multipleMonitors: return "display.2"
-        }
-    }
-    var tone: Tone { kind == .separateSpacesOff ? .warning : .info }
 }
 
 enum SeparateSpaces {
@@ -55,21 +46,21 @@ enum MissionControl {
 
 extension Model {
     var sharedModeActive: Bool { currentExternalMonitor?.identity.isSharedExternal == true }
-    func sharedNoticeToast(_ notice: SharedNotice) -> Toast {
-        var actions=[Toast.Action]()
+    func sharedNoticeContent(_ notice: SharedNotice) -> UserNotice {
+        var actions=[UserNotice.Action]()
         switch notice.kind {
-        case .missingSpaces, .migrated: actions.append(Toast.Action(title:lk("打开调度中心")) { MissionControl.open() })
-        case .separateSpacesOff: actions.append(Toast.Action(title:lk("打开设置")) { NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Desktop-Settings.extension")!) })
+        case .missingSpaces, .migrated: actions.append(UserNotice.Action(.openMissionControl) { MissionControl.open() })
+        case .separateSpacesOff: actions.append(UserNotice.Action(.openSettings) { NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Desktop-Settings.extension")!) })
         case .multipleMonitors: break
         }
-        return Toast(icon:notice.icon,tone:notice.tone,title:notice.title,detail:notice.detail,actions:actions,duration:0) { [weak self] in
+        return UserNotice(title:notice.title,detail:notice.detail,actions:actions,duration:0,onDismiss:{ [weak self] in
             if self?.sharedNotice == notice { self?.sharedNotice=nil }
-        }
+        })
     }
     func postSharedNotice(_ notice: SharedNotice) {
         guard sharedNotice != notice else { return }
         sharedNotice=notice
-        showToast?(sharedNoticeToast(notice))
+        notify?(sharedNoticeContent(notice))
     }
     /// Called when 布局模式 changes. Switching to shared mode seeds the shared layout once; per-monitor files are never changed.
     func layoutModeChanged() {
@@ -80,7 +71,7 @@ extension Model {
             let physical=MonitorRecognition.physicalExternalMonitors()
             if let library=screenLibrary,let source=try? SharedLayout.seed(library:library,preferredKey:physical.count==1 ? physical[0].identity.key : nil) {
                 let name=savedScreens.first{ $0.key==source }?.name ?? lk("外接屏")
-                showToast?(Toast(icon:"square.on.square",tone:.success,title:lk("已切换为共用一套"),detail:lk("用「%@」现在的布局作为共用布局，原来各屏的记录都保留着。", "\(name)"),duration:6))
+                notify?(UserNotice(title:lk("已切换为共用一套"),detail:lk("用「%@」现在的布局作为共用布局，原来各屏的记录都保留着。", "\(name)"),duration:6))
             }
             if !SeparateSpaces.enabled { postSharedNotice(SharedNotice(kind:.separateSpacesOff)) }
             else if physical.count>1 { postSharedNotice(SharedNotice(kind:.multipleMonitors)) }
@@ -130,11 +121,11 @@ extension Model {
                 self.logRestore("auto-add spaces: added \(n)")
                 self.pendingSpacesNeeded=nil
                 if case .missingSpaces? = self.sharedNotice?.kind { self.sharedNotice=nil }
-                self.showToast?(Toast(icon:"plus.rectangle.on.rectangle",tone:.success,title:lk("已自动补了 %@ 个桌面", "\(n)"),detail:lk("正在按桌面顺序恢复窗口。"),duration:4))
+                self.notify?(UserNotice(title:lk("已自动补了 %@ 个桌面", "\(n)"),detail:lk("正在按桌面顺序恢复窗口。"),duration:4))
                 if let followUp { followUp(.success(n)); return }
                 // Not part of an attach session (e.g. after a manual restore): restore again with the same trigger.
                 let outcome=self.directRestore(trigger)
-                if let toast=self.restoreToast(outcome,trigger:trigger) { self.showToast?(toast) }
+                if let notice=self.restoreNotice(outcome,trigger:trigger) { self.notify?(notice) }
             case .failure(let e):
                 NSLog("LayoutKeeper auto add Spaces stopped: %@",e.description)
                 self.logRestore("auto-add spaces: failed (\(e.description.prefix(80)))")
@@ -148,13 +139,15 @@ extension Model {
     /// 实验：拔屏后自动删掉挪到内置屏上的空桌面. Returns true when a run was started.
     func tryAutoRemoveSpaces(before: SpaceCensus,after: SpaceCensus) -> Bool {
         guard !RenderMode.snapshot else { return false }
-        logRestore("auto-remove spaces: check before{ext=\(before.external) builtIn=\(before.builtIn)} after{ext=\(after.external) builtIn=\(after.builtIn)} enabled=\(autoRemoveSpaces)")
+        // 0.6.8: hidden and forced off (see AutoSpaces.removeAvailable). Checked first so nothing below can run.
+        guard autoRemoveSpacesEffective else { logRestore("auto-remove spaces: skipped — feature hidden/off (stored=\(autoRemoveSpacesStored))"); return false }
+        logRestore("auto-remove spaces: check before{ext=\(before.external) builtIn=\(before.builtIn)} after{ext=\(after.external) builtIn=\(after.builtIn)} enabled=\(autoRemoveSpacesEffective)")
         guard trusted else { logRestore("auto-remove spaces: skipped — no Accessibility permission"); return false }
         guard let token=builtInDisplayToken else { logRestore("auto-remove spaces: skipped — no built-in display"); return false }
         guard let all=try? spaces.spaces(displays:MacEnvironment.displays()) else { logRestore("auto-remove spaces: skipped — Spaces unreadable"); return false }
         guard let occupied=SpaceOccupancy.occupied(spaces:spaces) else { logRestore("auto-remove spaces: skipped — window occupancy unreadable"); return false }
         let active=Set(all.filter(\.active).map(\.id))
-        let planned=AutoSpaces.planRemove(enabled:autoRemoveSpaces,before:before,after:after,occupied:occupied,active:active,spaces:all)
+        let planned=AutoSpaces.planRemove(enabled:autoRemoveSpacesEffective,before:before,after:after,occupied:occupied,active:active,spaces:all)
         guard case .success(let ids)=planned else {
             if case .failure(let e)=planned { logRestore("auto-remove spaces: skipped — \(e.blocker) (occupied∩builtIn=\(after.builtIn.filter{ occupied.contains($0) }) active=\(active.sorted()))") }
             return false
@@ -167,7 +160,7 @@ extension Model {
             case .success(let n):
                 self.logRestore("auto-remove spaces: removed \(n)")
                 let left=moved-n
-                self.showToast?(Toast(icon:"rectangle.stack.badge.minus",tone:.success,title:lk("已自动删掉 %@ 个空桌面", "\(n)"),detail:left>0 ? lk("还有 %@ 个里面有窗口或正在使用，没有动。", "\(left)") : lk("内置屏恢复干净了。"),duration:5))
+                self.notify?(UserNotice(title:lk("已自动删掉 %@ 个空桌面", "\(n)"),detail:left>0 ? lk("还有 %@ 个里面有窗口或正在使用，没有动。", "\(left)") : lk("内置屏恢复干净了。"),duration:5))
             case .failure(let e):
                 NSLog("LayoutKeeper auto remove Spaces stopped: %@",e.description)
                 self.logRestore("auto-remove spaces: failed (\(e.description.prefix(80)))")
@@ -249,7 +242,7 @@ final class SharedSpaceWatcher {
             model.logRestore("space-watch: Spaces added (\(previous.external.count)→\(now.external.count), needed \(needed)), automatic restore again")
             _=needed   // the user added Spaces after our notice: restore again (only unambiguous windows, undoable)
             let outcome=model.directRestore(.automatic)
-            if let toast=model.restoreToast(outcome,trigger:.automatic) { model.showToast?(toast) }
+            if let notice=model.restoreNotice(outcome,trigger:.automatic) { model.notify?(notice) }
         }
     }
 }

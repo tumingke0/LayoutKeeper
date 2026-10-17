@@ -11,6 +11,14 @@ public enum AutoSpaces {
     public static let defaultEnabled=true
     /// Removing migrated Spaces defaults to off: removing on unplug forces a re-add (Mission Control flash) on every replug.
     public static let removeDefaultEnabled=false
+    /// 0.6.8: removing migrated Spaces is hidden from every UI and forced off. Deleting an empty external desktop on
+    /// unplug renumbers the desktops the saved layout refers to ("desktop 3"), so the next restore puts windows on the
+    /// wrong desktops. The stored preference is left untouched but ignored; set this to true to bring the feature back.
+    public static let removeAvailable=false
+    /// The single decision point for removing Spaces: the stored preference only counts while the feature is available.
+    public static func removeEffective(stored: Bool) -> Bool { removeAvailable && stored }
+    /// Value for the diagnostics env line.
+    public static func removeLogValue(stored: Bool) -> String { removeAvailable ? "\(stored)" : "false(hidden)" }
     /// Never add or remove more than this many Spaces in one run.
     public static let maxPerRun=6
     /// Whole run must finish within this many seconds.

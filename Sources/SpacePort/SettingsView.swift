@@ -60,8 +60,8 @@ struct GeneralSettings: View {
             if model.layoutMode == .sharedExternal {
                 Section(lk("桌面管理")) {
                     Toggle(lk("接上外接屏时自动补齐缺少的桌面"),isOn:$model.autoAddSpaces)
-                    Toggle(lk("拔掉外接屏后自动删掉挪到内置屏上的空桌面"),isOn:$model.autoRemoveSpaces)
-                    Text(lk("通过调度中心自动完成，操作时会闪一下。只删从外接屏挪过来的空桌面；有全屏 App 或任何一步不对时会停下，改为提示你手动处理。"))
+                    // 0.6.8: 「拔掉外接屏后自动删掉空桌面」 is hidden and forced off (AutoSpaces.removeAvailable).
+                    Text(lk("通过调度中心自动完成，操作时会闪一下。有全屏 App 或任何一步不对时会停下，改为提示你手动处理。"))
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 }
             }
@@ -82,6 +82,19 @@ struct GeneralSettings: View {
                                 ForEach(AutoRestoreMode.allCases,id:\.self) { Text($0.title).tag($0.rawValue) }
                             }.labelsHidden().fixedSize()
                         }
+                    }
+                }
+            }
+            Section(lk("通知")) {
+                Text(lk("结果和提示用 macOS 通知显示：点一下打开 LayoutKeeper，向右划掉即可关闭。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                HStack {
+                    Text(model.notificationPermission.statusText).font(.caption)
+                        .foregroundStyle(model.notificationPermission.blocksBanners ? Tone.warning.color : Color.secondary)
+                        .fixedSize(horizontal:false,vertical:true)
+                    Spacer()
+                    if model.notificationPermission == .denied || model.notificationPermission == .alertsOff {
+                        Button(lk("打开通知设置")) { NotificationSettings.open() }.controlSize(.small)
                     }
                 }
             }
@@ -289,5 +302,26 @@ struct RestoreLogSection: View {
             "2026-10-14 21:43:25  restore auto windows=5 [verified=4] failures=[com.example.editor:notResponding]",
             "2026-10-14 21:43:27  reconnect: retrying once for apps that did not respond",
             "2026-10-14 21:43:29  restore auto windows=5 [verified=1]"] : [])
+    }
+}
+
+extension NotificationPermission {
+    var blocksBanners: Bool { self == .denied || self == .alertsOff || self == .unavailable }
+    var statusText: String {
+        switch self {
+        case .allowed: return lk("已允许通知")
+        case .notDetermined: return lk("第一次需要提示时会请求通知权限")
+        case .alertsOff: return lk("通知样式为「无」，不会弹出横幅；最近一条提示会显示在菜单栏菜单里。")
+        case .denied: return lk("通知已关闭；最近一条提示会显示在菜单栏菜单里。")
+        case .unavailable: return lk("当前构建无法使用系统通知；最近一条提示会显示在菜单栏菜单里。")
+        }
+    }
+}
+
+enum NotificationSettings {
+    static func open() {
+        let id=Bundle.main.bundleIdentifier ?? ""
+        let pane=URL(string:"x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)")!
+        if !NSWorkspace.shared.open(pane) { NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Notifications-Settings.extension")!) }
     }
 }

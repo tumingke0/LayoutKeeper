@@ -215,11 +215,7 @@ enum UISnapshots {
         let noScreen=sampleModel(record:nil,undo:false); noScreen.externalMonitors=[]
         shot("08-menu-no-screen.png",MenuReplica(items:StatusMenuModel.build(noScreen.menuState(optionHeld:false))))
 
-        // Toast after an automatic restore, and the reconnect prompts.
-        if let toast=menuModel.restoreToast(DirectRestoreOutcome(restored:6,attempted:6,needsConfirmation:1),trigger:.automatic) {
-            shot("09-toast-auto-restore.png",ToastView(toast:toast,actions:toast.actions).padding(16))
-            shot("10-toast-auto-restore-dark.png",ToastView(toast:toast,actions:toast.actions).padding(16),dark:true)
-        }
+        // Reconnect prompts. (Notices are macOS notifications since 0.6.8, so there is nothing of ours to render.)
         shot("11-ask-once.png",ReconnectPanelView(prompt:ReconnectCoordinator.askOncePrompt(name:monitor.name,automatic:{},askEachTime:{},never:{})))
         shot("12-ask-each-time.png",ReconnectPanelView(prompt:ReconnectCoordinator.askPrompt(name:lk("公司"),restore:{},preview:{})))
 
@@ -263,14 +259,6 @@ enum UISnapshots {
         shot("27-settings-layout-mode-per-monitor.png",SettingsView(model:perMonitor))
         // Whole General tab in one tall image (language at the top, About with the install location at the bottom).
         shot("33-settings-general-full.png",GeneralSettings(model:perMonitor).frame(width:640,height:1900))
-        for (name,notice) in [("28-toast-missing-spaces.png",SharedNotice(kind:.missingSpaces(2))),("29-toast-spaces-moved.png",SharedNotice(kind:.migrated(5))),
-                              ("30-toast-separate-spaces-off.png",SharedNotice(kind:.separateSpacesOff))] {
-            let toast=shared.sharedNoticeToast(notice)
-            shot(name,ToastView(toast:toast,actions:toast.actions).padding(16))
-        }
-        let reconnectToast=ReconnectCoordinator.reconnectNotice(name:lk("公司"),restore:{})
-        shot("31-toast-reconnect.png",ToastView(toast:reconnectToast,actions:reconnectToast.actions).padding(16))
-        shot("32-toast-reconnect-dark.png",ToastView(toast:reconnectToast,actions:reconnectToast.actions).padding(16),dark:true)
         // First-run guide (sample models; nothing is requested from the system).
         let fresh=sampleModel(record:nil,trusted:false,undo:false)
         let step1=OnboardingController(model:fresh,reason:.firstRun)

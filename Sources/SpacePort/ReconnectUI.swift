@@ -7,7 +7,7 @@ import MacAdapters
 
 /// Reconnect / wake handling. Stage 1: screens stable for 3 s (ReconnectWatch). Then the per-monitor policy decides:
 /// ask once → remember the answer; ask → prompt; auto → stage 2 waits until window frames stop moving (FrameSettle),
-/// then restores only unambiguous windows and shows an undoable toast. Unplugging does nothing. Pause suppresses all.
+/// then restores only unambiguous windows and posts an undoable notification. Unplugging does nothing. Pause suppresses all.
 final class ReconnectCoordinator {
     let model: Model
     let showMain: () -> Void
@@ -97,7 +97,7 @@ final class ReconnectCoordinator {
         case .ask where !Self.choicePromptEnabled, .askOnce where !Self.choicePromptEnabled:
             // 0.6.2: the choice panel is disabled. A closable notice with one button replaces it; nothing is remembered.
             close(id,"notice-shown reason=ask-mode (no automatic restore)")
-            model.showToast?(Self.reconnectNotice(name:name,restore:{ [weak self] in self?.model.quickRestore() }))
+            model.notify?(Self.reconnectNotice(name:name,restore:{ [weak self] in self?.model.quickRestore() }))
         case .ask: close(id,"prompt-shown reason=ask-mode"); askNow(monitor,name:name)
         case .askOnce:
             close(id,"prompt-shown reason=ask-once")
@@ -110,9 +110,9 @@ final class ReconnectCoordinator {
     /// The reconnect choice panel (「以后自动恢复？」/「恢复这块屏幕保存的窗口布局？」) was hard to understand, so 0.6.2
     /// turns it off. The code stays; set this to true to bring it back.
     static let choicePromptEnabled=false
-    static func reconnectNotice(name: String,restore: @escaping () -> Void) -> Toast {
-        Toast(icon:"display.2",tone:.info,title:lk("接上了「%@」", "\(name)"),detail:lk("布局和保存的不一样时，点「恢复布局」；只移动能唯一确认的窗口，可以撤销。想接上就自动恢复，可在菜单「接上屏幕时」选「自动恢复」。"),
-              actions:[Toast.Action(title:lk("恢复布局"),run:restore)],duration:15)
+    static func reconnectNotice(name: String,restore: @escaping () -> Void) -> UserNotice {
+        UserNotice(title:lk("接上了「%@」", "\(name)"),detail:lk("布局和保存的不一样时，点「恢复布局」；只移动能唯一确认的窗口，可以撤销。想接上就自动恢复，可在菜单「接上屏幕时」选「自动恢复」。"),
+              actions:[UserNotice.Action(.restoreNow,run:restore)],duration:15)
     }
     static func askOncePrompt(name: String,automatic: @escaping () -> Void,askEachTime: @escaping () -> Void,never: @escaping () -> Void) -> ReconnectPrompt {
         ReconnectPrompt(icon:"sparkles.rectangle.stack",title:lk("以后接上「%@」时自动恢复布局？", "\(name)"),
@@ -170,8 +170,8 @@ final class ReconnectCoordinator {
     }
     static let followUpTimeout: TimeInterval = 30
     private var followUpTimer: Timer?
-    private func resultLine(_ o: DirectRestoreOutcome,toast: Toast?,extra: String = "") -> String {
-        "\(o.error == nil ? "ran" : "error") restored=\(o.restored) attempted=\(o.attempted) notConfident=\(o.skippedAuto) needsConfirmation=\(o.needsConfirmation) failures=\(o.failures.map{ "\($0.bundleID):\($0.reason.rawValue)" }) error=\(o.error.map{ String($0.prefix(60)) } ?? "-")\(extra) toast=\(toast == nil ? "none" : "shown")"
+    private func resultLine(_ o: DirectRestoreOutcome,notice: UserNotice?,extra: String = "") -> String {
+        "\(o.error == nil ? "ran" : "error") restored=\(o.restored) attempted=\(o.attempted) notConfident=\(o.skippedAuto) needsConfirmation=\(o.needsConfirmation) failures=\(o.failures.map{ "\($0.bundleID):\($0.reason.rawValue)" }) error=\(o.error.map{ String($0.prefix(60)) } ?? "-")\(extra) notice=\(notice == nil ? "none" : "posted")"
     }
     /// Step 1 restores what fits now. If it had to auto-add desktops, the session stays open (in flight) until the
     /// add finishes; step 2 restores again in the same session and one result line covers both.
@@ -206,16 +206,16 @@ final class ReconnectCoordinator {
             followUpTimer?.invalidate()
             let t=Timer(timeInterval:Self.followUpTimeout,repeats:false) { [weak self] _ in
                 guard let self,self.session.followUpArrived(id:id) else { return }
-                let toast=self.model.restoreToast(outcome,trigger:.automatic)
-                self.endInFlight(); self.close(id,self.resultLine(outcome,toast:toast,extra:" autoSpaces=timeout"))
-                if let toast { self.model.showToast?(toast) }
+                let notice=self.model.restoreNotice(outcome,trigger:.automatic)
+                self.endInFlight(); self.close(id,self.resultLine(outcome,notice:notice,extra:" autoSpaces=timeout"))
+                if let notice { self.model.notify?(notice) }
             }
             followUpTimer=t; RunLoop.main.add(t,forMode:.common)
             return
         }
-        let toast=model.restoreToast(outcome,trigger:.automatic)
-        endInFlight(); close(id,resultLine(outcome,toast:toast))
-        if let toast { model.showToast?(toast) }
+        let notice=model.restoreNotice(outcome,trigger:.automatic)
+        endInFlight(); close(id,resultLine(outcome,notice:notice))
+        if let notice { model.notify?(notice) }
     }
     private var step1=DirectRestoreOutcome()
     private func endInFlight() { attemptInFlight=false; followUpTimer?.invalidate(); followUpTimer=nil }
@@ -236,9 +236,9 @@ final class ReconnectCoordinator {
             } else { extra=" autoSpaces=added\(n) step2=skipped(screen changed or busy)" }
         case .failure(let e): extra=" autoSpaces=failed(\(e.description.prefix(40)))"
         }
-        let toast=model.restoreToast(outcome,trigger:.automatic)
-        endInFlight(); close(id,resultLine(outcome,toast:toast,extra:extra))
-        if let toast { model.showToast?(toast) }
+        let notice=model.restoreNotice(outcome,trigger:.automatic)
+        endInFlight(); close(id,resultLine(outcome,notice:notice,extra:extra))
+        if let notice { model.notify?(notice) }
     }
     /// Step totals per window (RestoreTally: the latest step decides each window); what is still left (not confident, needs confirmation, failures, error)
     /// comes from the latest step, which saw the newest state.

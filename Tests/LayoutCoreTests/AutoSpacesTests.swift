@@ -9,6 +9,16 @@ final class AutoSpacesTests: XCTestCase {
         XCTAssertTrue(AutoSpaces.defaultEnabled)          // auto-add stays on for new installs
         XCTAssertFalse(AutoSpaces.removeDefaultEnabled)   // auto-remove is off: avoids a Mission Control flash on every plug/unplug
     }
+    /// 0.6.8: removing Spaces after an unplug is hidden and forced off, even for users who had switched it on.
+    func testRemoveIsForcedOffWhileHidden() {
+        XCTAssertFalse(AutoSpaces.removeAvailable)
+        XCTAssertFalse(AutoSpaces.removeEffective(stored:true))
+        XCTAssertFalse(AutoSpaces.removeEffective(stored:false))
+        XCTAssertEqual(AutoSpaces.removeLogValue(stored:true),"false(hidden)")
+        // The effective flag feeds planRemove, so even a removable migrated Space is never planned.
+        let before=SpaceCensus(external:[10,11],builtIn:[1],externalCount:1), after=SpaceCensus(external:[],builtIn:[1,10,11],externalCount:0)
+        XCTAssertEqual(AutoSpaces.planRemove(enabled:AutoSpaces.removeEffective(stored:true),before:before,after:after,occupied:[],active:[],spaces:[]),.failure(BlockerError(.disabled)))
+    }
     func testAddDisabledByDefaultAndGuards() {
         XCTAssertEqual(AutoSpaces.planAdd(enabled:false,needed:4,available:2,spaces:ord),.failure(BlockerError(.disabled)))
         XCTAssertEqual(AutoSpaces.planAdd(enabled:true,needed:2,available:2,spaces:ord),.failure(BlockerError(.nothingToDo)))

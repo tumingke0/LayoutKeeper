@@ -26,7 +26,7 @@ LayoutKeeper lives in the menu bar. It remembers where each window was on your e
 - **A layout per monitor.** Each monitor is recognized by its hardware (EDID: maker, model, serial number). Your home and office monitors each get their own layout, with nothing to pick by hand.
 - **Or one shared layout.** If you only ever use one external monitor at a time, switch to "all external monitors share one layout". Office or home, you get the same desktops and windows. Positions are stored relative to the screen, so different resolutions still line up.
 - **Puts windows back on the right desktop** (macOS 26 or later). Older systems still get position and size restored on the current desktop.
-- **Adds and removes desktops for you** (shared mode, on by default). When you plug in, it adds any missing desktops in Mission Control. When you unplug, it removes only the **empty** desktops macOS moved to the built-in screen. It stops and asks you to finish by hand if anything doesn't look right. No need to disable SIP.
+- **Adds missing desktops for you** (shared mode, on by default). When you plug in, it adds any missing desktops in Mission Control. It never deletes desktops. It stops and asks you to finish by hand if anything doesn't look right. No need to disable SIP.
 - **Brightness and volume keys for external monitors.** The brightness keys adjust the screen your mouse is on, built-in or external, and show a translucent indicator at the top of the screen. The volume keys can adjust the monitor's speakers. Hardware control (DDC) works on **Apple Silicon Macs only**. If a monitor doesn't respond, LayoutKeeper falls back to software dimming. If BetterDisplay, MonitorControl or Lunar is running, LayoutKeeper leaves the keys alone.
 - **Several named layouts per monitor**, for example "Coding" and "Meeting". You can switch between them from the menu bar.
 - **Version history.** It keeps the last 5 versions of each monitor's layout, so you can go back.
@@ -54,11 +54,11 @@ If you are on 0.6.0 or earlier, install the new version by hand one last time an
 
 1. Arrange your windows on the external monitor's desktops.
 2. Menu bar icon → **保存当前布局** (Save current layout), or press ⌃⌥⌘S.
-3. Next time you plug in that monitor, a small notice asks whether to restore. Click **恢复布局** (Restore layout), or press ⌃⌥⌘R.
+3. Next time you plug in that monitor, a macOS notification asks whether to restore. Click **恢复布局** (Restore layout), or press ⌃⌥⌘R.
 4. Don't like the result? Press ⌃⌥⌘Z to undo.
 
 What happens when you plug in a monitor (Settings → General):
-- **Ask first** (default): a closable notice appears in the top-right corner, and nothing moves until you click it.
+- **Ask first** (default): a macOS notification appears, and nothing moves until you click **恢复布局** (Restore layout) on it. Swipe it away to dismiss it.
 - **Restore automatically**: waits until the screen and windows have settled, then restores.
 - **Off**: you restore by hand only.
 

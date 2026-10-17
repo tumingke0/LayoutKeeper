@@ -44,6 +44,9 @@ public struct MenuState {
     public var now=Date()
     public var hotkeys=HotkeySettings.defaults
     public var optionHeld=false
+    /// Latest notice macOS could not show (notifications off or not allowed). Kept in the menu so it is not lost.
+    public var pendingNotice: String?
+    public var pendingNoticeDetail: String?
     public init() {}
 }
 
@@ -62,6 +65,9 @@ public enum StatusMenuModel {
     }
     public static func build(_ s: MenuState) -> [MenuItemModel] {
         var items=[MenuItemModel(kind:.status,id:"status",title:statusLine(s),symbol:s.monitorName == nil ? "display.trianglebadge.exclamationmark" : "display",enabled:false)]
+        if let notice=s.pendingNotice {
+            items.append(MenuItemModel(kind:.action,id:"notice",title:notice,symbol:"bell.badge",reason:NoticeRouting.menuSubtitle(s.pendingNoticeDetail)))
+        }
         let saveBlock=blocker(s,needsLayout:false)
         items.append(MenuItemModel(kind:.action,id:"save",title:lk("保存当前布局"),symbol:"square.and.arrow.down",enabled:saveBlock == nil,reason:saveBlock,hotkey:s.hotkeys.shown(.save)))
         let restoreBlock=blocker(s,needsLayout:true)

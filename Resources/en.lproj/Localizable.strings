@@ -388,7 +388,6 @@
 "把常用的摆法存成版式，例如「写代码」「开会」，之后一键切换" = "Save arrangements you use often as layouts, like \"Coding\" or \"Meeting\", and switch with one click";
 "报告写入失败：%@" = "Couldn't write the report: %@";
 "报告：%@" = "Report: %@";
-"拔掉外接屏后自动删掉挪到内置屏上的空桌面" = "Remove empty desktops moved to the built-in display after unplugging";
 "拷贝" = "Copy";
 "按「+」后桌面数量没有按预期增加" = "The desktop count didn't go up as expected after pressing \"+\"";
 "按下新的快捷键…" = "Press a new shortcut…";
@@ -723,7 +722,7 @@
 "选择窗口" = "Choose Window";
 "逐窗口追踪（仅本次运行，不写入布局文件）" = "Per-window trace (this run only, not written to the layout file)";
 "通用" = "General";
-"通过调度中心自动完成，操作时会闪一下。只删从外接屏挪过来的空桌面；有全屏 App 或任何一步不对时会停下，改为提示你手动处理。" = "Done through Mission Control, so the screen flashes briefly. Only empty desktops moved from the external display are removed; if a full-screen app is open or any step doesn't check out, it stops and asks you to finish by hand.";
+"通过调度中心自动完成，操作时会闪一下。有全屏 App 或任何一步不对时会停下，改为提示你手动处理。" = "Done through Mission Control, so the screen flashes briefly. If a full-screen app is open or any step doesn't check out, it stops and asks you to finish by hand.";
 "通过：加了一个桌面，又把它删掉了，桌面数恢复为 %@ 个。" = "Passed: added a desktop and removed it again; back to %@ desktops.";
 "部分窗口信息读取失败，预览可能不完整。" = "Some window info couldn't be read; the preview may be incomplete.";
 "配置中多条规则指向同一窗口" = "Several rules point to the same window";
@@ -820,3 +819,13 @@
 "同一 Chrome 用户有 %@ 个窗口，无法确定是哪一个，请选择" = "This Chrome profile has %@ windows; can't tell which one, please choose";
 "打开的 Chrome 窗口都属于其他 Chrome 用户，请选择或跳过" = "The open Chrome windows all belong to other Chrome profiles; choose one or skip";
 "窗口已属于其他 Chrome 用户，请重新选择" = "This window now belongs to another Chrome profile; please choose again";
+"通知" = "Notifications";
+"结果和提示用 macOS 通知显示：点一下打开 LayoutKeeper，向右划掉即可关闭。" = "Results and hints appear as macOS notifications: click one to open LayoutKeeper, swipe it right to dismiss.";
+"打开通知设置" = "Open Notification Settings";
+"已允许通知" = "Notifications allowed";
+"第一次需要提示时会请求通知权限" = "LayoutKeeper asks for permission the first time it has something to tell you";
+"通知样式为「无」，不会弹出横幅；最近一条提示会显示在菜单栏菜单里。" = "Notification style is \"None\", so no banners appear. The latest notice is shown in the menu bar menu.";
+"通知已关闭；最近一条提示会显示在菜单栏菜单里。" = "Notifications are off. The latest notice is shown in the menu bar menu.";
+"当前构建无法使用系统通知；最近一条提示会显示在菜单栏菜单里。" = "This build can't use system notifications. The latest notice is shown in the menu bar menu.";
+"LayoutKeeper 通知测试" = "LayoutKeeper notification test";
+"这是一条测试通知，可以直接划掉。" = "This is a test notification. You can swipe it away.";

@@ -56,8 +56,8 @@ extension Model {
             let replaced=try library.promote(version.url,key:key)
             previewVersion=nil; previewRecord=nil
             refreshExternalMonitor()
-            showToast?(Toast(icon:"clock.arrow.circlepath",tone:.success,title:lk("已恢复 %@ 的版本", "\(RelativeTime.short(version.savedAt))"),detail:lk("原来的布局已存入历史版本"),
-                             actions:replaced.map { url in [Toast.Action(title:lk("撤销")) { [weak self] in self?.undoPromote(url,key:key) }] } ?? [],duration:6))
+            notify?(UserNotice(title:lk("已恢复 %@ 的版本", "\(RelativeTime.short(version.savedAt))"),detail:lk("原来的布局已存入历史版本"),
+                             actions:replaced.map { url in [UserNotice.Action(.undo) { [weak self] in self?.undoPromote(url,key:key) }] } ?? [],duration:6))
             if apply { quickRestore() }
         } catch { actionNote=ActionNote(icon:"exclamationmark.triangle.fill",text:lk("没有恢复这个版本：%@", "\(error)"),tone:.warning) }
     }
@@ -77,8 +77,8 @@ extension Model {
             let bin=try library.delete(key)
             if selectedScreenKey==key { selectedScreenKey=nil }
             refreshExternalMonitor()
-            showToast?(Toast(icon:"trash",tone:.neutral,title:lk("已删除「%@」", "\(screen.name)"),detail:lk("布局已移到回收站"),
-                             actions:[Toast.Action(title:lk("撤销")) { [weak self] in self?.undoDelete(bin,key:key) }],duration:8))
+            notify?(UserNotice(title:lk("已删除「%@」", "\(screen.name)"),detail:lk("布局已移到回收站"),
+                             actions:[UserNotice.Action(.undo) { [weak self] in self?.undoDelete(bin,key:key) }],duration:8))
         } catch { actionNote=ActionNote(icon:"exclamationmark.triangle.fill",text:lk("没有删除：%@", "\(error)"),tone:.warning) }
     }
     private func undoDelete(_ bin: URL,key: String) {
@@ -120,8 +120,8 @@ extension Model {
                 detail=o.error ?? lk("已恢复 %@ 个窗口", "\(o.restored)") + (o.needsConfirmation>0 ? lk(" · %@ 个需确认", "\(o.needsConfirmation)") : "")
             }
             let moved=lastRestoreJournal?.id != journalBefore && lastRestoreJournal?.canUndo == true
-            showToast?(Toast(icon:"square.stack.3d.up.fill",tone:.success,title:lk("已切换到「%@」", "\(layout.name)"),detail:detail,
-                             actions:undo.map { url in [Toast.Action(title:lk("撤销")) { [weak self] in self?.undoApply(url,key:key,undoWindows:moved) }] } ?? [],duration:6))
+            notify?(UserNotice(title:lk("已切换到「%@」", "\(layout.name)"),detail:detail,
+                             actions:undo.map { url in [UserNotice.Action(.undo) { [weak self] in self?.undoApply(url,key:key,undoWindows:moved) }] } ?? [],duration:6))
         } catch { fail(lk("没有应用版式"),error) }
     }
     private func undoApply(_ url: URL,key: String,undoWindows: Bool) {
@@ -152,7 +152,7 @@ extension Model {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
             let bin=try library.deleteNamed(layout.url,key:key); reloadLibrary()
-            showToast?(Toast(icon:"trash",tone:.neutral,title:lk("已删除版式「%@」", "\(layout.name)"),actions:[Toast.Action(title:lk("撤销")) { [weak self] in
+            notify?(UserNotice(title:lk("已删除版式「%@」", "\(layout.name)"),actions:[UserNotice.Action(.undo) { [weak self] in
                 do { try library.undoDeleteNamed(bin,key:key); self?.reloadLibrary() } catch { self?.fail(lk("无法撤销删除（文件仍在回收站）"),error) }
             }],duration:8))
         } catch { fail(lk("没有删除"),error) }

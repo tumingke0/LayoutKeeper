@@ -32,6 +32,7 @@ extension Model {
             s.layouts=list.map { MenuLayout(name:$0.name,active:$0.isActive) }
         }
         s.pausedUntil=pausedUntil; s.now=Date(); s.hotkeys=hotkeySettings; s.optionHeld=optionHeld
+        s.pendingNotice=undeliveredNotice?.title; s.pendingNoticeDetail=undeliveredNotice?.detail
         return s
     }
     /// Why save/restore can't run right now (nil when it can).
@@ -45,11 +46,11 @@ extension Model {
     /// Menu / hotkey save: no dialog. Overwriting keeps `.previous.json` exactly as before.
     func quickSave() {
         refreshExternalMonitor()
-        if let why=quickBlocker(needsLayout:false) { showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:lk("没有保存"),detail:why)); return }
+        if let why=quickBlocker(needsLayout:false) { notify?(UserNotice(title:lk("没有保存"),detail:why)); return }
         switch saveExternalLayout(confirmOverwrite:false) {
         case .saved(let count,let replaced):
-            showToast?(Toast(icon:"checkmark.circle.fill",tone:.success,title:lk("已保存 %@ 个窗口", "\(count)"),detail:replaced ? lk("旧版本已存入历史") : nil))
-        case .failed(let why): showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:lk("没有保存"),detail:why,duration:4))
+            notify?(UserNotice(title:lk("已保存 %@ 个窗口", "\(count)"),detail:replaced ? lk("旧版本已存入历史") : nil))
+        case .failed(let why): notify?(UserNotice(title:lk("没有保存"),detail:why,duration:4))
         case .cancelled: break
         }
         requestLiveCheck?()
@@ -93,33 +94,35 @@ extension Model {
         requestLiveCheck?()
         return outcome
     }
-    func restoreToast(_ o: DirectRestoreOutcome,trigger: RestoreTrigger) -> Toast? {
-        let view=Toast.Action(title:lk("查看")) { [weak self] in self?.openPreviewPanel?(false) }
-        let retry=Toast.Action(title:lk("重试")) { [weak self] in self?.quickRestore() }
-        let restoreNow=Toast.Action(title:lk("恢复布局")) { [weak self] in self?.quickRestore() }
-        // Automatic restores that leave something undone stay on screen until closed, so the problem is not missed.
+    func restoreNotice(_ o: DirectRestoreOutcome,trigger: RestoreTrigger) -> UserNotice? {
+        // Clicking a result notice (or its 「查看」 button) opens the preview / results panel of this restore.
+        let openResult: () -> Void={ [weak self] in self?.openPreviewPanel?(false) }
+        let view=UserNotice.Action(.view,run:openResult)
+        let retry=UserNotice.Action(.retry) { [weak self] in self?.quickRestore() }
+        let restoreNow=UserNotice.Action(.restoreNow) { [weak self] in self?.quickRestore() }
+        // Automatic restores that leave something undone stay in Notification Center until dismissed, so the problem is not missed.
         let attention: TimeInterval=trigger == .automatic ? 0 : 8
         if let error=o.error {
             if trigger == .automatic && externalRecord == nil { return nil }
-            return Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:trigger == .automatic ? lk("没有自动恢复") : lk("没有恢复"),detail:error,duration:5)
+            return UserNotice(title:trigger == .automatic ? lk("没有自动恢复") : lk("没有恢复"),detail:error,duration:5)
         }
         if o.nothingToDo {
-            if !o.failures.isEmpty { return Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:lk("没有恢复窗口"),detail:Self.failureText(o.failures),actions:[retry,view],duration:attention) }
-            if o.needsConfirmation>0 { return Toast(icon:"questionmark.circle.fill",tone:.warning,title:lk("%@ 个窗口需要确认", "\(o.needsConfirmation)"),detail:lk("无法唯一确认，没有移动"),actions:[view],duration:attention) }
-            if o.skippedAuto>0 { return Toast(icon:"info.circle.fill",tone:.neutral,title:lk("%@ 个窗口没有自动恢复", "\(o.skippedAuto)"),detail:lk("无法唯一确认这些窗口，点「恢复布局」可以预览后手动恢复"),actions:[restoreNow,view],duration:attention) }
+            if !o.failures.isEmpty { return UserNotice(title:lk("没有恢复窗口"),detail:Self.failureText(o.failures),actions:[retry,view],duration:attention,open:openResult) }
+            if o.needsConfirmation>0 { return UserNotice(title:lk("%@ 个窗口需要确认", "\(o.needsConfirmation)"),detail:lk("无法唯一确认，没有移动"),actions:[view],duration:attention,open:openResult) }
+            if o.skippedAuto>0 { return UserNotice(title:lk("%@ 个窗口没有自动恢复", "\(o.skippedAuto)"),detail:lk("无法唯一确认这些窗口，点「恢复布局」可以预览后手动恢复"),actions:[restoreNow,view],duration:attention,open:openResult) }
             // Automatic: nothing moved and nothing needs you → stay silent. Manual: always answer.
-            return trigger == .automatic ? nil : Toast(icon:"checkmark.circle.fill",tone:.success,title:lk("布局已是保存的样子"))
+            return trigger == .automatic ? nil : UserNotice(title:lk("布局已是保存的样子"))
         }
         var title=lk("已恢复 %@ 个窗口", "\(o.restored)")
         if o.needsConfirmation>0 { title+=lk(" · %@ 个需确认", "\(o.needsConfirmation)") }
         let detail: String? = !o.failures.isEmpty ? Self.failureText(o.failures) : (o.failed>0 ? lk("%@ 个未通过，已回滚", "\(o.failed)") : (o.skippedAuto>0 ? lk("%@ 个窗口无法唯一确认，没有自动移动", "\(o.skippedAuto)") : nil))
-        var actions=[Toast.Action]()
+        var actions=[UserNotice.Action]()
         if !o.failures.isEmpty { actions.append(retry) }
-        if lastRestoreJournal?.canUndo == true { actions.append(Toast.Action(title:lk("撤销")) { [weak self] in NSApp.activate(ignoringOtherApps:true); self?.undoExternalRestore(); self?.requestLiveCheck?() }) }
+        if lastRestoreJournal?.canUndo == true { actions.append(UserNotice.Action(.undo) { [weak self] in NSApp.activate(ignoringOtherApps:true); self?.undoExternalRestore(); self?.requestLiveCheck?() }) }
         actions.append(view)
         let problem=o.failed>0 || !o.failures.isEmpty
-        return Toast(icon:problem ? "exclamationmark.circle.fill" : "checkmark.circle.fill",tone:problem || o.needsConfirmation>0 ? .warning : .success,title:title,detail:detail,actions:actions,
-                     duration:problem || o.needsConfirmation>0 || o.skippedAuto>0 ? attention : (trigger == .automatic ? 7 : 5))
+        return UserNotice(title:title,detail:detail,actions:actions,
+                     duration:problem || o.needsConfirmation>0 || o.skippedAuto>0 ? attention : (trigger == .automatic ? 7 : 5),open:openResult)
     }
     /// "Antigravity 没有响应，已跳过；Chrome 的窗口已改变，没有移动" — app names, never window titles.
     static func failureText(_ failures: [RestoreFailure]) -> String {
@@ -142,11 +145,11 @@ extension Model {
     }
     func quickRestore() {
         refreshExternalMonitor()
-        if let why=quickBlocker(needsLayout:true) { showToast?(Toast(icon:"exclamationmark.triangle.fill",tone:.warning,title:lk("没有恢复"),detail:why)); return }
-        if let toast=restoreToast(directRestore(.manual),trigger:.manual) { showToast?(toast) }
+        if let why=quickBlocker(needsLayout:true) { notify?(UserNotice(title:lk("没有恢复"),detail:why)); return }
+        if let notice=restoreNotice(directRestore(.manual),trigger:.manual) { notify?(notice) }
     }
     func quickUndo() {
-        guard lastRestoreJournal?.canUndo == true else { showToast?(Toast(icon:"info.circle.fill",tone:.neutral,title:lk("没有可撤销的恢复"))); return }
+        guard lastRestoreJournal?.canUndo == true else { notify?(UserNotice(title:lk("没有可撤销的恢复"))); return }
         NSApp.activate(ignoringOtherApps:true)
         undoExternalRestore()
         requestLiveCheck?()
