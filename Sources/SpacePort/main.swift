@@ -396,6 +396,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "quit": NSApplication.shared.terminate(nil)
         case "arrange.save": model.saveCurrentArrangement()
         case "arrange.manage": showSettings(.displays)
+        case let quick where quick.hasPrefix(StatusMenuModel.quickArrangementPrefix):
+            if debounce(quick),let edge=ArrangementEdge(rawValue:String(quick.dropFirst(StatusMenuModel.quickArrangementPrefix.count))) {
+                model.applyQuickArrangement(edge:edge,source:"menu")
+            }
         case let preset where preset.hasPrefix(StatusMenuModel.arrangementPrefix):
             if debounce(preset) { model.applyArrangement(String(preset.dropFirst(StatusMenuModel.arrangementPrefix.count)),source:"menu") }
         case let layout where layout.hasPrefix("layout."): if let i=Int(layout.dropFirst(7)),debounce("layout") { model.applyConnectedLayout(at:i) }

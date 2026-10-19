@@ -225,8 +225,10 @@ final class DisplayArrangementTests: XCTestCase {
         let items=StatusMenuModel.build(s)
         let sub=items.first{ $0.id=="arrangement" }!
         XCTAssertEqual(sub.title,"显示器排列")
-        XCTAssertEqual(sub.children.map(\.id),["arrange.p.above","arrange.p.right","arrange.other","arrange.sep","arrange.save","arrange.manage"])
-        XCTAssertTrue(sub.children[0].checked); XCTAssertEqual(sub.children[0].shortcutText,"⌃⌥⌘1")
+        XCTAssertEqual(sub.children.map(\.id),["arrange.q.above","arrange.q.right","arrange.q.below","arrange.q.left","arrange.sep.quick",
+                                               "arrange.saved","arrange.p.above","arrange.p.right","arrange.other","arrange.sep","arrange.save","arrange.manage"])
+        let first=sub.children.first{ $0.id=="arrange.p.above" }!
+        XCTAssertTrue(first.checked); XCTAssertEqual(first.shortcutText,"⌃⌥⌘1")
         XCTAssertEqual(items.firstIndex{ $0.id=="arrangement" }!+1,items.firstIndex{ $0.id=="sep1" }!)
         // Busy (a confirmation is open): everything disabled with the reason.
         let busy=ArrangementMenu.build(presets:[above,right],live:live,busy:"正在确认上一次切换",hotkeysEnabled:false)!
@@ -239,7 +241,12 @@ final class DisplayArrangementTests: XCTestCase {
         let single=ArrangementMenu.build(presets:[above],live:[builtIn()],busy:nil,hotkeysEnabled:true)!
         XCTAssertEqual(single.entries.count,0); XCTAssertEqual(single.otherCount,1); XCTAssertEqual(single.saveBlock,ArrangementIssue.singleDisplay.message)
         let none=StatusMenuModel.build({ var t=MenuState(); t.arrangement=ArrangementMenu.build(presets:[],live:live,busy:nil,hotkeysEnabled:true); return t }()).first{ $0.id=="arrangement" }!
-        XCTAssertEqual(none.children.first?.id,"arrange.none")
+        // No presets yet: the quick options lead, no 「还没有…」 line.
+        XCTAssertEqual(none.children.first?.id,"arrange.q.above")
+        XCTAssertFalse(none.children.contains{ $0.id=="arrange.none" })
+        XCTAssertTrue(single.quick.isEmpty)
+        let singleItems=StatusMenuModel.arrangementMenu(single).children
+        XCTAssertEqual(singleItems.first?.id,"arrange.none")
     }
 
     // MARK: own-change guard, hotkeys

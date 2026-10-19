@@ -40,7 +40,8 @@ extension Model {
     }
     static func describe(_ targets: [ArrangementTarget]) -> String { targets.map{ "\($0.key):(\($0.x),\($0.y))" }.joined(separator:" ") }
     /// Preset names are typed by the user: the log carries a short hash only.
-    static func logName(_ p: ArrangementPreset) -> String { "p:\(p.id.prefix(8)) n:\(RestoreLog.hash(p.name))" }
+    static func logName(_ p: ArrangementPreset) -> String { p.id.hasPrefix("quick-") ? p.id : "p:\(p.id.prefix(8)) n:\(RestoreLog.hash(p.name))" }
+    static func logID(_ id: String) -> String { id.hasPrefix("quick-") ? id : "p:\(id.prefix(8))" }
 
     // MARK: Save, rename, delete
 
@@ -51,21 +52,36 @@ extension Model {
         case .failure(let e):
             logRestore("arrangement: save refused reason=\(e.code) displays=[\(Self.describe(live))]")
             notify?(UserNotice(title:lk("没有保存排列"),detail:e.message,duration:4))
-        case .success(var preset):
-            if let same=arrangementPresets.first(where:{ ArrangementGeometry.sameArrangement($0,preset) }) {
-                logRestore("arrangement: save skipped, same as \(Self.logName(same))")
-                notify?(UserNotice(title:lk("这个排列已经存过"),detail:lk("就是「%@」", "\(same.name)"),duration:4)); return
-            }
-            let suggested=ArrangementGeometry.suggestedName(preset)
-            let taken=Set(arrangementPresets.map(\.name))
-            var name=suggested, n=2
-            while taken.contains(name) { name="\(suggested) \(n)"; n+=1 }
-            guard let chosen=Self.askName(title:lk("把当前排列存为"),message:ArrangementGeometry.describe(preset),initial:name) else { return }
-            preset.name=chosen
-            arrangementPresets.append(preset)
-            logRestore("arrangement: saved \(Self.logName(preset)) displays=[\(Self.describe(live))] relations=\(preset.displays.compactMap{ d in d.relation.map{ "\(d.key)->\($0.parent):\($0.edge.rawValue)/\($0.anchor.rawValue)\($0.offset >= 0 ? "+" : "")\($0.offset)" } })")
-            notify?(UserNotice(title:lk("已保存排列「%@」", "\(chosen)"),detail:lk("在菜单栏「显示器排列」里一键切换"),duration:4))
+        case .success(let preset):
+            savePreset(preset,suggested:ArrangementGeometry.suggestedName(preset),title:lk("把当前排列存为"),source:"current",live:live)
         }
+    }
+    /// Save 「外接屏在 edge，anchor」 without applying it (nothing on screen changes).
+    func saveQuickArrangement(edge: ArrangementEdge,anchor: ArrangementAnchor) {
+        if let why=arrangementBusyReason() { notify?(UserNotice(title:lk("没有保存排列"),detail:why,duration:4)); return }
+        let live=liveDisplays()
+        switch ArrangementGeometry.quickPreset(live,edge:edge,anchor:anchor,id:UUID().uuidString,at:Date()) {
+        case .failure(let e):
+            logRestore("arrangement: save refused source=quick edge=\(edge.rawValue)/\(anchor.rawValue) reason=\(e.code) displays=[\(Self.describe(live))]")
+            notify?(UserNotice(title:lk("没有保存排列"),detail:e.message,duration:4))
+        case .success(let preset):
+            savePreset(preset,suggested:preset.name,title:lk("存为排列"),source:"quick \(edge.rawValue)/\(anchor.rawValue)",live:live)
+        }
+    }
+    private func savePreset(_ draft: ArrangementPreset,suggested: String,title: String,source: String,live: [LiveDisplay]) {
+        var preset=draft
+        if let same=arrangementPresets.first(where:{ ArrangementGeometry.sameArrangement($0,preset) }) {
+            logRestore("arrangement: save skipped source=\(source), same as \(Self.logName(same))")
+            notify?(UserNotice(title:lk("这个排列已经存过"),detail:lk("就是「%@」", "\(same.name)"),duration:4)); return
+        }
+        let taken=Set(arrangementPresets.map(\.name))
+        var name=suggested, n=2
+        while taken.contains(name) { name="\(suggested) \(n)"; n+=1 }
+        guard let chosen=Self.askName(title:title,message:ArrangementGeometry.describe(preset),initial:name) else { return }
+        preset.name=chosen
+        arrangementPresets.append(preset)
+        logRestore("arrangement: saved \(Self.logName(preset)) source=\(source) displays=[\(Self.describe(live))] relations=\(preset.displays.compactMap{ d in d.relation.map{ "\(d.key)->\($0.parent):\($0.edge.rawValue)/\($0.anchor.rawValue)\($0.offset >= 0 ? "+" : "")\($0.offset)" } })")
+        notify?(UserNotice(title:lk("已保存排列「%@」", "\(chosen)"),detail:lk("在菜单栏「显示器排列」里一键切换"),duration:4))
     }
     /// Small modal name prompt (the app has no document windows to hang a sheet on). nil = cancelled.
     static func askName(title: String,message: String,initial: String) -> String? {
@@ -95,6 +111,20 @@ extension Model {
 
     func applyArrangement(_ id: String,source: String) {
         guard let preset=arrangementPresets.first(where:{ $0.id==id }) else { return }
+        applyArrangement(preset:preset,source:source)
+    }
+    /// 「外接屏在上方」 etc. from the menu or the settings picker: built from the sizes connected now, not saved.
+    func applyQuickArrangement(edge: ArrangementEdge,anchor: ArrangementAnchor = .center,source: String) {
+        let live=liveDisplays()
+        let id="quick-\(edge.rawValue)-\(anchor.rawValue)"
+        switch ArrangementGeometry.quickPreset(live,edge:edge,anchor:anchor,id:id,at:Date()) {
+        case .failure(let e):
+            logRestore("arrangement: apply quick \(edge.rawValue)/\(anchor.rawValue) source=\(source) refused reason=\(e.code) displays=[\(Self.describe(live))]")
+            notify?(UserNotice(title:lk("没有切换到「%@」", "\(ArrangementGeometry.quickName(edge:edge,anchor:anchor))"),detail:e.message,duration:4))
+        case .success(let preset): applyArrangement(preset:preset,source:source)
+        }
+    }
+    func applyArrangement(preset: ArrangementPreset,source: String) {
         let tag="arrangement: apply \(Self.logName(preset)) source=\(source)"
         if let why=arrangementBusyReason() {
             logRestore("\(tag) refused reason=busy (\(why))")
@@ -144,7 +174,7 @@ extension Model {
         arrangementGuard.begin(displays:p.displays,label:p.presetID)
         let o=DisplayArrangementIO.apply(p.targets,scope:.permanent)
         arrangementGuard.end(at:Date())
-        logRestore("arrangement: kept p:\(p.presetID.prefix(8)) permanent result=\(o.ok ? "ok" : "error \(o.error!.rawValue)") attempts=\(o.attempts) adjustedByWindowServer=\(o.adjusted)")
+        logRestore("arrangement: kept \(Self.logID(p.presetID)) permanent result=\(o.ok ? "ok" : "error \(o.error!.rawValue)") attempts=\(o.attempts) adjustedByWindowServer=\(o.adjusted)")
         if !o.ok {
             // The app-only preview would be undone at quit: say so instead of pretending it was kept.
             notify?(UserNotice(title:lk("排列没能保存"),detail:lk("macOS 拒绝写入（错误 %@）。现在的排列在退出 LayoutKeeper 后会变回原样。", "\(o.error!.rawValue)"),duration:0))
@@ -156,7 +186,7 @@ extension Model {
         finishPreview()
         let online=Set(liveDisplays().map(\.id))
         arrangementGuard.begin(displays:p.displays,label:p.presetID)
-        var line="arrangement: reverted p:\(p.presetID.prefix(8)) reason=\(reason)"
+        var line="arrangement: reverted \(Self.logID(p.presetID)) reason=\(reason)"
         if p.rollback.allSatisfy({ online.contains($0.id) }) {
             let o=DisplayArrangementIO.apply(p.rollback,scope:p.scope)
             line+=" result=\(o.ok ? "ok" : "error \(o.error!.rawValue)") to=[\(Self.describe(p.rollback))] adjustedByWindowServer=\(o.adjusted)"
@@ -259,8 +289,9 @@ struct ArrangementSettingsSection: View {
     @State private var confirmDelete: ArrangementPreset?
     var body: some View {
         Section(lk("显示器排列")) {
-            Text(lk("同一块显示器有时放在旁边、有时放在上方时，把每种摆法存成一个排列，在菜单栏「显示器排列」里一键切换。切换后 15 秒内点「保留」才会生效，不点就自动还原。只改屏幕的相对位置，不改分辨率和主屏幕，也不会触发窗口恢复。"))
+            Text(lk("选好外接屏放在 MacBook 屏幕的哪一边、怎么对齐，点「切换」立即生效；15 秒内点「保留」才会留下，不点就自动还原。常用的摆法可以存成排列，在菜单栏「显示器排列」里一键切换。只改屏幕的相对位置，不改分辨率和主屏幕，也不会触发窗口恢复。"))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            QuickArrangementPicker(model:model,live:live)
             ForEach(model.arrangementPresets) { preset in
                 ArrangementRow(model:model,preset:preset,status:ArrangementGeometry.status(preset,live),delete:{ confirmDelete=preset })
             }
@@ -370,5 +401,104 @@ struct PresetHotkeyButton: View {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor=nil; model.recordingPresetHotkey=nil
         if apply { model.suspendHotkeys?(false) }
+    }
+}
+
+/// Settings: pick the edge and alignment of the external monitor, then 切换 (preview → 保留) or 存为排列.
+struct QuickArrangementPicker: View {
+    @ObservedObject var model: Model
+    let live: [LiveDisplay]
+    @State private var edge: ArrangementEdge = .above
+    @State private var anchor: ArrangementAnchor = .center
+    @State private var seeded=false
+    var body: some View {
+        let pair=ArrangementGeometry.pair(live)
+        let block: String?={ if case .failure(let e)=pair { return e.message }; return model.arrangementBusyReason() }()
+        let current: Bool={
+            guard case .success(let p)=ArrangementGeometry.quickPreset(live,edge:edge,anchor:anchor,id:"",at:Date()),
+                  case .success(let plan)=ArrangementGeometry.plan(p,live) else { return false }
+            return plan.alreadyApplied
+        }()
+        HStack(alignment:.center,spacing:18) {
+            ArrangementSchematic(live:live,edge:edge,anchor:anchor).frame(width:150,height:104)
+            VStack(alignment:.leading,spacing:10) {
+                Grid(alignment:.leading,horizontalSpacing:10,verticalSpacing:8) {
+                    GridRow {
+                        Text(lk("外接屏在")).foregroundStyle(.secondary)
+                        Picker("",selection:$edge) {
+                            ForEach(ArrangementGeometry.quickEdges,id:\.self) { Text(ArrangementGeometry.edgeLabel($0)).tag($0) }
+                        }.pickerStyle(.segmented).labelsHidden().frame(width:240)
+                    }
+                    GridRow {
+                        Text(lk("对齐")).foregroundStyle(.secondary)
+                        Picker("",selection:$anchor) {
+                            ForEach([ArrangementAnchor.start,.center,.end],id:\.self) { Text(ArrangementGeometry.alignmentLabel(edge:edge,anchor:$0)).tag($0) }
+                        }.pickerStyle(.segmented).labelsHidden().frame(width:240)
+                    }
+                }
+                HStack(spacing:8) {
+                    if let block { Text(block).font(.caption).foregroundStyle(.secondary) }
+                    else if current { Text(lk("现在就是这样排的")).font(.caption).foregroundStyle(.secondary) }
+                    Spacer(minLength:0)
+                    Button(lk("存为排列…")) { model.saveQuickArrangement(edge:edge,anchor:anchor) }.disabled(block != nil)
+                    Button(lk("切换")) { model.applyQuickArrangement(edge:edge,anchor:anchor,source:"settings") }.primaryButton().disabled(block != nil || current)
+                }
+            }
+        }
+        .padding(.vertical,4)
+        .onAppear { seed() }
+        .onChange(of:live) { _,_ in seed() }
+    }
+    /// Start from how the displays sit now (once), so 切换 is a deliberate change.
+    private func seed() {
+        guard !seeded,let e=ArrangementGeometry.currentEdge(live) else { return }
+        seeded=true; edge=e; anchor=ArrangementGeometry.currentAnchor(live) ?? .center
+    }
+}
+
+/// Two rectangles to scale: the MacBook screen and the external monitor in the picked place; the menu bar marks main.
+struct ArrangementSchematic: View {
+    let live: [LiveDisplay]
+    let edge: ArrangementEdge
+    let anchor: ArrangementAnchor
+    var body: some View {
+        GeometryReader { geo in
+            let (b,e)=displays
+            let f=frames(in:geo.size,b,e)
+            ZStack(alignment:.topLeading) {
+                screen(f.builtIn,title:"MacBook",main:b.isMain,highlight:false)
+                screen(f.external,title:lk("外接屏"),main:e.isMain,highlight:true)
+            }
+            .animation(.easeInOut(duration:0.2),value:edge).animation(.easeInOut(duration:0.2),value:anchor)
+        }
+        .accessibilityElement(children:.ignore)
+        .accessibilityLabel(ArrangementGeometry.quickName(edge:edge,anchor:anchor))
+    }
+    private func frames(in size: CGSize,_ b: LiveDisplay,_ e: LiveDisplay) -> (builtIn: CGRect,external: CGRect) {
+        let r=ArrangementGeometry.quickRects(builtIn:b,external:e,edge:edge,anchor:anchor)
+        let minX=min(r.builtIn.x,r.external.x), minY=min(r.builtIn.y,r.external.y)
+        let w=max(r.builtIn.x+r.builtIn.width,r.external.x+r.external.width)-minX
+        let h=max(r.builtIn.y+r.builtIn.height,r.external.y+r.external.height)-minY
+        let scale=min(size.width/CGFloat(w),size.height/CGFloat(h))
+        let dx=(size.width-CGFloat(w)*scale)/2, dy=(size.height-CGFloat(h)*scale)/2
+        func frame(_ x: IntRect) -> CGRect {
+            CGRect(x:dx+CGFloat(x.x-minX)*scale,y:dy+CGFloat(x.y-minY)*scale,width:CGFloat(x.width)*scale,height:CGFloat(x.height)*scale).insetBy(dx:1,dy:1)
+        }
+        return (frame(r.builtIn),frame(r.external))
+    }
+    /// The real pair, or sample sizes when it isn't connected (the picker is disabled then).
+    private var displays: (LiveDisplay,LiveDisplay) {
+        if case .success(let p)=ArrangementGeometry.pair(live) { return (p.builtIn,p.external) }
+        return (LiveDisplay(id:1,key:"builtin",uuid:"",name:"",builtIn:true,isMain:true,x:0,y:0,width:1512,height:982),
+                LiveDisplay(id:2,key:"",uuid:"",name:"",builtIn:false,isMain:false,x:0,y:0,width:1920,height:1080))
+    }
+    private func screen(_ f: CGRect,title: String,main: Bool,highlight: Bool) -> some View {
+        RoundedRectangle(cornerRadius:4,style:.continuous)
+            .fill(highlight ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.08))
+            .overlay(RoundedRectangle(cornerRadius:4,style:.continuous).strokeBorder(highlight ? Color.accentColor : Color.primary.opacity(0.35),lineWidth:1))
+            .overlay(alignment:.top) { if main { Rectangle().fill(Color.primary.opacity(0.35)).frame(height:3).padding(.horizontal,3).padding(.top,3) } }
+            .overlay { Text(title).font(.system(size:10,weight:.medium)).foregroundStyle(highlight ? Color.accentColor : .secondary).lineLimit(1).minimumScaleFactor(0.6).padding(2) }
+            .frame(width:f.width,height:f.height)
+            .offset(x:f.minX,y:f.minY)
     }
 }

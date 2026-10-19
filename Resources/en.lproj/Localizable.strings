@@ -901,7 +901,7 @@
 "%@ 秒后自动还原" = "Reverting in %@ s";
 "还原" = "Revert";
 "保留" = "Keep";
-"同一块显示器有时放在旁边、有时放在上方时，把每种摆法存成一个排列，在菜单栏「显示器排列」里一键切换。切换后 15 秒内点「保留」才会生效，不点就自动还原。只改屏幕的相对位置，不改分辨率和主屏幕，也不会触发窗口恢复。" = "If the same monitor sometimes sits beside the MacBook and sometimes above it, save each setup as an arrangement and switch with one click from Display Arrangement in the menu bar. A switch only stays if you click Keep within 15 seconds; otherwise it reverts. Only the displays' relative positions change: resolution and the main display stay as they are, and no window restore is triggered.";
+"选好外接屏放在 MacBook 屏幕的哪一边、怎么对齐，点「切换」立即生效；15 秒内点「保留」才会留下，不点就自动还原。常用的摆法可以存成排列，在菜单栏「显示器排列」里一键切换。只改屏幕的相对位置，不改分辨率和主屏幕，也不会触发窗口恢复。" = "Pick which side of the MacBook screen the monitor sits on and how it lines up, then click Switch: it takes effect at once, and stays only if you click Keep within 15 seconds (otherwise it switches back). Arrangements you use often can be saved and switched with one click from the menu bar (Display Arrangement). Only the displays' relative position changes: not the resolution, not the main display, and no window restore is triggered.";
 "删除这个排列？" = "Delete this arrangement?";
 "「%@」只是一条记录，删掉不会改变现在的屏幕排列。" = "“%@” is only a saved record; deleting it doesn't change how your displays are arranged now.";
 "名称" = "Name";
@@ -911,3 +911,18 @@
 "别的屏幕" = "Other displays";
 "按下快捷键…" = "Press shortcut…";
 "快捷键" = "Shortcut";
+"只在 MacBook 屏幕加一块外接屏时可用" = "Only with the MacBook screen plus one external monitor";
+"上方" = "Above";
+"右边" = "Right";
+"下方" = "Below";
+"左边" = "Left";
+"靠左" = "Left";
+"靠右" = "Right";
+"靠上" = "Top";
+"靠下" = "Bottom";
+"已存的排列" = "Saved arrangements";
+"存为排列" = "Save as arrangement";
+"存为排列…" = "Save as…";
+"外接屏在" = "Monitor";
+"对齐" = "Align";
+"现在就是这样排的" = "This is the current arrangement";

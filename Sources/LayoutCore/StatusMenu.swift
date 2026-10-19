@@ -41,6 +41,16 @@ public struct ArrangementMenu: Equatable {
         public var blocked: String?
         public init(id: String,name: String,active: Bool,hotkey: Hotkey? = nil,blocked: String? = nil) { self.id=id; self.name=name; self.active=active; self.hotkey=hotkey; self.blocked=blocked }
     }
+    /// 「外接屏在上方 / 右边 / 下方 / 左边」 (centred), MacBook screen + one external monitor.
+    public struct Quick: Equatable {
+        public var edge: ArrangementEdge
+        /// The external monitor sits on this edge now (any alignment).
+        public var active: Bool
+        public init(edge: ArrangementEdge,active: Bool) { self.edge=edge; self.active=active }
+    }
+    public var quick: [Quick]=[]
+    /// Why the quick options are unavailable (two external monitors, mirroring…); nil = available.
+    public var quickBlock: String?
     /// Presets made for the displays connected now.
     public var entries: [Entry]
     /// Presets made for other display combinations (not listed).
@@ -49,7 +59,9 @@ public struct ArrangementMenu: Equatable {
     public var saveBlock: String?
     /// Something blocks every switch (a confirmation is open, windows are being restored…).
     public var busy: String?
-    public init(entries: [Entry] = [],otherCount: Int = 0,saveBlock: String? = nil,busy: String? = nil) { self.entries=entries; self.otherCount=otherCount; self.saveBlock=saveBlock; self.busy=busy }
+    public init(quick: [Quick] = [],quickBlock: String? = nil,entries: [Entry] = [],otherCount: Int = 0,saveBlock: String? = nil,busy: String? = nil) {
+        self.quick=quick; self.quickBlock=quickBlock; self.entries=entries; self.otherCount=otherCount; self.saveBlock=saveBlock; self.busy=busy
+    }
 }
 
 public struct MenuState {
@@ -75,12 +87,19 @@ public struct MenuState {
 
 public enum StatusMenuModel {
     public static let arrangementPrefix="arrange.p."
+    public static let quickArrangementPrefix="arrange.q."
     static func arrangementMenu(_ a: ArrangementMenu) -> MenuItemModel {
-        var children=a.entries.map { e in
+        let quickWhy=a.busy ?? a.quickBlock
+        var children=a.quick.map { q in
+            MenuItemModel(kind:.action,id:quickArrangementPrefix+q.edge.rawValue,title:ArrangementGeometry.quickName(edge:q.edge),enabled:quickWhy == nil,reason:quickWhy,checked:q.active)
+        }
+        if !children.isEmpty { children.append(.separator("arrange.sep.quick")) }
+        if !a.entries.isEmpty { children.append(MenuItemModel(kind:.status,id:"arrange.saved",title:lk("已存的排列"),enabled:false)) }
+        children+=a.entries.map { e in
             let why=a.busy ?? e.blocked
             return MenuItemModel(kind:.action,id:arrangementPrefix+e.id,title:e.name,enabled:why == nil,reason:why,hotkey:e.hotkey,checked:e.active)
         }
-        if a.entries.isEmpty { children.append(MenuItemModel(kind:.status,id:"arrange.none",title:lk("还没有这组屏幕的排列"),enabled:false)) }
+        if a.entries.isEmpty && a.quick.isEmpty { children.append(MenuItemModel(kind:.status,id:"arrange.none",title:lk("还没有这组屏幕的排列"),enabled:false)) }
         if a.otherCount>0 { children.append(MenuItemModel(kind:.status,id:"arrange.other",title:lk("另有 %@ 个排列属于别的屏幕组合", "\(a.otherCount)"),enabled:false)) }
         children.append(.separator("arrange.sep"))
         let saveWhy=a.busy ?? a.saveBlock

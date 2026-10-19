@@ -150,6 +150,8 @@ public enum ArrangementIssue: Error, Equatable, Sendable {
     case notAdjacent
     case noMain
     case overlap
+    /// The quick 「外接屏在上方/右边/下方/左边」 options need the MacBook screen plus exactly one external monitor.
+    case notPair
     public var message: String {
         switch self {
         case .singleDisplay: return lk("只接了一块屏幕，没有可排列的")
@@ -162,6 +164,7 @@ public enum ArrangementIssue: Error, Equatable, Sendable {
         case .notAdjacent: return lk("有屏幕没有和其他屏幕挨着")
         case .noMain: return lk("读不到主屏幕")
         case .overlap: return lk("分辨率变了，按原来的关系排会重叠")
+        case .notPair: return lk("只在 MacBook 屏幕加一块外接屏时可用")
         }
     }
     /// Short code for the restore log.
@@ -177,6 +180,7 @@ public enum ArrangementIssue: Error, Equatable, Sendable {
         case .notAdjacent: return "not-adjacent"
         case .noMain: return "no-main"
         case .overlap: return "overlap-after-resize"
+        case .notPair: return "not-builtin-plus-one"
         }
     }
 }
@@ -479,6 +483,11 @@ extension ArrangementMenu {
         }
         let saveBlock: String?
         switch ArrangementGeometry.capture(live,id:"",name:"",at:Date()) { case .success: saveBlock=nil; case .failure(let e): saveBlock=e.message }
-        return ArrangementMenu(entries:entries,otherCount:other,saveBlock:saveBlock,busy:busy)
+        let quickBlock: String?
+        switch ArrangementGeometry.pair(live) { case .success: quickBlock=nil; case .failure(let e): quickBlock=e.message }
+        let now=ArrangementGeometry.currentEdge(live)
+        // Only one display: nothing to arrange, so no quick options (saved presets are still counted).
+        let quick=live.count<2 ? [] : ArrangementGeometry.quickEdges.map{ ArrangementMenu.Quick(edge:$0,active:$0==now) }
+        return ArrangementMenu(quick:quick,quickBlock:quickBlock,entries:entries,otherCount:other,saveBlock:saveBlock,busy:busy)
     }
 }
