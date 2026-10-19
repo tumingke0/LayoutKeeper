@@ -26,6 +26,9 @@ public enum ArrangementEdge: String, Codable, CaseIterable, Sendable {
     case right, above, left, below
     /// Along which axis the two displays slide against each other: y for left/right, x for above/below.
     var slidesVertically: Bool { self == .right || self == .left }
+    var opposite: ArrangementEdge {
+        switch self { case .right: return .left; case .left: return .right; case .above: return .below; case .below: return .above }
+    }
 }
 
 /// Which points of the two touching edges line up: start = top edges (beside) / left edges (above or below),
@@ -393,26 +396,25 @@ public enum ArrangementGeometry {
             }
         }.joined(separator:lk("；"))
     }
-    /// Default name for a new preset: 「外接屏在上方」 for the common built-in + one external case.
+    /// Default name for a new (custom) preset. Never one of the quick option names 「外接屏在正上方」…: a preset is
+    /// only saved when it differs from those. Built-in + one external: 「外接屏在上方（靠左）」, or 「…（自定义）」 with an offset.
     public static func suggestedName(_ preset: ArrangementPreset) -> String {
         let byKey=Dictionary(preset.displays.map{ ($0.key,$0) },uniquingKeysWith:{ a,_ in a })
         let placed=preset.displays.filter{ $0.relation != nil }
-        if placed.count==1,let d=placed.first,let r=d.relation,let p=byKey[r.parent] {
-            if p.builtIn && !d.builtIn {
-                switch r.edge {
-                case .right: return lk("外接屏在右边")
-                case .above: return lk("外接屏在上方")
-                case .left: return lk("外接屏在左边")
-                case .below: return lk("外接屏在下方")
-                }
-            }
-            let who=d.builtIn ? "MacBook" : d.name
+        if placed.count==1,let d=placed.first,var r=d.relation,let p=byKey[r.parent] {
+            var who: String?=nil
+            if p.builtIn && !d.builtIn { who=nil }
+            else if d.builtIn && !p.builtIn { r.edge=r.edge.opposite; r.offset = -r.offset }   // say where the monitor is
+            else { who=d.name }
+            let side: String
             switch r.edge {
-            case .right: return lk("%@ 在右边", who)
-            case .above: return lk("%@ 在上方", who)
-            case .left: return lk("%@ 在左边", who)
-            case .below: return lk("%@ 在下方", who)
+            case .right: side=who.map{ lk("%@ 在右边", $0) } ?? lk("外接屏在右边")
+            case .above: side=who.map{ lk("%@ 在上方", $0) } ?? lk("外接屏在上方")
+            case .left: side=who.map{ lk("%@ 在左边", $0) } ?? lk("外接屏在左边")
+            case .below: side=who.map{ lk("%@ 在下方", $0) } ?? lk("外接屏在下方")
             }
+            let detail=r.offset != 0 ? lk("自定义") : alignmentLabel(edge:r.edge,anchor:r.anchor)
+            return lk("%@（%@）", side, detail)
         }
         return lk("%@ 块屏幕的排列", "\(preset.displays.count)")
     }
@@ -433,17 +435,21 @@ public enum ArrangementGeometry {
 }
 
 /// LayoutKeeper's own arrangement change must not look like a plug-in, a wake or an unplug to the reconnect and
-/// live-record logic. While a change is in progress, and for `grace` seconds after, screen events whose display set
-/// is exactly the one being arranged are LayoutKeeper's own. A different display set (a real plug or unplug in the
-/// same moment) is never covered, so it is handled as usual.
+/// live-record logic. A change starts with `begin` when the preview is written and stays in progress for the whole
+/// confirmation (macOS posts screen events seconds after a reconfiguration, e.g. one ~5 s later while 「保留这个排列？」
+/// is still open); `end` is called only once 保留 or 还原 has been written, and `grace` seconds after that are still
+/// covered. Only screen events whose display set is exactly the one being arranged are LayoutKeeper's own: a different
+/// set (a real plug or unplug in the same moment) is never covered, so it is handled as usual.
 public struct SelfArrangementGuard: Equatable, Sendable {
-    public static let grace: TimeInterval=3
+    public static let grace: TimeInterval=8
     public private(set) var displays: Set<UInt32>?
     public private(set) var until: Date?
     public private(set) var inProgress=false
     public private(set) var label=""
     public init() {}
+    /// Starts (or continues, for 保留/还原 after a preview) a change of these displays.
     public mutating func begin(displays ids: Set<UInt32>,label l: String) { displays=ids; inProgress=true; until=nil; label=l }
+    /// The change is finished (kept, reverted, refused or failed): covered for `grace` more seconds.
     public mutating func end(at now: Date) { guard inProgress else { return }; inProgress=false; until=now+Self.grace }
     public func covers(_ current: Set<UInt32>,at now: Date) -> Bool {
         guard let displays,current==displays else { return false }
@@ -474,6 +480,8 @@ extension ArrangementMenu {
         guard live.count>=2 || !presets.isEmpty else { return nil }
         var entries=[Entry](), other=0
         for p in presets {
+            // Same as one of 「外接屏在正上方 / 正右方 / 正下方 / 正左方」: that option already covers it.
+            if ArrangementGeometry.quickEquivalent(p,live) != nil { continue }
             let key=hotkeysEnabled ? p.hotkey : nil
             switch ArrangementGeometry.status(p,live) {
             case .applicable(let active): entries.append(Entry(id:p.id,name:p.name,active:active,hotkey:key))

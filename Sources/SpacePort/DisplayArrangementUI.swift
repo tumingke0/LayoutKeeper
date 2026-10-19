@@ -45,6 +45,21 @@ extension Model {
 
     // MARK: Save, rename, delete
 
+    /// One-time cleanup when the quick options came: a saved preset that is the same as 「外接屏在正上方 / 正右方 /
+    /// 正下方 / 正左方」 (centred, by its relation) would only be a duplicate menu item. Custom positions are kept.
+    func migrateArrangementPresets() {
+        let key="displayArrangementQuickCleanupDone"
+        guard let store=Prefs.store,!store.bool(forKey:key) else { return }
+        let r=ArrangementGeometry.withoutQuickEquivalents(arrangementPresets)
+        if !r.dropped.isEmpty {
+            arrangementPresets=r.kept
+            logRestore("arrangement: cleanup dropped \(r.dropped.count) preset(s) equal to a quick option [\(r.dropped.map{ "\(Self.logName($0))=quick-\(ArrangementGeometry.quickEquivalent($0)!.rawValue)" }.joined(separator:", "))] kept=\(r.kept.count)")
+        } else {
+            logRestore("arrangement: cleanup nothing to drop kept=\(r.kept.count)")
+        }
+        store.set(true,forKey:key)
+    }
+
     func saveCurrentArrangement() {
         if let why=arrangementBusyReason() { notify?(UserNotice(title:lk("没有保存排列"),detail:why,duration:4)); return }
         let live=liveDisplays()
@@ -53,7 +68,7 @@ extension Model {
             logRestore("arrangement: save refused reason=\(e.code) displays=[\(Self.describe(live))]")
             notify?(UserNotice(title:lk("没有保存排列"),detail:e.message,duration:4))
         case .success(let preset):
-            savePreset(preset,suggested:ArrangementGeometry.suggestedName(preset),title:lk("把当前排列存为"),source:"current",live:live)
+            savePreset(preset,suggested:ArrangementGeometry.suggestedName(preset),title:lk("存为自定义位置"),source:"current",live:live)
         }
     }
     /// Save 「外接屏在 edge，anchor」 without applying it (nothing on screen changes).
@@ -65,11 +80,17 @@ extension Model {
             logRestore("arrangement: save refused source=quick edge=\(edge.rawValue)/\(anchor.rawValue) reason=\(e.code) displays=[\(Self.describe(live))]")
             notify?(UserNotice(title:lk("没有保存排列"),detail:e.message,duration:4))
         case .success(let preset):
-            savePreset(preset,suggested:preset.name,title:lk("存为排列"),source:"quick \(edge.rawValue)/\(anchor.rawValue)",live:live)
+            savePreset(preset,suggested:preset.name,title:lk("存为自定义位置"),source:"quick \(edge.rawValue)/\(anchor.rawValue)",live:live)
         }
     }
     private func savePreset(_ draft: ArrangementPreset,suggested: String,title: String,source: String,live: [LiveDisplay]) {
         var preset=draft
+        if let edge=ArrangementGeometry.quickEquivalent(preset,live) {
+            // Custom positions only: this one is already a menu option.
+            let quick=ArrangementGeometry.quickName(edge:edge)
+            logRestore("arrangement: save skipped source=\(source), same as quick-\(edge.rawValue)-center")
+            notify?(UserNotice(title:lk("和「%@」一样", quick),detail:lk("直接在菜单栏「显示器排列」里选「%@」就行，不用另存", quick),duration:5)); return
+        }
         if let same=arrangementPresets.first(where:{ ArrangementGeometry.sameArrangement($0,preset) }) {
             logRestore("arrangement: save skipped source=\(source), same as \(Self.logName(same))")
             notify?(UserNotice(title:lk("这个排列已经存过"),detail:lk("就是「%@」", "\(same.name)"),duration:4)); return
@@ -113,7 +134,7 @@ extension Model {
         guard let preset=arrangementPresets.first(where:{ $0.id==id }) else { return }
         applyArrangement(preset:preset,source:source)
     }
-    /// 「外接屏在上方」 etc. from the menu or the settings picker: built from the sizes connected now, not saved.
+    /// 「外接屏在正上方」 etc. from the menu or the settings picker: built from the sizes connected now, not saved.
     func applyQuickArrangement(edge: ArrangementEdge,anchor: ArrangementAnchor = .center,source: String) {
         let live=liveDisplays()
         let id="quick-\(edge.rawValue)-\(anchor.rawValue)"
@@ -154,7 +175,8 @@ extension Model {
             scope = .session
             outcome=DisplayArrangementIO.apply(plan.targets,scope:scope)
         }
-        arrangementGuard.end(at:Date())
+        // A successful preview stays covered until 保留 / 还原 is written (screen events keep arriving seconds later).
+        if !outcome.ok { arrangementGuard.end(at:Date()) }
         logRestore("\(tag) preview scope=\(scope.rawValue) resolvedFromRelations=\(plan.resolved) from=[\(Self.describe(live))] to=[\(Self.describe(plan.targets))] result=\(outcome.ok ? "ok" : "error \(outcome.error!.rawValue)") attempts=\(outcome.attempts) adjustedByWindowServer=\(outcome.adjusted)")
         guard outcome.ok else {
             notify?(UserNotice(title:lk("没有切换到「%@」", "\(preset.name)"),detail:lk("macOS 拒绝了这次排列（错误 %@），屏幕没有变化", "\(outcome.error!.rawValue)"),duration:5)); return
@@ -289,14 +311,14 @@ struct ArrangementSettingsSection: View {
     @State private var confirmDelete: ArrangementPreset?
     var body: some View {
         Section(lk("显示器排列")) {
-            Text(lk("选好外接屏放在 MacBook 屏幕的哪一边、怎么对齐，点「切换」立即生效；15 秒内点「保留」才会留下，不点就自动还原。常用的摆法可以存成排列，在菜单栏「显示器排列」里一键切换。只改屏幕的相对位置，不改分辨率和主屏幕，也不会触发窗口恢复。"))
+            Text(lk("选好外接屏放在 MacBook 屏幕的哪一边、怎么对齐，点「切换」立即生效；15 秒内点「保留」才会留下，不点就自动还原。正上方、正右方、正下方、正左方在菜单栏「显示器排列」里直接选；别的位置（靠左、错开…）可以存成自定义位置。只改屏幕的相对位置，不改分辨率和主屏幕，也不会触发窗口恢复。"))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
             QuickArrangementPicker(model:model,live:live)
-            ForEach(model.arrangementPresets) { preset in
+            ForEach(model.arrangementPresets.filter{ ArrangementGeometry.quickEquivalent($0,live) == nil }) { preset in
                 ArrangementRow(model:model,preset:preset,status:ArrangementGeometry.status(preset,live),delete:{ confirmDelete=preset })
             }
             HStack {
-                Button(lk("把当前排列存为…")) { model.saveCurrentArrangement(); reload() }
+                Button(lk("存当前位置（自定义）…")) { model.saveCurrentArrangement(); reload() }
                     .disabled(saveBlock != nil)
                 if let why=saveBlock { Text(why).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
@@ -440,7 +462,7 @@ struct QuickArrangementPicker: View {
                     if let block { Text(block).font(.caption).foregroundStyle(.secondary) }
                     else if current { Text(lk("现在就是这样排的")).font(.caption).foregroundStyle(.secondary) }
                     Spacer(minLength:0)
-                    Button(lk("存为排列…")) { model.saveQuickArrangement(edge:edge,anchor:anchor) }.disabled(block != nil)
+                    Button(lk("存为自定义位置…")) { model.saveQuickArrangement(edge:edge,anchor:anchor) }.disabled(block != nil)
                     Button(lk("切换")) { model.applyQuickArrangement(edge:edge,anchor:anchor,source:"settings") }.primaryButton().disabled(block != nil || current)
                 }
             }

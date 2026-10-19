@@ -3,7 +3,7 @@
 import XCTest
 @testable import LayoutCore
 
-/// 「外接屏在上方 / 右边 / 下方 / 左边」 picked in LayoutKeeper: edge + alignment → origins. Sample identifiers only.
+/// 「外接屏在正上方 / 正右方 / 正下方 / 正左方」 and other alignments picked in LayoutKeeper: edge + alignment → origins. Sample identifiers only.
 final class QuickArrangementTests: XCTestCase {
     func mac(w: Int = 1512,h: Int = 982,main: Bool = true,x: Int = 0,y: Int = 0) -> LiveDisplay {
         LiveDisplay(id:1,key:"builtin",uuid:"AAAA-BUILTIN",name:"Built-in",builtIn:true,isMain:main,x:x,y:y,width:w,height:h)
@@ -100,7 +100,7 @@ final class QuickArrangementTests: XCTestCase {
         // Equal sizes: the chosen alignment is kept (not capture's tie-break).
         guard case .success(let c)=ArrangementGeometry.quickPreset([mac(),ext(0,-982,w:1512,h:982)],edge:.below,anchor:.center,id:"y",at:Date()) else { return XCTFail() }
         XCTAssertEqual(c.displays[1].relation?.anchor,.center)
-        XCTAssertEqual(c.name,"外接屏在下方")
+        XCTAssertEqual(c.name,"外接屏在正下方")
         // A saved quick preset still works after a resolution change (re-solved from the relation).
         var bigger=ext(-204,-1080); bigger.width=2560; bigger.height=1440
         guard case .success(let plan)=ArrangementGeometry.plan(p,[mac(),bigger]) else { return XCTFail() }
@@ -128,7 +128,7 @@ final class QuickArrangementTests: XCTestCase {
         XCTAssertNil(menu.quickBlock)
         let items=StatusMenuModel.arrangementMenu(menu).children
         XCTAssertEqual(items.prefix(4).map(\.id),["arrange.q.above","arrange.q.right","arrange.q.below","arrange.q.left"])
-        XCTAssertEqual(items.prefix(4).map(\.title),["外接屏在上方","外接屏在右边","外接屏在下方","外接屏在左边"])
+        XCTAssertEqual(items.prefix(4).map(\.title),["外接屏在正上方","外接屏在正右方","外接屏在正下方","外接屏在正左方"])
         XCTAssertEqual(items.prefix(4).map(\.checked),[true,false,false,false])
         XCTAssertFalse(items.contains{ $0.id=="arrange.none" })
         // Right, any alignment → ✓ on 右边.
@@ -146,5 +146,71 @@ final class QuickArrangementTests: XCTestCase {
         XCTAssertEqual([ArrangementAnchor.start,.center,.end].map{ ArrangementGeometry.alignmentLabel(edge:.above,anchor:$0) },["靠左","居中","靠右"])
         XCTAssertEqual([ArrangementAnchor.start,.center,.end].map{ ArrangementGeometry.alignmentLabel(edge:.left,anchor:$0) },["靠上","居中","靠下"])
         XCTAssertEqual(ArrangementGeometry.quickName(edge:.below,anchor:.start),"外接屏在下方（靠左）")
+    }
+
+    // MARK: custom presets vs. the quick options
+
+    func testQuickEquivalent() {
+        let live=[mac(),ext(1512,0)]
+        func capture(_ l: [LiveDisplay]) -> ArrangementPreset {
+            guard case .success(let p)=ArrangementGeometry.capture(l,id:"c",name:"",at:Date()) else { XCTFail(); return ArrangementPreset(id:"",name:"",createdAt:Date(),displays:[]) }
+            return p
+        }
+        // Centred on each edge = that quick option, with these displays and by relation alone.
+        for (x,y,edge) in [(-204,-1080,ArrangementEdge.above),(1512,-49,.right),(-204,982,.below),(-1920,-49,.left)] {
+            let p=capture([mac(),ext(x,y)])
+            XCTAssertEqual(ArrangementGeometry.quickEquivalent(p,live),edge)
+            XCTAssertEqual(ArrangementGeometry.quickEquivalent(p),edge)
+        }
+        // Left-aligned, or centred plus an offset: custom.
+        XCTAssertNil(ArrangementGeometry.quickEquivalent(capture([mac(),ext(0,-1080)]),live))
+        XCTAssertNil(ArrangementGeometry.quickEquivalent(capture([mac(),ext(-150,-1080)]),live))
+        XCTAssertNil(ArrangementGeometry.quickEquivalent(capture([mac(),ext(0,-1080)])))
+        // The monitor as main when saved: still judged by where the monitor is.
+        let mainExt=capture([mac(main:false,x:204,y:1080),ext(0,0,main:true)])
+        XCTAssertEqual(ArrangementGeometry.quickEquivalent(mainExt),.above)
+        XCTAssertEqual(ArrangementGeometry.quickEquivalent(mainExt,live),.above)
+        // Same height beside: every alignment is centred.
+        let same=capture([mac(),ext(1512,0,w:1512,h:982)])
+        XCTAssertEqual(ArrangementGeometry.quickEquivalent(same),.right)
+        // Two monitors: never a quick option.
+        let three=capture([mac(),ext(1512,0),ext(-204,-1080,id:3,key:"monitor-1-2-3")])
+        XCTAssertNil(ArrangementGeometry.quickEquivalent(three))
+        // One-time cleanup keeps the custom ones only.
+        let custom=capture([mac(),ext(0,-1080)])
+        let r=ArrangementGeometry.withoutQuickEquivalents([capture([mac(),ext(-204,-1080)]),custom,three])
+        XCTAssertEqual(r.kept,[custom,three])
+        XCTAssertEqual(r.dropped.count,1)
+    }
+
+    func testCustomNamesNeverUseQuickNames() {
+        func name(_ x: Int,_ y: Int) -> String {
+            guard case .success(let p)=ArrangementGeometry.capture([mac(),ext(x,y)],id:"c",name:"",at:Date()) else { return "" }
+            return ArrangementGeometry.suggestedName(p)
+        }
+        XCTAssertEqual(name(0,-1080),"外接屏在上方（靠左）")
+        XCTAssertEqual(name(1512,-98),"外接屏在右边（靠下）")
+        XCTAssertEqual(name(1512,300),"外接屏在右边（自定义）")
+        let quick=Set(ArrangementGeometry.quickEdges.map{ ArrangementGeometry.quickName(edge:$0) })
+        XCTAssertFalse(quick.contains(name(-204,-1080)))
+    }
+
+    // MARK: own-change guard across the whole confirmation
+
+    func testGuardCoversTheWholeConfirmationThenGrace() {
+        // The real sequence: preview at t0, a second screen event ~5 s later while 「保留这个排列？」 is open, 保留 at t0+7.
+        var g=SelfArrangementGuard(); let t0=Date(timeIntervalSince1970:5000)
+        g.begin(displays:[1,2],label:"quick-right-center")      // preview written; not ended while the panel is open
+        XCTAssertTrue(g.covers([1,2],at:t0+5))
+        XCTAssertTrue(g.covers([1,2],at:t0+15))                // the timeout itself
+        XCTAssertFalse(g.covers([1],at:t0+5))                  // a real unplug meanwhile is never masked
+        XCTAssertFalse(g.covers([1,2,3],at:t0+5))              // nor a real plug-in
+        g.begin(displays:[1,2],label:"quick-right-center")      // 保留: the permanent write
+        g.end(at:t0+7)
+        XCTAssertTrue(g.covers([1,2],at:t0+7+5))               // late events after the commit
+        XCTAssertTrue(g.covers([1,2],at:t0+7+SelfArrangementGuard.grace-0.1))
+        XCTAssertFalse(g.covers([1,2],at:t0+7+SelfArrangementGuard.grace))
+        XCTAssertFalse(g.covers([2,3],at:t0+8))
+        XCTAssertGreaterThanOrEqual(SelfArrangementGuard.grace,6)
     }
 }

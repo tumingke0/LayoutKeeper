@@ -2,9 +2,10 @@
 // Copyright (C) 2026 LayoutKeeper contributors
 import Foundation
 
-// Quick arrangements: 「外接屏在上方 / 右边 / 下方 / 左边」 for the MacBook screen plus one external monitor, picked in
-// LayoutKeeper itself instead of dragging in System Settings. The result is an ordinary preset (same relations, same
-// plan, same preview → 保留 path), built from the sizes connected now.
+// Quick arrangements: 「外接屏在正上方 / 正右方 / 正下方 / 正左方」 (centred) for the MacBook screen plus one external
+// monitor, picked in LayoutKeeper itself instead of dragging in System Settings. The result is an ordinary preset (same
+// relations, same plan, same preview → 保留 path), built from the sizes connected now. Saved presets are for every
+// other position (靠左, 错开…): one that is the same as a quick option is neither saved nor listed.
 //
 // "Edge" always means where the external monitor sits relative to the MacBook screen, whichever of the two is main.
 // The main display never changes: if the external monitor is main, it stays at (0,0) and the MacBook screen is the
@@ -58,8 +59,16 @@ extension ArrangementGeometry {
         return offset==0 ? a : nil
     }
 
-    /// 「外接屏在上方」, or with a non-centred alignment 「外接屏在上方（靠左）」.
+    /// 「外接屏在正上方」 (centred: the menu options), or 「外接屏在上方（靠左）」.
     public static func quickName(edge: ArrangementEdge,anchor: ArrangementAnchor = .center) -> String {
+        if anchor == .center {
+            switch edge {
+            case .above: return lk("外接屏在正上方")
+            case .right: return lk("外接屏在正右方")
+            case .below: return lk("外接屏在正下方")
+            case .left: return lk("外接屏在正左方")
+            }
+        }
         let base: String
         switch edge {
         case .above: base=lk("外接屏在上方")
@@ -67,8 +76,37 @@ extension ArrangementGeometry {
         case .below: base=lk("外接屏在下方")
         case .left: base=lk("外接屏在左边")
         }
-        return anchor == .center ? base : lk("%@（%@）", base, alignmentLabel(edge:edge,anchor:anchor))
+        return lk("%@（%@）", base, alignmentLabel(edge:edge,anchor:anchor))
     }
+
+    /// The quick option (centred on `edge`) this preset is the same as, for the displays connected now: both put every
+    /// display in the same place. Presets for other displays, or when it can't be planned now (mirroring…), are
+    /// judged by their relation alone (`quickEquivalent(_:)`).
+    public static func quickEquivalent(_ preset: ArrangementPreset,_ live: [LiveDisplay]) -> ArrangementEdge? {
+        guard case .success(let planned)=plan(preset,live) else { return quickEquivalent(preset) }
+        for edge in quickEdges {
+            guard case .success(let q)=quickPreset(live,edge:edge,anchor:.center,id:"",at:Date()),case .success(let qp)=plan(q,live) else { continue }
+            let a=Dictionary(planned.targets.map{ ($0.id,[$0.x,$0.y]) },uniquingKeysWith:{ a,_ in a })
+            let b=Dictionary(qp.targets.map{ ($0.id,[$0.x,$0.y]) },uniquingKeysWith:{ a,_ in a })
+            if a==b { return edge }
+        }
+        return nil
+    }
+    /// Display-independent: MacBook screen + one external monitor, centred with no offset (or the same length along
+    /// the shared edge, where every alignment is centred). Re-solving keeps that for any resolution. Returns the
+    /// external monitor's side.
+    public static func quickEquivalent(_ preset: ArrangementPreset) -> ArrangementEdge? {
+        guard preset.displays.count==2,preset.displays.filter(\.builtIn).count==1,
+              let child=preset.displays.last,let r=child.relation,let parent=preset.displays.first,r.parent==parent.key,r.offset==0 else { return nil }
+        let sameLength=r.edge.slidesVertically ? child.height==parent.height : child.width==parent.width
+        guard r.anchor == .center || sameLength else { return nil }
+        return child.builtIn ? r.edge.opposite : r.edge
+    }
+    /// Saved presets that are the same as a quick option (one-time cleanup when the quick options were added).
+    public static func withoutQuickEquivalents(_ presets: [ArrangementPreset]) -> (kept: [ArrangementPreset],dropped: [ArrangementPreset]) {
+        (presets.filter{ quickEquivalent($0) == nil },presets.filter{ quickEquivalent($0) != nil })
+    }
+
     /// Short edge label for a picker: 上 / 右 / 下 / 左.
     public static func edgeLabel(_ edge: ArrangementEdge) -> String {
         switch edge {

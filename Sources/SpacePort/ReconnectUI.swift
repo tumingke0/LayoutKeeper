@@ -42,7 +42,7 @@ final class ReconnectCoordinator {
         // a wake or an unplug, so the attach session is not touched (AttachSession would also classify it as
         // "same monitor, no wake"; this makes it explicit). A real plug/unplug changes the display set and is never covered.
         if event == .screens,model.ownArrangementChange() {
-            model.logRestore("event \(event) #\(eventCount): LayoutKeeper's own display arrangement change (\(model.arrangementGuard.inProgress ? "in progress" : "just applied")); not a plug-in, attach session untouched, no restore")
+            model.logRestore("event \(event) #\(eventCount): LayoutKeeper's own display arrangement change (\(model.arrangementPreview != nil ? "awaiting keep/revert" : model.arrangementGuard.inProgress ? "in progress" : "just finished")); not a plug-in, attach session untouched, no restore")
             return
         }
         let fp=Self.screenFingerprint()

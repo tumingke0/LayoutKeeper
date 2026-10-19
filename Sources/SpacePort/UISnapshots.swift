@@ -220,12 +220,13 @@ enum UISnapshots {
         let mac=LiveDisplay(id:1,key:"builtin",uuid:"S-B",name:"Built-in",builtIn:true,isMain:true,x:0,y:0,width:1512,height:982)
         let above=LiveDisplay(id:2,key:"monitor-1-2-3",uuid:"S-E",name:monitor.name,builtIn:false,isMain:false,x:-204,y:-1080,width:1920,height:1080)
         var beside=above; beside.x=1512; beside.y = -98
+        var leftAbove=above; leftAbove.x=0
         func preset(_ ext: LiveDisplay,_ name: String,_ id: String,_ key: Hotkey?) -> ArrangementPreset? {
             guard case .success(var p)=ArrangementGeometry.capture([mac,ext],id:id,name:name,at:Date()) else { return nil }
             p.hotkey=key; return p
         }
         arr.snapshotDisplays=[mac,above]
-        arr.arrangementPresets=[preset(above,lk("外接屏在上方"),"s1",Hotkey(keyCode:18,modifiers:Hotkey.hyper)),preset(beside,lk("外接屏在右边"),"s2",Hotkey(keyCode:19,modifiers:Hotkey.hyper))].compactMap{ $0 }
+        arr.arrangementPresets=[preset(leftAbove,lk("书桌"),"s1",Hotkey(keyCode:18,modifiers:Hotkey.hyper)),preset(beside,lk("外接屏在右边（靠下）"),"s2",Hotkey(keyCode:19,modifiers:Hotkey.hyper))].compactMap{ $0 }
         shot("06c-menu-arrangement.png",MenuReplica(items:StatusMenuModel.build(arr.menuState(optionHeld:false)),expand:"arrangement"))
         arr.settingsTab = .displays
         shot("28-settings-arrangement.png",SettingsView(model:arr))

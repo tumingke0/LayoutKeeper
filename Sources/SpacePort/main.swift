@@ -237,6 +237,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     func applicationDidFinishLaunching(_ notification: Notification) {
         MonitorRecognition.layoutMode=model.layoutMode
         model.configureEmptyWindowTrial()
+        model.migrateArrangementPresets()
         updater=AppUpdater.makeIfConfigured(); model.updater=updater
         item=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
         item.button?.image=NSImage(systemSymbolName:"rectangle.3.group",accessibilityDescription:"LayoutKeeper")

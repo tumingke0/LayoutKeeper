@@ -32,7 +32,7 @@ final class DisplayArrangementTests: XCTestCase {
         XCTAssertNil(p.displays[0].relation)
         XCTAssertEqual(relation(p),ArrangementRelation(parent:bKey,edge:.above,anchor:.center,offset:0))
         XCTAssertEqual(ArrangementGeometry.describe(p),"Monitor 在 MacBook 屏幕上方，居中")
-        XCTAssertEqual(ArrangementGeometry.suggestedName(p),"外接屏在上方")
+        XCTAssertEqual(ArrangementGeometry.suggestedName(p),"外接屏在上方（居中）")   // never a quick option name
     }
     func testCaptureEachEdgeAndAnchor() {
         XCTAssertEqual(relation(capture([builtIn(),external(1512,982-1080)])),ArrangementRelation(parent:bKey,edge:.right,anchor:.end,offset:0))
@@ -118,7 +118,7 @@ final class DisplayArrangementTests: XCTestCase {
         // …and a preset saved with the monitor as main applies the same way while the MacBook is main.
         let saved=capture([builtIn(-1512,98,main:false),external(0,0,main:true)])
         XCTAssertEqual(saved.displays.first?.key,eKey)
-        XCTAssertEqual(ArrangementGeometry.suggestedName(saved),"MacBook 在左边")
+        XCTAssertEqual(ArrangementGeometry.suggestedName(saved),"外接屏在右边（靠下）")   // where the monitor is, whichever is main
         XCTAssertEqual(ArrangementGeometry.describe(saved),"MacBook 屏幕 在 Monitor 左边，底边对齐")
         let back=plan(saved,[builtIn(),external(-204,-1080)])!
         XCTAssertEqual(origin(back,1),[0,0]); XCTAssertEqual(origin(back,2),[1512,-98])
@@ -213,11 +213,13 @@ final class DisplayArrangementTests: XCTestCase {
         XCTAssertFalse(ArrangementGeometry.sameArrangement(a,capture([builtIn(),external(-204,-1440,w:2560,h:1440)])))
     }
     func testMenuListsOnlyPresetsForTheseDisplays() {
-        var above=capture([builtIn(),external(-204,-1080)]); above.id="above"; above.name="外接屏在上方"; above.hotkey=Hotkey(keyCode:18,modifiers:Hotkey.hyper)
-        var right=capture([builtIn(),external(1512,-98)]); right.id="right"; right.name="外接屏在右边"
+        var above=capture([builtIn(),external(0,-1080)]); above.id="above"; above.name="外接屏在上方（靠左）"; above.hotkey=Hotkey(keyCode:18,modifiers:Hotkey.hyper)
+        var right=capture([builtIn(),external(1512,-98)]); right.id="right"; right.name="外接屏在右边（靠下）"
         var office=right; office.id="office"; office.name="公司"; office.displays[1].key="monitor-1-2-3"; office.displays[1].uuid="OFFICE"
-        let live=[builtIn(),external(-204,-1080)]
-        let menu=ArrangementMenu.build(presets:[above,right,office],live:live,busy:nil,hotkeysEnabled:true)!
+        // Centred above = 「外接屏在正上方」: not listed under 自定义位置.
+        var centred=capture([builtIn(),external(-204,-1080)]); centred.id="centred"; centred.name="上"
+        let live=[builtIn(),external(0,-1080)]
+        let menu=ArrangementMenu.build(presets:[above,centred,right,office],live:live,busy:nil,hotkeysEnabled:true)!
         XCTAssertEqual(menu.entries.map(\.id),["above","right"])
         XCTAssertEqual(menu.entries.map(\.active),[true,false])
         XCTAssertEqual(menu.otherCount,1); XCTAssertNil(menu.saveBlock)

@@ -41,7 +41,7 @@ public struct ArrangementMenu: Equatable {
         public var blocked: String?
         public init(id: String,name: String,active: Bool,hotkey: Hotkey? = nil,blocked: String? = nil) { self.id=id; self.name=name; self.active=active; self.hotkey=hotkey; self.blocked=blocked }
     }
-    /// 「外接屏在上方 / 右边 / 下方 / 左边」 (centred), MacBook screen + one external monitor.
+    /// 「外接屏在正上方 / 正右方 / 正下方 / 正左方」 (centred), MacBook screen + one external monitor.
     public struct Quick: Equatable {
         public var edge: ArrangementEdge
         /// The external monitor sits on this edge now (any alignment).
@@ -51,7 +51,7 @@ public struct ArrangementMenu: Equatable {
     public var quick: [Quick]=[]
     /// Why the quick options are unavailable (two external monitors, mirroring…); nil = available.
     public var quickBlock: String?
-    /// Presets made for the displays connected now.
+    /// Custom presets made for the displays connected now (those equal to a quick option are left out).
     public var entries: [Entry]
     /// Presets made for other display combinations (not listed).
     public var otherCount: Int
@@ -94,7 +94,7 @@ public enum StatusMenuModel {
             MenuItemModel(kind:.action,id:quickArrangementPrefix+q.edge.rawValue,title:ArrangementGeometry.quickName(edge:q.edge),enabled:quickWhy == nil,reason:quickWhy,checked:q.active)
         }
         if !children.isEmpty { children.append(.separator("arrange.sep.quick")) }
-        if !a.entries.isEmpty { children.append(MenuItemModel(kind:.status,id:"arrange.saved",title:lk("已存的排列"),enabled:false)) }
+        if !a.entries.isEmpty { children.append(MenuItemModel(kind:.status,id:"arrange.saved",title:lk("自定义位置"),enabled:false)) }
         children+=a.entries.map { e in
             let why=a.busy ?? e.blocked
             return MenuItemModel(kind:.action,id:arrangementPrefix+e.id,title:e.name,enabled:why == nil,reason:why,hotkey:e.hotkey,checked:e.active)
@@ -103,7 +103,7 @@ public enum StatusMenuModel {
         if a.otherCount>0 { children.append(MenuItemModel(kind:.status,id:"arrange.other",title:lk("另有 %@ 个排列属于别的屏幕组合", "\(a.otherCount)"),enabled:false)) }
         children.append(.separator("arrange.sep"))
         let saveWhy=a.busy ?? a.saveBlock
-        children.append(MenuItemModel(kind:.action,id:"arrange.save",title:lk("把当前排列存为…"),symbol:"plus",enabled:saveWhy == nil,reason:saveWhy))
+        children.append(MenuItemModel(kind:.action,id:"arrange.save",title:lk("存当前位置（自定义）…"),symbol:"plus",enabled:saveWhy == nil,reason:saveWhy))
         children.append(MenuItemModel(kind:.action,id:"arrange.manage",title:lk("管理排列…")))
         return MenuItemModel(kind:.submenu,id:"arrangement",title:lk("显示器排列"),symbol:"display.2",children:children)
     }
