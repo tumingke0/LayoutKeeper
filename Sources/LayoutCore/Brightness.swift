@@ -4,7 +4,9 @@ import Foundation
 
 /// DDC/CI packets (VESA MCCS over I2C, display address 0x37, host sub-address 0x51). Written from the public spec.
 public enum DDCPacket {
-    public static let brightness: UInt8=0x10, volume: UInt8=0x62, mute: UInt8=0x8D
+    /// Only brightness is used. Since 0.6.9 the volume keys never send DDC volume (0x62) or mute (0x8D) to a monitor;
+    /// they change the Mac's system output volume.
+    public static let brightness: UInt8=0x10
     static func checksum(_ start: UInt8,_ bytes: [UInt8]) -> UInt8 { bytes.reduce(start,^) }
     /// "Get VCP feature" request body (sent to sub-address 0x51); checksum covers 0x6E ^ 0x51 ^ body.
     public static func getVCP(_ code: UInt8) -> [UInt8] { let b: [UInt8]=[0x82,0x01,code]; return b+[checksum(0x6E^0x51,b)] }
@@ -69,6 +71,18 @@ public enum MediaKey: Equatable {
     /// Apple keyboards may also send brightness as ordinary key codes (kVK 144 / 145).
     public static func fromKeyCode(_ code: Int) -> MediaKey? { code==144 ? .brightnessUp : (code==145 ? .brightnessDown : nil) }
     public var isBrightness: Bool { self == .brightnessUp || self == .brightnessDown }
+}
+
+/// 0.6.9: what a volume/mute key does. Always the Mac's system output (the default output device), never a monitor,
+/// whichever screen the mouse is on. The app takes the key (3% steps, ⌥⇧ 1%) only when it is enabled and the device
+/// has a settable volume; otherwise the key goes to macOS untouched.
+public enum VolumeKeyRouting: Equatable {
+    case systemOutput, passThrough
+    public static func route(_ key: MediaKey,enabled: Bool,outputVolumeSettable: Bool,outputMuteSettable: Bool) -> VolumeKeyRouting {
+        guard !key.isBrightness,enabled else { return .passThrough }
+        if key == .mute { return outputMuteSettable ? .systemOutput : .passThrough }
+        return outputVolumeSettable ? .systemOutput : .passThrough
+    }
 }
 
 public enum DisplayControlPrefs {

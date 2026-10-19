@@ -13,6 +13,8 @@ import LayoutCore
 public final class MissionControlDriver {
     public enum Failure: Error, CustomStringConvertible {
         case notTrusted, dockMissing, didNotOpen, displayNotFound, addButtonMissing, listMissing, removeUnsupported, axError(Int32)
+        /// Every try of `MissionControlOpening.attempts` was made and Mission Control never showed its desks.
+        case didNotOpenAfter(tried: [MissionControlOpening.Method],ctrlUpEnabled: Bool)
         public var description: String {
             switch self {
             case .notTrusted: return lk("没有辅助功能权限")
@@ -23,6 +25,7 @@ public final class MissionControlDriver {
             case .listMissing: return lk("调度中心里找不到桌面列表")
             case .removeUnsupported: return lk("这个系统版本的调度中心不支持关闭桌面")
             case .axError(let e): return lk("辅助功能调用失败（%@）", "\(e)")
+            case .didNotOpenAfter(let tried,let ctrlUp): return MissionControlOpening.failureText(tried:tried,ctrlUpEnabled:ctrlUp)
             }
         }
     }
@@ -79,23 +82,43 @@ public final class MissionControlDriver {
         while Date()<end { if isOpen { return true }; Thread.sleep(forTimeInterval:0.1) }
         return isOpen
     }
-    /// Opens Mission Control and polls (≤5 s) until the mc group has children. The Dock always exposes an empty
-    /// zero-frame mc group, so presence alone is not "open". First launches Mission Control.app (same as `open -a`),
-    /// then, if nothing appears, posts ⌃↑ when that shortcut is enabled.
-    public func open(timeout: TimeInterval=5) throws {
+    /// What the last `open()` did, one entry per try ("app wait=2.5s → open after 1.2s"), for the restore log.
+    public private(set) var lastOpenLog=[String]()
+    /// Opens Mission Control and verifies it: it only counts as open once a display group (mc.display) is there
+    /// (the Dock always exposes an empty zero-frame mc group). Tries `MissionControlOpening.attempts` in order
+    /// (Mission Control.app, then ⌃↑ when that shortcut is on, then the app again) with growing waits and a pause in
+    /// between; before every try it checks again that Mission Control is not open yet, so the ⌃↑ toggle can never
+    /// close it. Throws `didNotOpenAfter` naming what was tried.
+    public func open() throws {
         guard AXIsProcessTrusted() else { throw Failure.notTrusted }
         guard dock != nil else { throw Failure.dockMissing }
-        if isOpen { return }
-        let app=URL(fileURLWithPath:"/System/Applications/Mission Control.app")
-        let cfg=NSWorkspace.OpenConfiguration(); cfg.activates=true
-        NSWorkspace.shared.openApplication(at:app,configuration:cfg) { _,_ in }
-        if waitReady(timeout*0.5) { Thread.sleep(forTimeInterval:0.5); return }
-        if Self.ctrlUpEnabled {
-            let src=CGEventSource(stateID:.hidSystemState)
-            for down in [true,false] { let e=CGEvent(keyboardEventSource:src,virtualKey:126,keyDown:down); e?.flags = .maskControl; e?.post(tap:.cghidEventTap) }
+        lastOpenLog=[]
+        if isOpen { lastOpenLog=["already open"]; return }
+        let ctrlUp=Self.ctrlUpEnabled
+        var tried=[MissionControlOpening.Method]()
+        for (n,attempt) in MissionControlOpening.attempts(ctrlUpEnabled:ctrlUp).enumerated() {
+            if n>0 {
+                Thread.sleep(forTimeInterval:MissionControlOpening.backoff(after:n-1))
+                if isOpen { lastOpenLog.append("open (late) before try \(n+1)"); Thread.sleep(forTimeInterval:0.5); return }
+            }
+            let started=Date()
+            switch attempt.method {
+            case .app:
+                let cfg=NSWorkspace.OpenConfiguration(); cfg.activates=true
+                NSWorkspace.shared.openApplication(at:URL(fileURLWithPath:"/System/Applications/Mission Control.app"),configuration:cfg) { _,_ in }
+            case .shortcut:
+                let src=CGEventSource(stateID:.hidSystemState)
+                for down in [true,false] { let e=CGEvent(keyboardEventSource:src,virtualKey:126,keyDown:down); e?.flags = .maskControl; e?.post(tap:.cghidEventTap) }
+            }
+            tried.append(attempt.method)
+            if waitReady(attempt.wait) {
+                lastOpenLog.append(String(format:"%@ wait=%.1fs → open after %.1fs",attempt.method.rawValue,attempt.wait,Date().timeIntervalSince(started)))
+                // Let the layout finish so the + button and desk list are in place.
+                Thread.sleep(forTimeInterval:0.5); return
+            }
+            lastOpenLog.append(String(format:"%@ wait=%.1fs → not open (mc group %@)",attempt.method.rawValue,attempt.wait,mcPresent ? "present, no displays" : "missing"))
         }
-        if waitReady(timeout*0.5) { Thread.sleep(forTimeInterval:0.5); return }
-        throw Failure.didNotOpen
+        throw Failure.didNotOpenAfter(tried:tried,ctrlUpEnabled:ctrlUp)
     }
     /// Closes Mission Control with Escape (falls back to toggling it once more).
     public func close() {

@@ -12,20 +12,18 @@ struct ControlledDisplay: Identifiable, Equatable {
     var name: String
     var method: Method
     var brightness: Double
-    var volume: Double?
-    var muted=false
     var ddcMax=100
-    var volumeMax=100
     var badge: (String,Tone) {
         switch method { case .builtIn: return (lk("内建"),.neutral); case .ddc: return ("DDC",.success); case .software: return (lk("软件调暗"),.warning) }
     }
     static func == (a: ControlledDisplay,b: ControlledDisplay) -> Bool {
-        a.id==b.id && a.name==b.name && a.method==b.method && a.brightness==b.brightness && a.volume==b.volume && a.muted==b.muted
+        a.id==b.id && a.name==b.name && a.method==b.method && a.brightness==b.brightness
     }
 }
 
-/// Brightness / volume for every display: DDC for external monitors (software dimming when DDC fails), DisplayServices
-/// for the built-in screen. DDC I/O runs on a serial queue; writes are rate limited and coalesced (latest value wins).
+/// Brightness for every display: DDC for external monitors (software dimming when DDC fails), DisplayServices for the
+/// built-in screen. DDC I/O runs on a serial queue; writes are rate limited and coalesced (latest value wins).
+/// The volume keys change the Mac's system output volume (`SystemVolume`), never a monitor's DDC volume.
 final class DisplayControl: ObservableObject {
     @Published private(set) var displays: [ControlledDisplay]=[]
     @Published var showInMenu: Bool { didSet { defaults?.set(showInMenu,forKey:DisplayControlPrefs.showInMenu) } }
@@ -39,6 +37,8 @@ final class DisplayControl: ObservableObject {
     @Published var keyTapError: String?
     var onKeySettingsChanged: (() -> Void)?
     var showHUD: ((ControlledDisplay,BrightnessHUD.Kind) -> Void)?
+    /// Volume HUD: output device name, level, muted, and the screen under the mouse to show it on.
+    var showVolumeHUD: ((String,Double,Bool,CGDirectDisplayID?) -> Void)?
 
     private let defaults: UserDefaults?
     private let io=DispatchQueue(label:"layoutkeeper.ddc")
@@ -93,10 +93,7 @@ final class DisplayControl: ObservableObject {
                     continue
                 }
                 if !disabled.contains(Self.key(id)),let s=map[id],let b=s.readVCP(DDCPacket.brightness) {
-                    let v=s.readVCP(DDCPacket.volume)
-                    let m=v != nil ? s.readVCP(DDCPacket.mute).map{ $0.current==1 } ?? false : false
-                    out.append(ControlledDisplay(id:id,name:name,method:.ddc,brightness:BrightnessStep.fromDDC(b.current,max:b.max),
-                                                 volume:v.map{ BrightnessStep.fromDDC($0.current,max:$0.max) },muted:m,ddcMax:b.max,volumeMax:v?.max ?? 100))
+                    out.append(ControlledDisplay(id:id,name:name,method:.ddc,brightness:BrightnessStep.fromDDC(b.current,max:b.max),ddcMax:b.max))
                 } else if fallback {
                     map[id]=nil
                     out.append(ControlledDisplay(id:id,name:name,method:.software,brightness:previous.first{ $0.id==id && $0.method == .software }?.brightness ?? 1))
@@ -123,15 +120,26 @@ final class DisplayControl: ObservableObject {
         }
         if hud { showHUD?(d,.brightness) }
     }
-    func setVolume(_ id: CGDirectDisplayID,_ v: Double,hud: Bool=false) {
-        guard let d=update(id,{ $0.volume=min(1,max(0,v)); $0.muted=false }),d.method == .ddc,let s=services[id],let vol=d.volume else { return }
-        enqueue(s,id,DDCPacket.volume,BrightnessStep.toDDC(vol,max:d.volumeMax))
-        if hud { showHUD?(d,.volume) }
-    }
-    func toggleMute(_ id: CGDirectDisplayID) {
-        guard let d=update(id,{ $0.muted.toggle() }),d.method == .ddc,let s=services[id] else { return }
-        enqueue(s,id,DDCPacket.mute,d.muted ? 1 : 2)
-        showHUD?(d,d.muted ? .muted : .volume)
+    /// Volume / mute key on the system output. Returns false (key goes to macOS) when the device can't take it.
+    func handleSystemVolume(_ key: MediaKey,fine: Bool) -> Bool {
+        let output=SystemVolume.defaultOutput()
+        guard VolumeKeyRouting.route(key,enabled:volumeKeys,outputVolumeSettable:output?.volumeSettable == true,outputMuteSettable:output?.muteSettable == true) == .systemOutput,
+              let output else { return false }
+        let screen=displayUnderMouse?.id
+        let name=output.name.isEmpty ? lk("系统音量") : output.name
+        if key == .mute {
+            let muted = !(SystemVolume.muted(output.device) ?? false)
+            guard SystemVolume.setMuted(output.device,muted) else { return false }
+            showVolumeHUD?(name,SystemVolume.volume(output.device) ?? 0,muted,screen)
+            return true
+        }
+        guard let current=SystemVolume.volume(output.device) else { return false }
+        let next=BrightnessStep.next(current,up:key == .volumeUp,fine:fine,coarse:BrightnessStep.volumeCoarse)
+        guard SystemVolume.setVolume(output.device,next) else { return false }
+        // Like macOS: changing the level unmutes (and volume down to 0 leaves it at 0, not muted).
+        if output.muteSettable,SystemVolume.muted(output.device) == true { SystemVolume.setMuted(output.device,false) }
+        showVolumeHUD?(name,SystemVolume.volume(output.device) ?? next,false,screen)
+        return true
     }
     /// Coalesced, rate-limited DDC write: only the latest value per (display, feature) is sent, ≥60 ms apart.
     private func enqueue(_ s: DDCService,_ id: CGDirectDisplayID,_ code: UInt8,_ value: UInt16) {
@@ -154,20 +162,15 @@ final class DisplayControl: ObservableObject {
         }
     }
 
-    /// Brightness/volume key handling for the display under the mouse. Returns true when the key was consumed.
+    /// Brightness keys: the display under the mouse. Volume keys: the system output. Returns true when the key was consumed.
     func handle(_ key: MediaKey,fine: Bool) -> Bool {
         if key.isBrightness {
             guard brightnessKeys,let d=displayUnderMouse else { return false }
             setBrightness(d.id,BrightnessStep.next(d.brightness,up:key == .brightnessUp,fine:fine),hud:true)
             return true
         }
-        // Volume keys only for an external monitor with DDC volume under the mouse; otherwise the system handles them.
-        guard volumeKeys,let d=displayUnderMouse,d.method == .ddc,let vol=d.volume else { return false }
-        switch key {
-        case .mute: toggleMute(d.id)
-        default: setVolume(d.id,BrightnessStep.next(vol,up:key == .volumeUp,fine:fine,coarse:BrightnessStep.volumeCoarse),hud:true)
-        }
-        return true
+        // Volume keys: always the Mac's system output, wherever the mouse is (never a monitor's DDC volume).
+        return handleSystemVolume(key,fine:fine)
     }
 }
 
@@ -231,8 +234,10 @@ final class BrightnessHUDCenter {
     private var hide: DispatchWorkItem?
     static let radius: CGFloat=22
     func show(_ d: ControlledDisplay,kind: BrightnessHUD.Kind) {
-        let view=BrightnessHUD(name:d.name,percent:kind == .brightness ? d.brightness : (d.volume ?? 0),kind:kind,
-                               note:d.method == .software && kind == .brightness ? lk("软件调暗") : nil,liveGlass:true)
+        show(name:d.name,percent:d.brightness,kind:kind,note:d.method == .software && kind == .brightness ? lk("软件调暗") : nil,screenID:d.id)
+    }
+    func show(name: String,percent: Double,kind: BrightnessHUD.Kind,note: String?,screenID: CGDirectDisplayID?) {
+        let view=BrightnessHUD(name:name,percent:percent,kind:kind,note:note,liveGlass:true)
         let p=panel ?? {
             let p=NSPanel(contentRect:.zero,styleMask:[.nonactivatingPanel,.borderless],backing:.buffered,defer:false)
             p.isFloatingPanel=true; p.level = .statusBar; p.hidesOnDeactivate=false; p.isReleasedWhenClosed=false
@@ -250,7 +255,7 @@ final class BrightnessHUDCenter {
         container.addSubview(glass)
         hosting.frame=glass.frame; container.addSubview(hosting)
         p.contentView=container
-        let screen=NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value==d.id } ?? NSScreen.main
+        let screen=NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value==screenID } ?? NSScreen.main
         if let f=screen?.visibleFrame { p.setFrame(NSRect(x:f.midX-size.width/2,y:f.maxY-size.height-12,width:size.width,height:size.height),display:true) }
         p.invalidateShadow()
         p.alphaValue=1; p.orderFrontRegardless()
@@ -270,6 +275,7 @@ final class DisplayControlCoordinator {
     init(control: DisplayControl) { self.control=control }
     func start(trusted: @escaping () -> Bool) {
         control.showHUD={ [weak self] d,k in self?.hud.show(d,kind:k) }
+        control.showVolumeHUD={ [weak self] name,level,muted,screen in self?.hud.show(name:name,percent:level,kind:muted ? .muted : .volume,note:nil,screenID:screen) }
         tap.handler={ [weak self] key,fine in self?.control.handle(key,fine:fine) ?? false }
         control.onKeySettingsChanged={ [weak self] in self?.evaluate(trusted:trusted()) }
         let nc=NSWorkspace.shared.notificationCenter
@@ -321,9 +327,6 @@ struct DisplayMenuSection: View {
                         Spacer()
                     }
                     row("sun.min","sun.max",Binding(get:{ d.brightness },set:{ control.setBrightness(d.id,$0) }))
-                    if let v=d.volume {
-                        row(d.muted ? "speaker.slash.fill" : "speaker.fill","speaker.wave.3.fill",Binding(get:{ d.muted ? 0 : v },set:{ control.setVolume(d.id,$0) }))
-                    }
                 }.padding(.horizontal,14).padding(.vertical,6)
                 if i<control.displays.count-1 { Divider().padding(.horizontal,14) }
             }
@@ -344,18 +347,19 @@ struct DisplaySettings: View {
     var body: some View {
         Form {
             Section(lk("菜单栏")) {
-                Toggle(lk("在菜单中显示亮度和音量滑块"),isOn:$control.showInMenu)
+                Toggle(lk("在菜单中显示亮度滑块"),isOn:$control.showInMenu)
             }
             Section(lk("键盘")) {
                 Toggle(lk("亮度键调节鼠标所在的屏幕"),isOn:$control.brightnessKeys)
-                Toggle(lk("音量键调节外接显示器音量（鼠标在支持 DDC 音量的外接屏上时）"),isOn:$control.volumeKeys)
+                Toggle(lk("音量键按 3% 一档调节 Mac 的系统音量（关闭则交给 macOS）"),isOn:$control.volumeKeys)
+                Text(lk("不管鼠标在哪块屏上，音量键都调当前的声音输出设备，不会去调外接显示器自己的音量。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 if !control.conflicts.isEmpty {
                     Label(lk("%@ 正在运行，暂不接管按键，避免一次按键调两次。退出它后会自动接管，不用重启。", "\(control.conflicts.joined(separator:lk("、")))"),systemImage:"exclamationmark.triangle.fill")
                         .font(.caption).foregroundStyle(Tone.warning.color).fixedSize(horizontal:false,vertical:true)
                 } else if let e=control.keyTapError {
                     Label(e,systemImage:"exclamationmark.triangle.fill").font(.caption).foregroundStyle(Tone.warning.color)
                 } else {
-                    Text(control.keyTapActive ? lk("已接管：按亮度键会调节鼠标所在的屏幕并显示提示。⌥⇧ + 亮度键可微调。") : lk("未接管按键。"))
+                    Text(control.keyTapActive ? lk("已接管：亮度键调节鼠标所在的屏幕，音量键按 3% 一档调节系统音量，并显示提示。⌥⇧ + 按键可微调。") : lk("未接管按键。"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

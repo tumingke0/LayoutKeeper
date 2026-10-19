@@ -11,6 +11,10 @@ struct DirectRestoreOutcome {
     var failures: [RestoreFailure]=[]
     /// Which windows (tokens) this restore verified or failed; lets multi-step attaches count each window once.
     var tally=RestoreTally()
+    /// Per app: saved windows reported as closed ("保存的 2 个窗口已关闭，现在开着的是另外 1 个窗口").
+    var staleText: [String]=[]
+    /// Groups left where they are because there is no free desk for them, and how many desks that needs.
+    var unplacedGroups=0, missingDesktops=0
     var nothingToDo: Bool { error == nil && attempted == 0 }
     var failed: Int { attempted-restored }
 }
@@ -39,7 +43,7 @@ extension Model {
     func quickBlocker(needsLayout: Bool) -> String? {
         if currentExternalMonitor == nil { return externalMonitors.count>1 ? lk("目前只支持一块外接屏") : lk("未连接外接屏") }
         if !trusted { return lk("需要辅助功能权限") }
-        if needsLayout && externalRecord == nil { return lk("这块屏幕尚未保存布局") }
+        if needsLayout && externalRecord == nil && currentExternalMonitor.flatMap({ activeArrival(for:$0.identity,saved:nil) }) == nil { return lk("这块屏幕尚未保存布局") }
         if busy { return lk("正在处理上一个操作") }
         return nil
     }
@@ -65,9 +69,16 @@ extension Model {
         if trigger == .manual { logSession("manual restore") }
         guard prepareQuickRestore(),var plan=quickPlan else { logRestore("directRestore \(tag): exit — no plan: \(quickMessage.isEmpty ? "-" : String(quickMessage.prefix(160)))"); outcome.error=quickMessage.isEmpty ? lk("无法生成恢复计划") : quickMessage; logRestore("restore \(trigger == .automatic ? "auto" : "manual") no plan"); return outcome }
         if trigger == .automatic,let record=quickRecord,let snap=quickSnapshot,let display=quickDisplayToken {
-            let q=QuickRestorePlanner.quietAlreadyInPlace(plan,record:record,snapshot:snap,displayToken:display)
-            if !q.quieted.isEmpty || !q.missing.isEmpty { plan=q.plan; quickPlan=plan; logRestore("directRestore auto: needsConfirmation→alreadyInPlace \(q.quieted) missing \(q.missing) (every unclaimed same-app window already on the saved desk with saved geometry)") }
+            let q=QuickRestorePlanner.quietAlreadyInPlace(plan,record:record,snapshot:snap,displayToken:display,browserProfiles:ChromeProfiles.load()?.map(snap.windows) ?? [:])
+            if !q.quieted.isEmpty || !q.missing.isEmpty || !q.stale.isEmpty {
+                plan=q.plan; quickPlan=plan
+                if !q.quieted.isEmpty || !q.missing.isEmpty { logRestore("directRestore auto: needsConfirmation→alreadyInPlace \(q.quieted) missing \(q.missing) (same title/document/profile window already on the saved desk with saved geometry)") }
+                if !q.stale.isEmpty { logRestore("directRestore auto: needsConfirmation→stale(closed) \(q.stale) (no open window of the app shares title, document or Chrome profile)") }
+            }
         }
+        outcome.staleText=plan.staleSummary{ Self.appName($0) }
+        outcome.missingDesktops=plan.missingDesktops; outcome.unplacedGroups=plan.unplacedGroups.count
+        logRestoreLines(RestoreLog.deskMapLines(trigger:tag,plan:plan))
         logRestore(RestoreLog.planSummary(trigger:tag,plan:plan))
         logPlanDetail(trigger:tag,plan:plan,record:quickRecord,snapshot:quickSnapshot,displayToken:quickDisplayToken)
         if !quickMessage.isEmpty { logRestore("directRestore \(tag): planner message: \(quickMessage.prefix(200))") }
@@ -106,7 +117,15 @@ extension Model {
             if trigger == .automatic && externalRecord == nil { return nil }
             return UserNotice(title:trigger == .automatic ? lk("没有自动恢复") : lk("没有恢复"),detail:error,duration:5)
         }
+        // Closed saved windows and groups without a desk, appended to whatever the notice says.
+        var extra=o.staleText
+        if o.unplacedGroups>0 && !sharedModeActive { extra.append(lk("还缺 %@ 个桌面：有 %@ 组窗口没有移动，补好桌面后再恢复一次", "\(o.missingDesktops)", "\(o.unplacedGroups)")) }
+        let extraText=extra.isEmpty ? nil : extra.joined(separator:lk("；"))+(o.staleText.isEmpty ? "" : lk("。重新保存一次布局后就不再提示。"))
+        func join(_ a: String?,_ b: String?) -> String? { [a,b].compactMap{ $0 }.isEmpty ? nil : [a,b].compactMap{ $0 }.joined(separator:"\n") }
         if o.nothingToDo {
+            if o.failures.isEmpty && o.needsConfirmation == 0 && o.skippedAuto == 0,let extraText {
+                return UserNotice(title:o.staleText.isEmpty ? lk("有窗口没有移动") : lk("保存的部分窗口已关闭"),detail:extraText,actions:[view],duration:attention,open:openResult)
+            }
             if !o.failures.isEmpty { return UserNotice(title:lk("没有恢复窗口"),detail:Self.failureText(o.failures),actions:[retry,view],duration:attention,open:openResult) }
             if o.needsConfirmation>0 { return UserNotice(title:lk("%@ 个窗口需要确认", "\(o.needsConfirmation)"),detail:lk("无法唯一确认，没有移动"),actions:[view],duration:attention,open:openResult) }
             if o.skippedAuto>0 { return UserNotice(title:lk("%@ 个窗口没有自动恢复", "\(o.skippedAuto)"),detail:lk("无法唯一确认这些窗口，点「恢复布局」可以预览后手动恢复"),actions:[restoreNow,view],duration:attention,open:openResult) }
@@ -115,7 +134,7 @@ extension Model {
         }
         var title=lk("已恢复 %@ 个窗口", "\(o.restored)")
         if o.needsConfirmation>0 { title+=lk(" · %@ 个需确认", "\(o.needsConfirmation)") }
-        let detail: String? = !o.failures.isEmpty ? Self.failureText(o.failures) : (o.failed>0 ? lk("%@ 个未通过，已回滚", "\(o.failed)") : (o.skippedAuto>0 ? lk("%@ 个窗口无法唯一确认，没有自动移动", "\(o.skippedAuto)") : nil))
+        let detail: String? = join(!o.failures.isEmpty ? Self.failureText(o.failures) : (o.failed>0 ? lk("%@ 个未通过，已回滚", "\(o.failed)") : (o.skippedAuto>0 ? lk("%@ 个窗口无法唯一确认，没有自动移动", "\(o.skippedAuto)") : nil)),extraText)
         var actions=[UserNotice.Action]()
         if !o.failures.isEmpty { actions.append(retry) }
         if lastRestoreJournal?.canUndo == true { actions.append(UserNotice.Action(.undo) { [weak self] in NSApp.activate(ignoringOtherApps:true); self?.undoExternalRestore(); self?.requestLiveCheck?() }) }
@@ -168,7 +187,9 @@ extension Model {
         guard emptyWindowTrial == nil,trialConfigurationError.isEmpty,!busy,trusted,let monitor=currentExternalMonitor,let record=externalRecord,let key=liveKey else { return }
         do {
             let snapshot=try statusWindows.scan(selectedDisplayToken:monitor.runtimeDisplayToken,inspectionBudget:2)
-            livePlan=try QuickRestorePlanner.plan(record:record,monitor:monitor.identity,displayToken:monitor.runtimeDisplayToken,snapshot:snapshot,allowCrossSpace:crossSpaceEnabled,overflowToLast:monitor.identity.isSharedExternal,browserProfiles:ChromeProfiles.load()?.map(snapshot.windows) ?? [:])
+            // During an attach the status reflects the layout the attach restores from (composed by the restore itself).
+            let effective=activeArrival(for:monitor.identity,saved:record)?.effective
+            livePlan=try QuickRestorePlanner.plan(record:effective?.record ?? record,monitor:monitor.identity,displayToken:monitor.runtimeDisplayToken,snapshot:snapshot,allowCrossSpace:crossSpaceEnabled,browserProfiles:ChromeProfiles.load()?.map(snapshot.windows) ?? [:],context:effective?.context)
             livePlanKey=key
             // Once per launch: log the read-only plan (Chrome profile resolution + auto eligibility per window).
             if !Self.loggedLaunchPlan,let plan=livePlan { Self.loggedLaunchPlan=true; logPlanDetail(trigger:"launch-dry",plan:plan,record:record,snapshot:snapshot,displayToken:monitor.runtimeDisplayToken) }

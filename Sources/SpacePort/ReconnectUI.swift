@@ -18,6 +18,8 @@ final class ReconnectCoordinator {
     /// True while finishAuto runs directRestore. Its retry pumps the run loop, so display events and timers can fire
     /// inside it; evaluate must not start the same session a second time meanwhile.
     private var attemptInFlight=false
+    /// An attach is pending or running: the live recorder must not record (windows are about to move or migrating).
+    var attachActive: Bool { session.isPending || session.open != nil || attemptInFlight }
     init(model: Model,showMain: @escaping () -> Void) {
         self.model=model; self.showMain=showMain
         session=AttachSession(initialMonitorKey:model.currentExternalMonitor.map(Self.physicalKey),settleInterval:3)
@@ -60,6 +62,7 @@ final class ReconnectCoordinator {
     }
     private func close(_ id: Int,_ result: String) {
         if let line=session.finish(id:id,result:result) { model.logRestore(line); model.logSession(line) }
+        model.arrivalSessionClosed()
     }
     private func evaluate() {
         if attemptInFlight { model.logRestore("reconnect: restore in progress, evaluating again in 1s"); schedule(after:1); return }
@@ -76,6 +79,7 @@ final class ReconnectCoordinator {
             model.logRestore("attach #\(id) start\(retry ? " (retry)" : ""): screens settled after \(eventStarted.map{ String(format:"%.2fs",Date().timeIntervalSince($0)) } ?? "?"), monitor=\(RestoreLog.key(key))")
             model.logRestoreLines(model.environmentLines(label:"settled"))
             guard let monitor,Self.physicalKey(monitor)==key else { requeue("monitor not readable at start",delay:1); return }
+            model.activateArrival(for:monitor,session:id)
             trigger(monitor,id:id)
         }
     }
@@ -86,7 +90,7 @@ final class ReconnectCoordinator {
         }
         session.notBusy()
         model.refreshAuthorization(); guard model.trusted else { close(id,"skipped reason=no-accessibility-permission"); return }
-        guard model.externalRecord != nil else { close(id,"skipped reason=no-saved-layout-for-\(RestoreLog.key(monitor.identity.key))"); return }
+        guard model.externalRecord != nil || model.activeArrival(for:monitor.identity,saved:nil) != nil else { close(id,"skipped reason=no-saved-layout-or-live-record-for-\(RestoreLog.key(monitor.identity.key))"); return }
         let name=model.monitorPreferences.displayName(monitor.identity)
         let action=ReconnectPolicy.action(global:model.autoRestoreMode,perMonitor:model.monitorPreferences.restore(monitor.identity.key),pausedUntil:model.pausedUntil,now:Date())
         model.logRestore("attach #\(id): policy=\(action) (global=\(model.autoRestoreMode) perMonitor=\(model.monitorPreferences.restore(monitor.identity.key).map{"\($0)"} ?? "-") pausedUntil=\(model.pausedUntil.map{"\($0)"} ?? "-") choicePrompt=\(Self.choicePromptEnabled))")

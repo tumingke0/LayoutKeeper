@@ -25,9 +25,9 @@ LayoutKeeper lives in the menu bar. It remembers where each window was on your e
 
 - **A layout per monitor.** Each monitor is recognized by its hardware (EDID: maker, model, serial number). Your home and office monitors each get their own layout, with nothing to pick by hand.
 - **Or one shared layout.** If you only ever use one external monitor at a time, switch to "all external monitors share one layout". Office or home, you get the same desktops and windows. Positions are stored relative to the screen, so different resolutions still line up.
-- **Puts windows back on the right desktop** (macOS 26 or later). Older systems still get position and size restored on the current desktop.
+- **Puts windows back on the right desktop** (macOS 26 or later). Windows that shared a desktop go back onto one desktop, in their original order, and two groups are never piled onto the same desktop. Older systems still get position and size restored on the current desktop.
 - **Adds missing desktops for you** (shared mode, on by default). When you plug in, it adds any missing desktops in Mission Control. It never deletes desktops. It stops and asks you to finish by hand if anything doesn't look right. No need to disable SIP.
-- **Brightness and volume keys for external monitors.** The brightness keys adjust the screen your mouse is on, built-in or external, and show a translucent indicator at the top of the screen. The volume keys can adjust the monitor's speakers. Hardware control (DDC) works on **Apple Silicon Macs only**. If a monitor doesn't respond, LayoutKeeper falls back to software dimming. If BetterDisplay, MonitorControl or Lunar is running, LayoutKeeper leaves the keys alone.
+- **Brightness and volume keys for external monitors.** The brightness keys adjust the screen your mouse is on, built-in or external, and show a translucent indicator at the top of the screen. The volume keys change your Mac's system volume (the current sound output) in 3% steps, wherever the mouse is. Hardware brightness control (DDC) works on **Apple Silicon Macs only**. If a monitor doesn't respond, LayoutKeeper falls back to software dimming. If BetterDisplay, MonitorControl or Lunar is running, LayoutKeeper leaves the keys alone.
 - **Several named layouts per monitor**, for example "Coding" and "Meeting". You can switch between them from the menu bar.
 - **Version history.** It keeps the last 5 versions of each monitor's layout, so you can go back.
 - **Preview first, undo anytime.** You can see how each window will move before you restore, and any restore can be undone in one click.
@@ -76,7 +76,7 @@ More details: [docs/USABILITY.md](docs/USABILITY.md) (Chinese).
 - Moving windows between desktops uses private macOS APIs, which may stop working after a system update. LayoutKeeper checks for this at launch and turns the feature off if needed. Restoring position and size on the current desktop keeps working.
 - Finder windows can't be moved to another desktop. Their position and size are still restored.
 - It doesn't launch or quit apps, and it doesn't restore tabs or stacking order. Full-screen, Split View and minimized windows are skipped.
-- Hardware brightness and volume work on Apple Silicon only, and some monitors, adapters, docks and HDMI ports don't support DDC.
+- Hardware brightness works on Apple Silicon only, and some monitors, adapters, docks and HDMI ports don't support DDC.
 
 ## FAQ
 

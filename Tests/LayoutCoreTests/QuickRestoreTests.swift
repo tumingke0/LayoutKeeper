@@ -30,11 +30,20 @@ final class QuickRestoreTests: XCTestCase {
         XCTAssertTrue(p.items.allSatisfy{$0.moveSpace && $0.state == .ready})
         XCTAssertEqual(p.desktopsNow,3); XCTAssertEqual(p.desktopsNeeded,3)
     }
-    func testTooFewDesktopsBlocksWithoutGuessing() throws {
+    /// 0.6.9: saved desk 5 does not exist; the group goes to the next free desk after the previous group (compress),
+    /// instead of being blocked or piled onto the last desk.
+    func testGroupWhoseDeskIsGoneTakesNextFreeDeskInOrder() throws {
         let s=snapshot([w("1:1","app.a","A",space:201),w("1:2","app.b","B",space:201)])
         let p=try plan(record([saved("app.a","A",slot:1),saved("app.b","B",slot:5)]),s)
-        XCTAssertEqual(p.items[1].state,.blocked); XCTAssertTrue(p.items[1].reason.contains("请先在调度中心新建桌面"))
-        XCTAssertEqual(p.plan.entries.count,1); XCTAssertEqual(p.desktopsNeeded,5)
+        XCTAssertEqual(p.items[1].state,.ready); XCTAssertEqual(p.items[1].targetSlot,2); XCTAssertEqual(p.items[1].deskMapping,.grouped)
+        XCTAssertEqual(p.plan.entries.map(\.targetSpace),[201,202]); XCTAssertEqual(p.desktopsNeeded,3); XCTAssertEqual(p.missingDesktops,0)
+    }
+    func testMoreGroupsThanDesksBlocksTheRestWithoutGuessing() throws {
+        let s=snapshot([w("1:1","app.a","A",space:201),w("1:2","app.b","B",space:201),w("1:3","app.c","C",space:201),w("1:4","app.d","D",space:201)])
+        let p=try plan(record([saved("app.a","A",slot:1),saved("app.b","B",slot:4),saved("app.c","C",slot:5),saved("app.d","D",slot:6)]),s)
+        XCTAssertEqual(p.items.map(\.targetSlot),[1,2,3,nil])
+        XCTAssertEqual(p.items[3].state,.blocked); XCTAssertTrue(p.items[3].reason.contains("还缺 1 个桌面"))
+        XCTAssertEqual(p.desktopsNeeded,4); XCTAssertEqual(p.missingDesktops,1)
     }
     func testOldRecordWithoutDesktopOrderIsBlocked() throws {
         let p=try plan(record([saved("app.a","A",slot:nil)]),snapshot([w("1:1","app.a","A",space:201)]))

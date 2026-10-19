@@ -59,7 +59,8 @@ public final class ReadOnlySpaces: SpacesBackend {
             for raw in rawSpaces {
                 guard let id=raw["ManagedSpaceID"] as? NSNumber, id.uint64Value > 0 else { continue }
                 let kind: SpaceKind = (raw["type"] as? NSNumber)?.intValue == 0 ? .ordinary : ((raw["type"] as? NSNumber)?.intValue == 4 ? .fullScreenOrSplit : .unknown)
-                result.append(Space(id:id.uint64Value,displayToken:token,kind:kind,active:id==current))
+                let uuid=(raw["uuid"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                result.append(Space(id:id.uint64Value,displayToken:token,kind:kind,active:id==current,uuid:uuid))
             }
         }
         guard !result.isEmpty else { throw LayoutError.readbackUnavailable }

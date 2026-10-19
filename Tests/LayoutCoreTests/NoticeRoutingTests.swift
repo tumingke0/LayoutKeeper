@@ -74,7 +74,8 @@ final class MigratedDesktopNoticeTests: XCTestCase {
         XCTAssertGreaterThan(files.count,20)
         for f in files {
             let text=try String(contentsOf:f,encoding:.utf8)
-            for banned in ["删了也不会丢","被移到了内置屏","已自动删掉 %@ 个空桌面","so nothing is lost"] {
+            // 0.6.9: windows are never piled onto the last desktop any more, so nothing may promise or describe that.
+            for banned in ["删了也不会丢","被移到了内置屏","已自动删掉 %@ 个空桌面","so nothing is lost","最后一个桌面","the last desktop","can adjust the monitor's speakers"] {
                 XCTAssertFalse(text.contains(banned),"\(f.lastPathComponent) still contains \(banned)")
             }
         }

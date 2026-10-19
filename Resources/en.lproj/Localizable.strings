@@ -112,7 +112,6 @@
 "不是这块屏幕的历史版本" = "Not a version of this display";
 "不是这块屏幕的布局" = "Not a layout of this display";
 "不是这块屏幕的版式" = "Not a named layout of this display";
-"不管接的是哪块外接屏，都用同一套桌面和窗口。窗口按「第几个桌面」和相对位置保存，分辨率不同也能对上；桌面不够时多出来的窗口先放在最后一个桌面，并提示你补几个。只在接一块外接屏时生效，接两块以上时自动按每块屏单独记。原来各屏的记录都保留。" = "Whichever external display is connected, you get the same desktops and windows. Windows are saved by desktop number and relative position, so different resolutions still line up. If there are too few desktops, extra windows go to the last one and you're told how many to add. Only applies with one external display; with two or more it switches to one layout per display. Each display's existing records are kept.";
 "不要" = "Don't";
 "不需要额外权限；按 Esc 取消录制。" = "No extra permission needed; press Esc to cancel recording.";
 "与「%@」重复" = "Same as \"%@\"";
@@ -139,12 +138,7 @@
 "保存当前布局" = "Save Current Layout";
 "保存当时的采集统计：" = "Capture stats at save time:";
 "保存文件失败：%@\n" = "Couldn't save the file: %@\n";
-"保存时在桌面 %@，现在只有 %@ 个桌面，先放到最后一个桌面；补齐桌面后会自动再恢复" = "Saved on desktop %@, but there are only %@ desktops now; placed on the last desktop for now. It restores again after you add desktops";
-"保存时在桌面 %@，现在这块屏只有 %@ 个桌面：请先在调度中心新建桌面" = "Saved on desktop %@, but this display now has only %@ desktops: add desktops in Mission Control first";
 "保存时外接屏连接已改变，请保持屏幕连接后重试。" = "The external display connection changed while saving; keep it connected and try again.";
-"保存时用到 %@ 个桌面，现在只有 %@ 个。请先在调度中心新建桌面，再点「重新预览」。" = "The layout used %@ desktops but there are only %@ now. Add desktops in Mission Control first, then click \"Preview Again\".";
-"保存时用到 %@ 个桌面，现在只有 %@ 个：多出来的窗口先放到最后一个桌面。在调度中心按「+」补 %@ 个桌面后会自动再恢复。" = "The layout used %@ desktops but there are only %@ now: extra windows go to the last desktop. Add %@ desktops with \"+\" in Mission Control and it restores again automatically.";
-"保存时用到 %@ 个桌面，现在只有 %@ 个：请先在调度中心新建桌面，再重新预览。" = "The layout used %@ desktops but there are only %@ now: add desktops in Mission Control first, then preview again.";
 "保存第一份布局" = "Save First Layout";
 "停止并复位" = "Stop and Reset";
 "允许 LayoutKeeper 读取和移动窗口" = "Allow LayoutKeeper to read and move windows";
@@ -229,7 +223,6 @@
 "固定安装入口" = "Installed app";
 "在 Finder 中显示" = "Show in Finder";
 "在“隐私与安全性 → %@”里打开 LayoutKeeper 的开关，这里会自动继续。" = "Turn on LayoutKeeper in Privacy & Security → %@; this continues automatically.";
-"在菜单中显示亮度和音量滑块" = "Show brightness and volume sliders in the menu";
 "备忘录" = "Notes";
 "复位执行：%@ · %@" = "Reset run: %@ · %@";
 "复位：已直接写回原位置/大小" = "Reset: wrote original position/size back directly";
@@ -252,7 +245,6 @@
 "多个窗口匹配" = "Several windows match";
 "多个窗口匹配，已跳过；不会猜测应该调整哪一个" = "Several windows match; skipped. It won't guess which one to adjust";
 "多个窗口匹配；需文档标识或精确标题" = "Several windows match; a document identifier or exact title is needed";
-"多出来的窗口先放在最后一个桌面。打开调度中心，在顶部按「+」补 %@ 个桌面，补好后会自动再恢复一次。" = "Extra windows are on the last desktop for now. Open Mission Control and press \"+\" at the top to add %@ desktops; it restores again once they're added.";
 "好" = "OK";
 "好的，下次接上没有保存过布局的外接屏时会提醒你" = "OK, you'll be reminded the next time you connect a display without a saved layout";
 "存在读取失败或未覆盖候选，采集可能不完整。" = "Some reads failed or candidates were not covered; the capture may be incomplete.";
@@ -308,7 +300,6 @@
 "已恢复删除的布局" = "Restored the deleted layout";
 "已批准的真实隔离测试结束，证据：%@" = "Approved isolated live test finished. Evidence: %@";
 "已授权" = "Granted";
-"已接管：按亮度键会调节鼠标所在的屏幕并显示提示。⌥⇧ + 亮度键可微调。" = "Active: brightness keys adjust the display under the mouse and show an indicator. ⌥⇧ + brightness key for fine steps.";
 "已撤销切换" = "Switch undone";
 "已撤销，当前布局已换回" = "Undone; the current layout is back";
 "已是保存的布局" = "Matches the saved layout";
@@ -453,7 +444,6 @@
 "显示器不响应或数值不对时，可以关掉它的 DDC 改用软件调暗。" = "If a display doesn't respond or shows wrong values, turn off its DDC to use software dimming.";
 "显示器设置…" = "Display Settings…";
 "普通窗口条件未确认" = "Regular-window check not confirmed";
-"暂放到最后一个桌面 %@" = "Temporarily on the last desktop, %@";
 "更新" = "Updates";
 "更新布局" = "Update Layout";
 "更新这块屏幕的布局？" = "Update this display's layout?";
@@ -490,7 +480,6 @@
 "查看" = "View";
 "查看报告" = "View Report";
 "查看详情（%@ 个窗口）" = "Show Details (%@ windows)";
-"标题已变化，找到 %@ 个同应用窗口，请选择或跳过" = "Title changed; found %@ windows of the same app. Choose one or skip";
 "标题已变化；同一桌面同一位置有一个浏览器窗口，已预选，请确认" = "Title changed; one browser window is at the same desktop and position and was preselected. Please confirm";
 "桌面 %@" = "Desktop %@";
 "桌面 %@ 内调整位置和大小" = "Adjust position and size on desktop %@";
@@ -702,7 +691,7 @@
 "这份布局暂时无法读取，可以重新保存。" = "This layout can't be read right now; you can save it again.";
 "这份布局由旧版本保存，缺少桌面顺序，请重新保存一次。" = "This layout was saved by an older version and lacks desktop order; save it again.";
 "这台 Mac 不支持跨桌面移动，只恢复同一桌面内的位置" = "This Mac can't move windows between desktops; only positions on the same desktop are restored";
-"这台显示器不响应 DDC（或接在不支持的转接头上），改为软件调暗；音量不可调。" = "This display doesn't respond to DDC (or is on an unsupported adapter); using software dimming. Volume can't be adjusted.";
+"这台显示器不响应 DDC（或接在不支持的转接头上），改为软件调暗。" = "This display doesn't respond to DDC (or is on an unsupported adapter); using software dimming.";
 "这块屏幕尚未保存布局" = "No layout saved for this display yet";
 "这块屏幕已有新保存的布局，没有覆盖" = "This display has a newer saved layout; not overwritten";
 "这块屏幕未连接" = "This display isn't connected";
@@ -756,7 +745,6 @@
 "非标准窗口 subrole" = "Non-standard window subrole";
 "非窗口 role" = "Not a window role";
 "音乐" = "Music";
-"音量键调节外接显示器音量（鼠标在支持 DDC 音量的外接屏上时）" = "Volume keys adjust external display volume (when the mouse is on an external display with DDC volume)";
 "项目计划" = "Project Plan";
 "预览" = "Preview";
 "预览中" = "Previewing";
@@ -824,3 +812,37 @@
 "当前构建无法使用系统通知；最近一条提示会显示在菜单栏菜单里。" = "This build can't use system notifications. The latest notice is shown in the menu bar menu.";
 "LayoutKeeper 通知测试" = "LayoutKeeper notification test";
 "这是一条测试通知，可以直接划掉。" = "This is a test notification. You can swipe it away.";
+
+/* 0.6.9 */
+"%@：保存的 %@ 个窗口已关闭" = "%@: %@ saved windows are closed";
+"%@：保存的 %@ 个窗口已关闭，现在开着的是另外 %@ 个窗口" = "%@: %@ saved windows are closed; the %@ windows open now are different ones";
+"⌃↑ 快捷键" = "the ⌃↑ shortcut";
+"。重新保存一次布局后就不再提示。" = ". Save the layout again and this won't come up any more.";
+"不管接的是哪块外接屏，都用同一套桌面和窗口。窗口按所在的桌面和相对位置保存，分辨率不同也能对上；原来同一个桌面上的窗口放回同一个桌面，顺序不变，桌面不够时先自动补，补不上的那几组窗口不移动，并提示你还缺几个。只在接一块外接屏时生效，接两块以上时自动按每块屏单独记。原来各屏的记录都保留。" = "Whichever external display is connected, you get the same desktops and windows. Windows are saved with their desktop and relative position, so different resolutions still line up. Windows that shared a desktop go back onto one desktop, in the same order; if there are too few desktops, more are added first, and any group that still has no desktop stays where it is while you're told how many are missing. Only applies with one external display; with two or more it switches to one layout per display. Each display's existing records are kept.";
+"不管鼠标在哪块屏上，音量键都调当前的声音输出设备，不会去调外接显示器自己的音量。" = "Wherever the mouse is, the volume keys change the current sound output device, never the external monitor's own volume.";
+"保存的部分窗口已关闭" = "Some saved windows are closed";
+"在菜单中显示亮度滑块" = "Show brightness sliders in the menu";
+"已接管：亮度键调节鼠标所在的屏幕，音量键按 3% 一档调节系统音量，并显示提示。⌥⇧ + 按键可微调。" = "Active: brightness keys adjust the screen under the mouse, volume keys change the system volume in 3% steps, with an on-screen indicator. Hold ⌥⇧ for fine steps.";
+"拔屏前记下的这个窗口已关闭" = "This window, recorded before the display was unplugged, has been closed";
+"拔屏时在这块屏的桌面上，跟同一组窗口一起恢复" = "Was on this display's desktop at unplug; restored with the rest of its group";
+"有 %@ 个窗口在预览之后关闭了。" = "%@ windows were closed after the preview.";
+"有 %@ 个窗口在预览之后关闭了，本次没有处理。" = "%@ windows were closed after the preview and were skipped this time.";
+"有窗口没有移动" = "Some windows were not moved";
+"标题已变化；它还在自己原来的桌面上（拔屏时随桌面移到了内置屏），按它恢复" = "Title changed; it's still on its own desktop (which moved to the built-in screen at unplug), so it's restored";
+"标题已变化；按拔屏前记下的窗口认出它" = "Title changed; recognized from the window recorded before unplugging";
+"没有找到保存的这个窗口（可能已关闭）；同应用开着 %@ 个其他窗口，可以选一个代替，或跳过" = "The saved window wasn't found (it may be closed); %@ other windows of this app are open. Pick one instead, or skip";
+"没有找到保存的这个窗口，可能已关闭" = "The saved window wasn't found; it may be closed";
+"没有找到保存的这个窗口，可能已关闭；同应用开着的 %@ 个窗口不是它，自动恢复不会拿它们代替" = "The saved window wasn't found; it may be closed. The %@ open windows of this app are different ones, and automatic restore won't use them instead";
+"没有空桌面的那几组窗口这次没有移动（不会挤到别的桌面上）。打开调度中心，在顶部按「+」补 %@ 个桌面，补好后会自动再恢复一次。" = "Window groups without a free desktop weren't moved this time (they're never piled onto another desktop). Open Mission Control and press \"+\" at the top to add %@ desktops; it restores again once they're added.";
+"窗口已关闭，没有移动" = "Window closed; not moved";
+"窗口现在最小化、全屏或在多个桌面上，这次没有移动" = "The window is minimized, full screen or on all desktops right now; not moved this time";
+"系统音量" = "System volume";
+"调度中心没有打开（试了 %@ 次：%@）" = "Mission Control didn't open (tried %@ times: %@)";
+"还缺 %@ 个桌面，有 %@ 组窗口暂时没有移动。请先在调度中心新建桌面，再点「重新预览」。" = "%@ desktops are missing; %@ window groups weren't moved for now. Add desktops in Mission Control first, then click \"Preview again\".";
+"还缺 %@ 个桌面：有 %@ 组窗口暂时没有移动（不会挤到别的桌面上）。在调度中心按「+」补 %@ 个桌面后会自动再恢复。" = "%@ desktops are missing: %@ window groups weren't moved for now (they're never piled onto another desktop). Add %@ desktops with \"+\" in Mission Control and it restores again automatically.";
+"还缺 %@ 个桌面：有 %@ 组窗口暂时没有移动（不会挤到别的桌面上）。请先在调度中心新建桌面，再重新预览。" = "%@ desktops are missing: %@ window groups weren't moved for now (they're never piled onto another desktop). Add desktops in Mission Control first, then preview again.";
+"还缺 %@ 个桌面：有 %@ 组窗口没有移动，补好桌面后再恢复一次" = "%@ desktops are missing: %@ window groups weren't moved; restore again after adding desktops";
+"这一组窗口没有空桌面可放（还缺 %@ 个桌面），这次没有移动" = "No free desktop for this group of windows (%@ desktops missing); not moved this time";
+"这个应用现在的窗口比保存时少，这个窗口可能已经关闭" = "This app has fewer windows than when saved; this window may have been closed";
+"音量键按 3% 一档调节 Mac 的系统音量（关闭则交给 macOS）" = "Volume keys change the Mac's system volume in 3% steps (off: macOS handles them)";
+"；系统设置里调度中心的 ⌃↑ 快捷键已关闭" = "; the Mission Control ⌃↑ shortcut is turned off in System Settings";

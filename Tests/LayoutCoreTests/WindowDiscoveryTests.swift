@@ -79,7 +79,9 @@ final class WindowDiscoveryTests: XCTestCase {
         XCTAssertEqual(result.record.captureReport?.spaces.map(\.captured),[1,1,1,1])
         XCTAssertEqual(result.record.captureReport?.count(.captured,bundleID:"com.google.Chrome"),3)
         let json=String(data:try JSONEncoder().encode(result.record),encoding:.utf8)!
-        for leaked in ["8802515","8801063","1:729","90000119","90000115","90000118"] {XCTAssertFalse(json.contains(leaked),"layout record must not contain runtime IDs: \(leaked)")}
+        for leaked in ["8802515","8801063","1:729","1:827"] {XCTAssertFalse(json.contains(leaked),"layout record must not contain window tokens: \(leaked)")}
+        // Desk identity is kept on purpose since 0.6.9 (stable across unplug/replug).
+        XCTAssertEqual(Set(result.record.profile.windows.compactMap(\.desktopID)),[90_000_118,90_000_115,90_000_119,90_000_120])
     }
     func testTraceLineIsReadable() {
         let entry=CaptureTraceEntry(bundleID:"com.google.Chrome",windowID:10471,width:403,height:84,spaceSlot:2,placement:"selectedDisplay",exclusion:.notDocumentWindow,axSource:nil,outcome:"notCandidate")

@@ -50,7 +50,7 @@ struct GeneralSettings: View {
                     .pickerStyle(.radioGroup)
                 Text(model.layoutMode == .perMonitor
                      ? lk("公司、家里的外接屏各记各的布局。")
-                     : lk("不管接的是哪块外接屏，都用同一套桌面和窗口。窗口按「第几个桌面」和相对位置保存，分辨率不同也能对上；桌面不够时多出来的窗口先放在最后一个桌面，并提示你补几个。只在接一块外接屏时生效，接两块以上时自动按每块屏单独记。原来各屏的记录都保留。"))
+                     : lk("不管接的是哪块外接屏，都用同一套桌面和窗口。窗口按所在的桌面和相对位置保存，分辨率不同也能对上；原来同一个桌面上的窗口放回同一个桌面，顺序不变，桌面不够时先自动补，补不上的那几组窗口不移动，并提示你还缺几个。只在接一块外接屏时生效，接两块以上时自动按每块屏单独记。原来各屏的记录都保留。"))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 if model.layoutMode == .sharedExternal && !(RenderMode.snapshot ? model.snapshotSeparateSpacesOff == false : SeparateSpaces.enabled) {
                     Label(lk("「显示器具有单独的空间」已关闭，共用模式需要打开它（系统设置 → 桌面与程序坞 → 调度中心，注销后生效）。"),systemImage:"exclamationmark.triangle.fill")

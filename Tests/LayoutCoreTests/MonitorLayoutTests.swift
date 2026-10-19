@@ -17,7 +17,7 @@ final class MonitorLayoutTests: XCTestCase {
         XCTAssertEqual(record.coverage?.readableWindowCount,2)
         XCTAssertNotEqual(record.profile.windows[0].desktopLabel,record.profile.windows[1].desktopLabel)
     }
-    func testCaptureStoresDesktopOrdinalNotSpaceIDs() throws {
+    func testCaptureStoresDesktopOrdinalAndDeskIdentityButNoRuntimeTokens() throws {
         let backend=DemoBackend()
         backend.state.windows += [
             ObservedWindow(token:"first",selector:WindowSelector(bundleID:"fake.first",title:"甲"),frame:Rect(1300,100,400,400),spaceIDs:[72]),
@@ -26,7 +26,10 @@ final class MonitorLayoutTests: XCTestCase {
         let byTitle=Dictionary(uniqueKeysWithValues:record.profile.windows.map{($0.selector.title,$0.desktopIndex)})
         XCTAssertEqual(byTitle["甲"],1); XCTAssertEqual(byTitle["乙"],2)
         let json=String(decoding:try JSONEncoder().encode(record),as:UTF8.self)
-        XCTAssertFalse(json.contains("\"72\"") || json.contains(":72,") || json.contains(":73,") || json.contains("simulated-company-monitor"),"no Space IDs or display tokens in layout files")
+        // 0.6.9: the desk's ManagedSpaceID is stored on purpose (it survives unplug/replug); window tokens and display
+        // tokens never are.
+        XCTAssertEqual(record.profile.windows.map(\.desktopID),[72,73])
+        XCTAssertFalse(json.contains("simulated-company-monitor") || json.contains("\"first\"") || json.contains("\"second\"") || json.contains("runtime"),"no window or display tokens in layout files")
         var dictionary=try JSONSerialization.jsonObject(with:JSONEncoder().encode(record.profile.windows[0])) as! [String:Any]
         dictionary.removeValue(forKey:"desktopIndex")
         XCTAssertNil(try JSONDecoder().decode(SavedWindow.self,from:JSONSerialization.data(withJSONObject:dictionary)).desktopIndex,"pre-0.2.0 records still load")

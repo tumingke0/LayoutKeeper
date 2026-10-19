@@ -22,26 +22,34 @@ extension Model {
     /// Reads the saved layout for the current external monitor and builds the one-click preview. Never moves windows.
     @discardableResult func prepareQuickRestore() -> Bool {
         guard !restoring,!selfTestRunning else { logRestore("prepare: exit — busy (restoring=\(restoring) selfTest=\(selfTestRunning))"); return false }
-        quickPlan=nil; quickResults=[:]; quickChoices=[:]; quickSnapshot=nil; quickRecord=nil
+        quickPlan=nil; quickResults=[:]; quickChoices=[:]; quickSnapshot=nil; quickRecord=nil; quickContext=nil
         refreshAuthorization()
         guard trusted else { quickMessage=accessState.guidance; logRestore("prepare: exit — Accessibility permission missing"); return false }
         guard let monitor=currentExternalMonitor else { logRestore("prepare: exit — no single external monitor (externals=\(externalMonitors.count))"); quickMessage=externalMonitors.isEmpty ? lk("没有检测到外接屏。") : lk("目前只支持同时连接一块外接屏。"); return false }
         do {
             let url=try monitorRecordURL(monitor.identity)
-            guard FileManager.default.fileExists(atPath:url.path) else {
-                logRestore("prepare: exit — no layout file for \(monitor.identity.key) (\(url.lastPathComponent))")
+            var saved: MonitorLayoutRecord?
+            if FileManager.default.fileExists(atPath:url.path) {
+                let record=try MonitorLayoutStore.load(from:url)
+                guard record.monitor.key==monitor.identity.key else { logRestore("prepare: exit — layout file key \(record.monitor.key) != monitor \(monitor.identity.key)"); throw LayoutError.invalidProfile }
+                logRestore("prepare: layout \(url.lastPathComponent) key=\(record.monitor.key) savedAt=\(record.savedAt) windows=\(record.profile.windows.count) display=\(RestoreLog.d(monitor.runtimeDisplayToken))")
+                saved=record
+            }
+            let arrival=activeArrival(for:monitor.identity,saved:saved)
+            guard saved != nil || arrival != nil else {
+                logRestore("prepare: exit — no layout file for \(monitor.identity.key) (\(url.lastPathComponent)) and no live record")
                 quickMessage=lk("这块屏幕（%@）还没有保存过布局。先把窗口摆好，再点「保存布局」。", "\(monitor.identity.name)"); return false
             }
-            let record=try MonitorLayoutStore.load(from:url)
-            guard record.monitor.key==monitor.identity.key else { logRestore("prepare: exit — layout file key \(record.monitor.key) != monitor \(monitor.identity.key)"); throw LayoutError.invalidProfile }
-            logRestore("prepare: layout \(url.lastPathComponent) key=\(record.monitor.key) savedAt=\(record.savedAt) windows=\(record.profile.windows.count) display=\(RestoreLog.d(monitor.runtimeDisplayToken))")
-            warmUpSavedApps(record)
+            let warm=(saved?.profile.windows ?? [])+(arrival?.record.windows ?? [])
+            warmUpSavedApps(MonitorLayoutRecord(monitor:monitor.identity,profile:Profile(location:monitor.identity.name,windows:warm)))
             windows.patientReads=true; defer { windows.patientReads=false }
             let snapshot=try externalLayoutSnapshot()
             let current=MonitorRecognition.externalMonitors()
             guard current.count==1,current[0].identity.key==monitor.identity.key,current[0].runtimeDisplayToken==monitor.runtimeDisplayToken else { logRestore("prepare: exit — monitor changed during scan (now \(current.map{ "\($0.identity.key)@\(RestoreLog.d($0.runtimeDisplayToken))" }))"); throw LayoutError.readbackUnavailable }
             logRestore("prepare: scanned windows=\(snapshot.windows.count) issues=\(windows.issues.count) crossSpace=\(crossSpaceEnabled) shared=\(monitor.identity.isSharedExternal)")
-            quickRecord=record; quickSnapshot=snapshot; quickDisplayToken=monitor.runtimeDisplayToken; quickMonitor=monitor.identity
+            guard let effective=effectiveLayout(monitor:monitor.identity,saved:saved,snapshot:snapshot) else { throw LayoutError.invalidProfile }
+            logRestore("prepare: restoring from \(arrival == nil ? "saved layout" : "live record + saved layout") windows=\(effective.record.profile.windows.count)")
+            quickRecord=effective.record; quickContext=effective.context; quickSnapshot=snapshot; quickDisplayToken=monitor.runtimeDisplayToken; quickMonitor=monitor.identity
             replanQuick()
             return quickPlan != nil
         } catch { quickMessage=lk("无法生成恢复预览，没有移动任何窗口：%@", "\(error)"); logRestore("prepare: exit — error \(String(describing:error).prefix(160))"); return false }
@@ -49,11 +57,11 @@ extension Model {
     func replanQuick() {
         guard let record=quickRecord,let snapshot=quickSnapshot,let display=quickDisplayToken,let monitor=quickMonitor else { quickPlan=nil; return }
         do {
-            let plan=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:snapshot,choices:quickChoices,allowCrossSpace:crossSpaceEnabled,crossSpaceBlockReason:lk("需要跨桌面移动，但这台 Mac 不支持：%@", "\(crossSpaceSupport.summary)"),overflowToLast:monitor.isSharedExternal,browserProfiles:ChromeProfiles.load()?.map(snapshot.windows) ?? [:])
+            let plan=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:snapshot,choices:quickChoices,allowCrossSpace:crossSpaceEnabled,crossSpaceBlockReason:lk("需要跨桌面移动，但这台 Mac 不支持：%@", "\(crossSpaceSupport.summary)"),browserProfiles:ChromeProfiles.load()?.map(snapshot.windows) ?? [:],context:quickContext)
             quickPlan=plan
             var text=""
-            if plan.desktopsNeeded>plan.desktopsNow,monitor.isSharedExternal { text+=lk("保存时用到 %@ 个桌面，现在只有 %@ 个：多出来的窗口先放到最后一个桌面。在调度中心按「+」补 %@ 个桌面后会自动再恢复。", "\(plan.desktopsNeeded)", "\(plan.desktopsNow)", "\(plan.missingDesktops)") }
-            else if plan.desktopsNeeded>plan.desktopsNow { text+=lk("保存时用到 %@ 个桌面，现在只有 %@ 个：请先在调度中心新建桌面，再重新预览。", "\(plan.desktopsNeeded)", "\(plan.desktopsNow)") }
+            if plan.missingDesktops>0,monitor.isSharedExternal { text+=lk("还缺 %@ 个桌面：有 %@ 组窗口暂时没有移动（不会挤到别的桌面上）。在调度中心按「+」补 %@ 个桌面后会自动再恢复。", "\(plan.missingDesktops)", "\(plan.unplacedGroups.count)", "\(plan.missingDesktops)") }
+            else if plan.missingDesktops>0 { text+=lk("还缺 %@ 个桌面：有 %@ 组窗口暂时没有移动（不会挤到别的桌面上）。请先在调度中心新建桌面，再重新预览。", "\(plan.missingDesktops)", "\(plan.unplacedGroups.count)") }
             if plan.items.contains(where:{$0.reason==QuickRestorePlanner.oldRecordReason}) { text+=lk("这份布局由旧版本保存，缺少桌面顺序，请重新保存一次。") }
             if !windows.issues.isEmpty { text+=lk("部分窗口信息读取失败，预览可能不完整。") }
             quickMessage=text
@@ -176,8 +184,8 @@ struct QuickRestoreSheet: View {
                 Label(model.crossSpaceEnabled ? lk("此系统版本尚未运行过一键自检，每个窗口仍会回读确认") : lk("这台 Mac 不支持跨桌面移动，只恢复同一桌面内的位置"),
                       systemImage:"info.circle").font(.caption).foregroundStyle(.secondary).help(model.crossSpaceSupport.detail)
             }
-            if let plan=model.quickPlan,plan.desktopsNeeded>plan.desktopsNow {
-                Label(lk("保存时用到 %@ 个桌面，现在只有 %@ 个。请先在调度中心新建桌面，再点「重新预览」。", "\(plan.desktopsNeeded)", "\(plan.desktopsNow)"),systemImage:"plus.rectangle.on.rectangle")
+            if let plan=model.quickPlan,plan.missingDesktops>0 {
+                Label(lk("还缺 %@ 个桌面，有 %@ 组窗口暂时没有移动。请先在调度中心新建桌面，再点「重新预览」。", "\(plan.missingDesktops)", "\(plan.unplacedGroups.count)"),systemImage:"plus.rectangle.on.rectangle")
                     .font(.callout).foregroundStyle(Tone.warning.color).padding(10).frame(maxWidth:.infinity,alignment:.leading)
                     .background(RoundedRectangle(cornerRadius:10,style:.continuous).fill(Tone.warning.color.opacity(0.10)))
             }

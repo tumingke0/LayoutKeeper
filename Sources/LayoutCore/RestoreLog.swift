@@ -112,17 +112,21 @@ public struct RestoreLog {
     public static func planDetail(trigger: String,plan: QuickRestorePlan,record: MonitorLayoutRecord,snapshot s: Snapshot,displayToken: String,browserProfiles: [String:String] = [:]) -> [String] {
         var out=[String]()
         for i in plan.items {
-            let saved=record.profile.windows[i.savedIndex]
+            let windows=plan.windows.isEmpty ? record.profile.windows : plan.windows
+            guard windows.indices.contains(i.savedIndex) else { continue }
+            let saved=windows[i.savedIndex]
             var parts=["plan-item \(trigger) #\(i.savedIndex) \(i.bundleID) \(t(saved.selector.title))"]
             if let doc=saved.selector.document,!doc.isEmpty { parts.append("doc:\(hash(doc))") }
             if let p=saved.browserProfile { parts.append("profile=\(p)") }
             if let tp=BrowserTitles.profile(saved.selector.title,bundleID:saved.selector.bundleID) { parts.append("titleProfile:\(hash(tp))") }
-            parts.append("saved{role=\(saved.displayRole.rawValue) desk=\(saved.desktopIndex.map(String.init) ?? "-") nframe=\(nr(saved.normalizedFrame))}")
+            parts.append("saved{role=\(saved.displayRole.rawValue) desk=\(saved.desktopIndex.map(String.init) ?? "-") deskID=\(saved.desktopID.map(String.init) ?? "-") nframe=\(nr(saved.normalizedFrame))}")
+            parts.append("src=\(i.source.logName)"+(saved.runtime.map{ " rt=\($0.token)" } ?? "")+" group=\(groupTag(i.groupKey)) deskMap=\(i.deskMapping.rawValue)")
             parts.append("state=\(i.state.rawValue) match=\(i.matchKind.rawValue) chosen=\(i.chosenToken ?? "none")")
-            parts.append("cur=\(i.currentSlot.map(String.init) ?? "-")→target=\(i.targetSlot.map(String.init) ?? "-")"+(i.overflowFrom.map{" overflowFrom=\($0)"} ?? ""))
+            parts.append("cur=\(i.currentSlot.map(String.init) ?? "-")→target=\(i.targetSlot.map(String.init) ?? "-")"+(i.targetSpaceID.map{" sp=\($0)"} ?? ""))
             parts.append("moveSpace=\(i.moveSpace) resize=\(i.resize) crossDisplay=\(i.crossDisplay) targetFrame=\(r(i.targetFrame))")
             parts.append("auto=\(autoReason(i))")
             if !i.reason.isEmpty { parts.append("reason=\"\(i.reason)\"") }
+            if i.stale { parts.append("stale(others=\(i.staleOthers))") }
             out.append(parts.joined(separator:" "))
             let pool=s.windows.filter{ $0.selector.bundleID==i.bundleID }
             if pool.isEmpty { out.append("  cand none (no live window of \(i.bundleID))") }
@@ -141,6 +145,12 @@ public struct RestoreLog {
         return out
     }
 
+    /// Group keys hold desk uuids; log a short hash for uuid keys, IDs and labels as they are (labels are random).
+    public static func groupTag(_ key: String) -> String { key.hasPrefix("u:") ? "u:"+hash(String(key.dropFirst(2))) : key }
+    /// One line per desk group: how its target desk was decided.
+    public static func deskMapLines(trigger: String,plan: QuickRestorePlan) -> [String] {
+        plan.groups.map{ g in "deskmap \(trigger) group=\(groupTag(g.key)) ordinal=\(g.ordinal.map(String.init) ?? "-") desk=\(g.desk.map{ String($0.id) } ?? "-") windows=\(g.windows) → \(g.mapping.rawValue) slot=\(g.slot.map(String.init) ?? "-") (\(g.note))" }
+    }
     /// Per executed window: before/after frames and Spaces, target, final journal state and detail (error text, AX codes).
     public static func journalLines(trigger: String,report: ManualRestoreReport) -> [String] {
         guard let j=report.journal else { return ["exec \(trigger) no journal (nothing written)"] }

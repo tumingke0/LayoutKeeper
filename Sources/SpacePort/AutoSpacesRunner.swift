@@ -12,6 +12,8 @@ final class AutoSpacesRunner {
     private let spaces: ReadOnlySpaces
     private let queue=DispatchQueue(label:"layoutkeeper.autospaces")
     private(set) var running=false
+    /// Receives the Mission Control open log (one line per try) on main after every run, for the restore log.
+    var openLog: (([String]) -> Void)?
     init(spaces: ReadOnlySpaces) { self.spaces=spaces }
 
     struct RunError: Error, CustomStringConvertible { var description: String }
@@ -43,18 +45,23 @@ final class AutoSpacesRunner {
         guard !running else { return completion(.failure(RunError(description:lk("上一次操作还没结束")))) }
         running=true
         queue.async { [self] in
-            let deadline=Date().addingTimeInterval(AutoSpaces.runTimeout)
+            var deadline=Date().addingTimeInterval(AutoSpaces.runTimeout)
             var added=0
             let result: Result<Int,RunError>
             do {
                 guard count>0,count<=AutoSpaces.maxPerRun else { throw RunError(description:lk("数量超出上限")) }
                 guard let frame=Self.screenFrame(token:token) else { throw RunError(description:lk("找不到外接屏")) }
+                defer { let log=driver.lastOpenLog; DispatchQueue.main.async { self.openLog?(log) } }
                 try driver.open()
+                // Opening has its own verified retries; the add budget starts once Mission Control is open.
+                deadline=Date().addingTimeInterval(AutoSpaces.runTimeout)
                 for _ in 0..<count {
                     guard Date()<deadline else { throw RunError(description:lk("超时")) }
                     let before=try ordinary(on:token)
                     guard !AutoSpaces.fullScreenActive(before.all) else { throw RunError(description:AutoSpaces.Blocker.fullScreenActive.description) }
-                    try driver.pressAdd(screen:frame)
+                    // The + button can appear a moment after the desks; look it up again once before giving up.
+                    do { try driver.pressAdd(screen:frame) }
+                    catch MissionControlDriver.Failure.addButtonMissing { Thread.sleep(forTimeInterval:0.7); try driver.pressAdd(screen:frame) }
                     let ok=try waitFor(deadline) { AutoSpaces.verifyAdded(before:before.ids,after:try ordinary(on:token).ids) }
                     guard ok else { throw RunError(description:lk("按「+」后桌面数量没有按预期增加")) }
                     added+=1

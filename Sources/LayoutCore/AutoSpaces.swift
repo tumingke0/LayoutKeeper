@@ -89,3 +89,25 @@ public struct BlockerError: Error, Equatable {
     public var blocker: AutoSpaces.Blocker
     public init(_ blocker: AutoSpaces.Blocker) { self.blocker=blocker }
 }
+
+/// 0.6.9: how Mission Control is opened for auto-add, verified each time. 10/17 15:26:41 failed with a single try
+/// right after the monitor came back ("调度中心没有打开"): WindowManager was still re-laying out the displays.
+/// Now up to three tries with growing waits and a short pause between them; each try first checks Mission Control
+/// is not already open, so ⌃↑ (a toggle) is never sent into an already-open Mission Control.
+public enum MissionControlOpening {
+    public enum Method: String, Equatable { case app, shortcut
+        public var label: String { self == .app ? lk("打开调度中心") : lk("⌃↑ 快捷键") }
+    }
+    public struct Attempt: Equatable { public var method: Method; public var wait: TimeInterval
+        public init(_ method: Method,_ wait: TimeInterval) { self.method=method; self.wait=wait }
+    }
+    public static func attempts(ctrlUpEnabled: Bool) -> [Attempt] {
+        ctrlUpEnabled ? [Attempt(.app,2.5),Attempt(.shortcut,3),Attempt(.app,4)] : [Attempt(.app,2.5),Attempt(.app,3.5),Attempt(.app,4.5)]
+    }
+    /// Pause after a failed try before the next one.
+    public static func backoff(after attempt: Int) -> TimeInterval { 0.5*Double(attempt+1) }
+    public static func failureText(tried: [Method],ctrlUpEnabled: Bool) -> String {
+        lk("调度中心没有打开（试了 %@ 次：%@）", "\(tried.count)", tried.map(\.label).joined(separator:lk("、")))
+            + (ctrlUpEnabled ? "" : lk("；系统设置里调度中心的 ⌃↑ 快捷键已关闭"))
+    }
+}

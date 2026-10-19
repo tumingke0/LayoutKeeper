@@ -23,7 +23,7 @@ struct SharedNotice: Equatable {
     }
     var manualDetail: String {
         switch kind {
-        case .missingSpaces(let n): return lk("多出来的窗口先放在最后一个桌面。打开调度中心，在顶部按「+」补 %@ 个桌面，补好后会自动再恢复一次。", "\(n)")
+        case .missingSpaces(let n): return lk("没有空桌面的那几组窗口这次没有移动（不会挤到别的桌面上）。打开调度中心，在顶部按「+」补 %@ 个桌面，补好后会自动再恢复一次。", "\(n)")
         case .separateSpacesOff: return lk("共用模式需要每块屏有自己的桌面。请在「系统设置 → 桌面与程序坞 → 调度中心」打开它，注销后生效。")
         case .multipleMonitors: return lk("共用模式只在接一块外接屏时生效。拔到只剩一块后会自动切回共用布局。")
         }
@@ -126,7 +126,7 @@ extension Model {
                 if let notice=self.restoreNotice(outcome,trigger:trigger) { self.notify?(notice) }
             case .failure(let e):
                 NSLog("LayoutKeeper auto add Spaces stopped: %@",e.description)
-                self.logRestore("auto-add spaces: failed (\(e.description.prefix(80)))")
+                self.logRestore("auto-add spaces: failed (\(e.description.prefix(240)))")
                 var notice=SharedNotice(kind:.missingSpaces(missing)); notice.autoFailure=e.description
                 self.postSharedNotice(notice)
                 followUp?(.failure(AutoSpacesFailure(description:e.description)))

@@ -43,6 +43,9 @@ if [[ -n "$arch" ]]; then
   swift_args+=(--arch "$arch")
   out_dir="$project_dir/build-products/$arch"
 fi
+# LAYOUTKEEPER_OUT_DIR: write the bundle somewhere else (e.g. build-products/test) so a test build never replaces the
+# bundle that is running.
+out_dir="${LAYOUTKEEPER_OUT_DIR:-$out_dir}"
 swift build "${swift_args[@]}"
 bin_dir="$(swift build "${swift_args[@]}" --show-bin-path)"
 # Builds are candidates. Never overwrite the GUI bundle whose TCC grant is being used.

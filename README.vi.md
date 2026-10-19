@@ -25,9 +25,9 @@ LayoutKeeper nằm trên thanh menu và ghi nhớ vị trí từng cửa sổ tr
 
 - **Mỗi màn hình một bố cục.** Màn hình được nhận diện theo phần cứng (EDID: hãng, model, số sê-ri). Màn hình ở nhà và ở công ty có bố cục riêng, không cần chọn tay.
 - **Hoặc dùng chung một bố cục.** Nếu mỗi lần bạn chỉ cắm một màn hình ngoài, hãy chọn "mọi màn hình ngoài dùng chung một bố cục". Ở công ty hay ở nhà đều có cùng các màn hình nền và cửa sổ. Vị trí được lưu theo tỉ lệ màn hình nên khác độ phân giải vẫn khớp.
-- **Đưa cửa sổ về đúng màn hình nền** (macOS 26 trở lên). Trên macOS cũ hơn, vị trí và kích thước vẫn được khôi phục trên màn hình nền hiện tại.
+- **Đưa cửa sổ về đúng màn hình nền** (macOS 26 trở lên). Các cửa sổ từng ở chung một màn hình nền sẽ về lại chung một màn hình nền, giữ nguyên thứ tự, và hai nhóm không bao giờ bị dồn vào cùng một màn hình nền. Trên macOS cũ hơn, vị trí và kích thước vẫn được khôi phục trên màn hình nền hiện tại.
 - **Tự thêm màn hình nền** (chế độ dùng chung, bật sẵn). Khi cắm vào, ứng dụng thêm các màn hình nền còn thiếu trong Mission Control. Ứng dụng không xóa màn hình nền nào. Nếu có gì không khớp, nó dừng lại và nhắc bạn làm tay. Không cần tắt SIP.
-- **Phím độ sáng và âm lượng.** Phím độ sáng chỉnh màn hình đang có con trỏ chuột (tích hợp hoặc ngoài) và hiện chỉ báo trong suốt ở phía trên màn hình. Phím âm lượng có thể chỉnh loa của màn hình ngoài. Điều khiển phần cứng (DDC) **chỉ hỗ trợ máy Mac Apple Silicon**. Nếu màn hình không phản hồi, ứng dụng làm tối bằng phần mềm. Khi BetterDisplay, MonitorControl hoặc Lunar đang chạy, LayoutKeeper nhường các phím cho chúng.
+- **Phím độ sáng và âm lượng.** Phím độ sáng chỉnh màn hình đang có con trỏ chuột (tích hợp hoặc ngoài) và hiện chỉ báo trong suốt ở phía trên màn hình. Phím âm lượng chỉnh âm lượng hệ thống của máy Mac (thiết bị phát âm thanh hiện tại) theo từng bước 3%, dù con trỏ chuột ở màn hình nào. Điều khiển độ sáng bằng phần cứng (DDC) **chỉ hỗ trợ máy Mac Apple Silicon**. Nếu màn hình không phản hồi, ứng dụng làm tối bằng phần mềm. Khi BetterDisplay, MonitorControl hoặc Lunar đang chạy, LayoutKeeper nhường các phím cho chúng.
 - **Nhiều bố cục có tên cho một màn hình**, ví dụ "Lập trình" và "Họp". Bạn đổi qua lại ngay trên thanh menu.
 - **Lịch sử phiên bản.** Giữ 5 phiên bản gần nhất của mỗi màn hình để bạn quay lại.
 - **Xem trước, hoàn tác bất cứ lúc nào.** Bạn thấy trước từng cửa sổ sẽ di chuyển thế nào, và mọi lần khôi phục đều hoàn tác được bằng một cú nhấp.
@@ -76,7 +76,7 @@ Chi tiết xem [docs/USABILITY.md](docs/USABILITY.md) (tiếng Trung).
 - Việc chuyển cửa sổ giữa các màn hình nền dùng API riêng của macOS, có thể ngừng hoạt động sau khi cập nhật hệ thống. Ứng dụng tự kiểm tra khi khởi động và tắt tính năng này nếu cần. Khôi phục trên cùng màn hình nền không bị ảnh hưởng.
 - Cửa sổ Finder không chuyển được sang màn hình nền khác, nhưng vị trí và kích thước vẫn được khôi phục.
 - Ứng dụng không mở hay thoát ứng dụng khác, không khôi phục tab hay thứ tự chồng cửa sổ. Cửa sổ toàn màn hình, Split View và thu nhỏ sẽ bị bỏ qua.
-- Chỉnh độ sáng và âm lượng bằng phần cứng chỉ có trên Apple Silicon. Một số màn hình, bộ chuyển đổi, dock và cổng HDMI không hỗ trợ DDC.
+- Chỉnh độ sáng bằng phần cứng chỉ có trên Apple Silicon. Một số màn hình, bộ chuyển đổi, dock và cổng HDMI không hỗ trợ DDC.
 
 ## Câu hỏi thường gặp
 

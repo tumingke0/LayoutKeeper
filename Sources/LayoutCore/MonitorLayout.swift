@@ -85,7 +85,7 @@ public enum ExternalLayoutCapture {
             guard selected.filter({w.selector.matches($0.selector)}).count==1 else{reject(.ambiguousSelector);continue}
             report.increment(.uniqueSelector,bundleID:bundle)
             let label=labels[source.id] ?? lk("窗口组-%@", "\(UUID().uuidString)");labels[source.id]=label
-            saved.append(SavedWindow(selector:w.selector,displayRole:.external,desktopLabel:label,normalizedFrame:normalized,desktopIndex:slot+1))
+            saved.append(SavedWindow(selector:w.selector,displayRole:.external,desktopLabel:label,normalizedFrame:normalized,desktopIndex:slot+1,desktopID:source.id,desktopUUID:source.uuid))
             report.noteCaptured(bundleID:bundle,spaceIndex:slot+1);decisions[w.token]="captured"
         }
         let profile=Profile(location:monitor.name,windows:saved)

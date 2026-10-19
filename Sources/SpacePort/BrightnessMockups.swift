@@ -158,11 +158,11 @@ enum BrightnessMockups {
         var ok=true
         func shot<V: View>(_ n: String,_ v: V,dark: Bool) { ok=UISnapshots.render(v,to:dir.appendingPathComponent(n),dark:dark) && ok }
         let menu=BrightnessMenuMock(rows:[
-            .init(name:"DELL SE2416H",badge:"DDC",badgeTone:.success,brightness:0.38,volume:0.55,note:nil),
+            .init(name:"DELL SE2416H",badge:"DDC",badgeTone:.success,brightness:0.38,volume:nil,note:nil),
             .init(name:lk("内建显示屏"),badge:lk("内建"),badgeTone:.neutral,brightness:0.42,volume:nil,note:nil),
         ])
         let fallback=BrightnessMenuMock(rows:[
-            .init(name:"LG HDR 4K",badge:lk("软件调暗"),badgeTone:.warning,brightness:0.70,volume:nil,note:lk("这台显示器不响应 DDC（或接在不支持的转接头上），改为软件调暗；音量不可调。")),
+            .init(name:"LG HDR 4K",badge:lk("软件调暗"),badgeTone:.warning,brightness:0.70,volume:nil,note:lk("这台显示器不响应 DDC（或接在不支持的转接头上），改为软件调暗。")),
         ])
         for dark in [false,true] {
             let s=dark ? "dark" : "light"
@@ -170,7 +170,7 @@ enum BrightnessMockups {
             shot("02-menu-software-dimming-\(s).png",fallback,dark:dark)
             shot("03-hud-builtin-\(s).png",MockDesktop { BrightnessHUD(name:lk("内建显示屏"),percent:0.56,nits:92) },dark:dark)
             shot("04-hud-external-ddc-\(s).png",MockDesktop { BrightnessHUD(name:"DELL SE2416H",percent:0.38) },dark:dark)
-            shot("05-hud-volume-\(s).png",MockDesktop { BrightnessHUD(name:"DELL SE2416H",percent:0.55,kind:.volume); BrightnessHUD(name:"DELL SE2416H",percent:0.55,kind:.muted) },dark:dark)
+            shot("05-hud-volume-\(s).png",MockDesktop { BrightnessHUD(name:lk("系统音量"),percent:0.54,kind:.volume); BrightnessHUD(name:lk("系统音量"),percent:0.54,kind:.muted) },dark:dark)
             shot("07-hud-top-placement-\(s).png",HUDPlacementMock(),dark:dark)
             shot("06-hud-software-dimming-\(s).png",MockDesktop { BrightnessHUD(name:"LG HDR 4K",percent:0.70,note:lk("软件调暗")) },dark:dark)
         }

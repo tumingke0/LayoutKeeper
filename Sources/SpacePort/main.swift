@@ -110,7 +110,11 @@ final class Model: ObservableObject {
     let autoRemoveSpacesStored=Prefs.store?.object(forKey:AutoSpaces.removePreferenceKey) as? Bool ?? AutoSpaces.removeDefaultEnabled
     /// The only switch that lets LayoutKeeper delete Spaces after an unplug. Forced off while the feature is hidden.
     var autoRemoveSpacesEffective: Bool { AutoSpaces.removeEffective(stored:autoRemoveSpacesStored) }
-    lazy var autoSpaces=AutoSpacesRunner(spaces:spaces)
+    lazy var autoSpaces: AutoSpacesRunner = {
+        let runner=AutoSpacesRunner(spaces:spaces)
+        runner.openLog={ [weak self] lines in if !lines.isEmpty { self?.logRestore("mission control open: "+lines.joined(separator:" | ")) } }
+        return runner
+    }()
     /// Brightness / volume control (显示器).
     let displayControl=DisplayControl()
     @Published var missionControlReport=""
@@ -139,6 +143,11 @@ final class Model: ObservableObject {
     var suspendHotkeys: ((Bool) -> Void)?
     var requestLiveCheck: (() -> Void)?
     /// Separate reader so background status checks never replace the handles a restore/undo relies on.
+    /// 0.6.9: continuous record of the external windows (frozen at unplug) and the record an attach restores from.
+    let liveRecorder=LiveRecorder()
+    var arrival: ArrivalLayout?
+    /// Where each window of `quickRecord` came from (live record / saved layout), for the planner.
+    var quickContext: RestoreContext?
     lazy var statusWindows: AXWindows={ let w=AXWindows(spaces:spaces); w.remoteSearchTotal=1.5; w.remoteSearchPerApp=0.4; return w }()
 
     func refresh() {
@@ -237,10 +246,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         // Opening the window from the menu bar or the reconnect prompt must not switch the user's Space.
         window.collectionBehavior=[.moveToActiveSpace]
         NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main) { [weak self] _ in
-            self?.spaceWatcher.screensChanged(); self?.model.refresh(); self?.reconnect?.note(.screens); self?.scheduleLiveCheck(after:1.5); self?.scheduleFirstLayoutReminder()
+            self?.model.liveRecorder.screensChanged(); self?.spaceWatcher.screensChanged(); self?.model.refresh(); self?.reconnect?.note(.screens); self?.scheduleLiveCheck(after:1.5); self?.scheduleFirstLayoutReminder()
         }
-        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.activeSpaceDidChangeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.refresh(); self?.scheduleLiveCheck(after:0.8) }
-        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in self?.reconnect?.note(.wake) }
+        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.activeSpaceDidChangeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.refresh(); self?.scheduleLiveCheck(after:0.8); self?.model.liveRecorder.kick(after:2,reason:"desk switch") }
+        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.liveRecorder.screensChanged(); self?.reconnect?.note(.wake) }
+        // Sleep: whatever happens to the screens before wake is not recorded (a scan in flight is void).
+        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.willSleepNotification,object:nil,queue:.main) { [weak self] _ in self?.model.liveRecorder.screensChanged() }
         model.refresh(); model.refreshAuthorization()
         // First launch, or permission missing at launch (e.g. after a rebuild): the guide replaces the main window.
         if let reason=OnboardingPolicy.reasonAtLaunch(completed:Prefs.store?.bool(forKey:OnboardingPolicy.completedKey) ?? false,trusted:model.trusted) {
@@ -249,6 +260,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         reconnect=ReconnectCoordinator(model:model,showMain:{ [weak self] in self?.show() })
         model.logSession("app launch")
         spaceWatcher.start(model:model)
+        model.liveRecorder.attachActive={ [weak self] in self?.reconnect?.attachActive ?? false }
+        model.liveRecorder.start(model:model)
         displayCoordinator.start(trusted:{ AXIsProcessTrusted() })
         let timer=Timer(timeInterval:2,repeats:true) { [weak self] _ in
             self?.model.refreshAuthorization()
@@ -451,7 +464,7 @@ if let index=CommandLine.arguments.firstIndex(of:"--test-display-control"),Comma
         }
         let svcs=DDCService.externalServices()
         guard svcs.count==1,let s=svcs.first,let b=s.readVCP(DDCPacket.brightness) else { L("\(name): DDC unavailable (services=\(svcs.count))"); continue }
-        L("\(name): DDC brightness=\(b.current)/\(b.max) volume=\(s.readVCP(DDCPacket.volume).map{ "\($0.current)/\($0.max)" } ?? "n/a")")
+        L("\(name): DDC brightness=\(b.current)/\(b.max)")
         let target=UInt16(b.current<b.max ? b.current+1 : b.current-1)
         L("  write \(target) ok=\(s.writeVCP(DDCPacket.brightness,target))"); usleep(400000)
         L("  readback=\(s.readVCP(DDCPacket.brightness).map{ "\($0.current)" } ?? "nil")")

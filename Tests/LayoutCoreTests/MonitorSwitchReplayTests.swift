@@ -49,7 +49,7 @@ extension QuickRestoreTests {
         return r
     }
     func officePlan(_ desktops: Int,profiles: [String:String]) throws -> QuickRestorePlan {
-        try QuickRestorePlanner.plan(record:switchRecord(),monitor:monitor,displayToken:"officeB",snapshot:officeSnapshot(desktops:desktops),allowCrossSpace:true,overflowToLast:true,browserProfiles:profiles)
+        try QuickRestorePlanner.plan(record:switchRecord(),monitor:monitor,displayToken:"officeB",snapshot:officeSnapshot(desktops:desktops),allowCrossSpace:true,browserProfiles:profiles)
     }
     func testSwitchToOtherMonitorRestoresConfidentWindowsBeforeAndAfterAutoAddSpaces() throws {
         // Chrome 9001:514's profile is ambiguous right now (no profile map entry); 9001:437 resolves to Default.
@@ -61,7 +61,10 @@ extension QuickRestoreTests {
         XCTAssertFalse(before.items.contains{ $0.state == .alreadyInPlace },"nothing counts as in place from A's stale frames")
         let autoBefore=QuickRestorePlanner.executionPlan(before,autoOnly:true,fresh:officeSnapshot(desktops:4))
         XCTAssertTrue(autoBefore.plan.entries.allSatisfy{ $0.targetDisplay == "officeB" && $0.targetFrame == Rect(-234,-1050,1920,1050) })
-        XCTAssertTrue([0,2].allSatisfy{ autoBefore.savedIndex.contains($0) },"title + profile matches restore onto B")
+        XCTAssertTrue(autoBefore.savedIndex.contains(0),"title match restores onto B")
+        // 0.6.9: the Chrome desk-5 group has no desk of its own yet; it stays put (never piled onto desk 4).
+        XCTAssertEqual(before.items[2].state,.blocked); XCTAssertTrue(before.items[2].reason.contains("还缺 1 个桌面"))
+        XCTAssertFalse(autoBefore.savedIndex.contains(2))
         // After auto-add spaces: 5 desktops, Chrome desk-5 window goes to its real desk.
         let after=try officePlan(5,profiles:["9001:437":"Default","9001:514":"Profile 1"])
         XCTAssertEqual(after.missingDesktops,0)
@@ -77,20 +80,36 @@ extension QuickRestoreTests {
         XCTAssertEqual(r.map([w("9001:514","com.google.Chrome","B - Google Chrome - sam",doc:"https://new.example/zz",space:163)]),["9001:514":"Profile 1"],"still known at the office")
     }
     /// 10/16 09:57 office replug: saved Antigravity t:83f032 had 3 same-app candidates, all on desk 3 with the saved
-    /// geometry. Auto treats it as in place (no toast); manual still asks.
-    func testAutoQuietsNeedsConfirmationWhenEveryCandidateIsInPlace() throws {
+    /// geometry. 0.6.8 called it "in place". 0.6.9: none of the candidates shares its title, so it is not in place —
+    /// it is reported as closed (stale) in auto mode; manual still asks.
+    func testAutoReportsUnrelatedCandidatesAsClosedNotInPlace() throws {
         let b=Rect(-234,-1050,1920,1050)
         let spaces=[Space(id:4,displayToken:"builtin",active:true),Space(id:6,displayToken:"officeB",active:true),Space(id:7,displayToken:"officeB"),Space(id:8,displayToken:"officeB")]
         let s=Snapshot(session:UUID(),topology:"t",displays:[Display(token:"builtin",name:"内建",role:.builtIn,visible:Rect(0,33,1512,949)),Display(token:"officeB",name:"B",role:.external,visible:b)],spaces:spaces,windows:[
             w("3711:22406","com.google.antigravity-ide","X — Antigravity",space:8,b),w("3711:387","com.google.antigravity-ide","Alpha — Antigravity",space:8,b),w("3711:388","com.google.antigravity-ide","Y — Antigravity",space:8,b)])
         let rec=record([saved("com.google.antigravity-ide","Alpha — Antigravity",slot:3,Rect(0,0,1,1)),saved("com.google.antigravity-ide","Beta — Antigravity",slot:3,Rect(0,0,1,1))])
-        let p=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:s,allowCrossSpace:true,overflowToLast:true)
+        let p=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:s,allowCrossSpace:true)
         XCTAssertEqual(p.items[1].state,.needsConfirmation,"manual still asks")
+        XCTAssertFalse(p.items[1].reason.contains("标题已变化"))
         let q=QuickRestorePlanner.quietAlreadyInPlace(p,record:rec,snapshot:s,displayToken:"officeB")
-        XCTAssertEqual(q.quieted,[1]); XCTAssertEqual(q.plan.items[1].state,.alreadyInPlace)
-        // One candidate elsewhere → still needs confirmation.
-        var moved=s; moved.windows[2].spaceIDs=[7]
-        let p2=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:moved,allowCrossSpace:true,overflowToLast:true)
+        XCTAssertTrue(q.quieted.isEmpty); XCTAssertEqual(q.stale,[1])
+        XCTAssertEqual(q.plan.items[1].state,.missing); XCTAssertTrue(q.plan.items[1].stale); XCTAssertEqual(q.plan.items[1].staleOthers,2)
+        XCTAssertEqual(q.plan.staleSummary{ _ in "Antigravity" },["Antigravity：保存的 1 个窗口已关闭，现在开着的是另外 2 个窗口"])
+    }
+    /// Same-title duplicates are related by title, so they may still count as in place.
+    func testAutoQuietsSameTitleDuplicatesWhenEveryCandidateIsInPlace() throws {
+        let b=Rect(-234,-1050,1920,1050)
+        let spaces=[Space(id:4,displayToken:"builtin",active:true),Space(id:6,displayToken:"officeB",active:true),Space(id:7,displayToken:"officeB"),Space(id:8,displayToken:"officeB")]
+        let s=Snapshot(session:UUID(),topology:"t",displays:[Display(token:"builtin",name:"内建",role:.builtIn,visible:Rect(0,33,1512,949)),Display(token:"officeB",name:"B",role:.external,visible:b)],spaces:spaces,windows:[
+            w("3711:1","com.google.antigravity-ide","Same — Antigravity",space:8,b),w("3711:2","com.google.antigravity-ide","Same — Antigravity",space:8,b)])
+        let rec=record([saved("com.google.antigravity-ide","Same — Antigravity",slot:3,Rect(0,0,1,1))])
+        let p=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:s,allowCrossSpace:true)
+        // Same title, same desk, same geometry for both: the tie-break cannot choose, so the plan asks.
+        XCTAssertEqual(p.items[0].state,.needsConfirmation)
+        let q=QuickRestorePlanner.quietAlreadyInPlace(p,record:rec,snapshot:s,displayToken:"officeB")
+        XCTAssertEqual(q.quieted,[0]); XCTAssertTrue(q.stale.isEmpty)
+        var moved=s; moved.windows[1].spaceIDs=[7]
+        let p2=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:moved,allowCrossSpace:true)
         XCTAssertTrue(QuickRestorePlanner.quietAlreadyInPlace(p2,record:rec,snapshot:moved,displayToken:"officeB").quieted.isEmpty)
     }
 }
@@ -170,21 +189,22 @@ extension QuickRestoreTests {
         let rec=record([saved("com.google.antigravity-ide","Alpha — Antigravity",slot:3,Rect(0,0,1,1)),saved("com.google.antigravity-ide","Beta — Antigravity",slot:3,Rect(0,0,1,1)),saved("com.google.antigravity-ide","Delta — Antigravity",slot:3,Rect(0,0,1,1))])
         return (rec,s,b)
     }
-    /// 3 saved, 2 live (one matched by title, one renamed): the third saved window was closed → missing, not in place.
-    func testQuietReportsClosedSavedWindowAsMissing() throws {
+    /// 3 saved, 2 live (one matched by title, one renamed): the two unmatched saved windows share nothing with the
+    /// renamed window, so both are reported closed; nothing is "in place" by geometry alone.
+    func testQuietReportsClosedSavedWindowsAsStale() throws {
         let (rec,s,_)=inPlaceFixture(live:["Alpha — Antigravity","Renamed — Antigravity"])
-        let p=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:s,allowCrossSpace:true,overflowToLast:true)
+        let p=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:s,allowCrossSpace:true)
         let q=QuickRestorePlanner.quietAlreadyInPlace(p,record:rec,snapshot:s,displayToken:"officeB")
         let states=q.plan.items.map(\.state)
-        XCTAssertEqual(states.filter{ $0 == .alreadyInPlace }.count,2)
-        XCTAssertEqual(states.filter{ $0 == .missing }.count,1,"one saved window has no live window")
-        XCTAssertEqual(q.quieted.count+q.missing.count+p.items.filter{ $0.state != .needsConfirmation }.count,3)
+        XCTAssertEqual(states,[.alreadyInPlace,.missing,.missing])
+        XCTAssertEqual(q.stale,[1,2]); XCTAssertTrue(q.quieted.isEmpty)
+        XCTAssertEqual(q.plan.items.filter(\.stale).map(\.staleOthers),[1,1])
         XCTAssertFalse(states.contains(.needsConfirmation))
     }
     /// A window already claimed by another saved window is not counted as a candidate for the unresolved ones.
     func testQuietIgnoresClaimedWindows() throws {
         let (rec,s,_)=inPlaceFixture(live:["Alpha — Antigravity","X — Antigravity","Y — Antigravity","Z — Antigravity"])
-        let p=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:s,allowCrossSpace:true,overflowToLast:true)
+        let p=try QuickRestorePlanner.plan(record:rec,monitor:monitor,displayToken:"officeB",snapshot:s,allowCrossSpace:true)
         let q=QuickRestorePlanner.quietAlreadyInPlace(p,record:rec,snapshot:s,displayToken:"officeB")
         XCTAssertTrue(q.missing.isEmpty,"3 unclaimed live windows ≥ 2 unresolved saved")
         XCTAssertFalse(q.plan.items.contains{ $0.state == .needsConfirmation })

@@ -66,7 +66,10 @@ public enum BrowserTitles {
     }
 }
 
-public enum MatchKind: String, Codable { case document, title, browserTitle, browserProfile, tieBreak, slotGeometry, userChoice, onlyWindow, elimination, none }
+/// `runtime`: the same window as in the live record (same CGWindowID token, same app launch), whatever its title is now.
+/// `deskEvidence`: a window that provably was on the monitor at the unplug (it is still on one of the monitor's desks
+/// that macOS moved to the built-in screen); see `EffectiveLayout.compose`.
+public enum MatchKind: String, Codable { case document, title, browserTitle, browserProfile, tieBreak, slotGeometry, userChoice, onlyWindow, elimination, runtime, deskEvidence, none }
 
 public struct WindowMatch {
     public enum Verdict: Equatable { case unique, needsConfirmation, missing }
@@ -200,7 +203,7 @@ public enum WindowMatcher {
             m.certain=savedOfProfile<=1 && saved.browserProfile != nil && browserProfiles[profilePool[0].token]==saved.browserProfile
             return m
         }
-        return WindowMatch(verdict:.needsConfirmation,kind:.none,chosen:nil,candidates:allPool,reason:lk("标题已变化，找到 %@ 个同应用窗口，请选择或跳过", "\(pool.count)"))
+        return WindowMatch(verdict:.needsConfirmation,kind:.none,chosen:nil,candidates:allPool,reason:lk("没有找到保存的这个窗口（可能已关闭）；同应用开着 %@ 个其他窗口，可以选一个代替，或跳过", "\(pool.count)"))
     }
 }
 
@@ -241,14 +244,25 @@ public struct QuickRestoreItem: Equatable, Identifiable {
     /// Set when a normally manual-only match (elimination / single Chrome-user window) is nevertheless certain:
     /// the last unmatched saved window paired with the last unmatched live window of the app. Auto mode may run it.
     public var autoCertain=false
-    /// Shared mode: the saved Space ordinal when it doesn't exist now and the window goes to the last Space instead.
-    public var overflowFrom: Int?
     public var targetFrame: Rect?
+    /// Where this window of the layout came from (live record, saved layout, …).
+    public var source: WindowSource = .saved
+    /// The saved desk group (windows that shared a desk) this window belongs to.
+    public var groupKey: String=""
+    /// How the group's target desk was chosen; `.none` when it has none (not identified, or no free desk).
+    public var deskMapping: DeskMapping = .none
+    /// ManagedSpaceID of the target desk.
+    public var targetSpaceID: UInt64?
+    /// Auto mode: the saved window was not found and the app's open windows are not it (no title, document or
+    /// profile in common). Reported as closed instead of asking.
+    public var stale=false
+    /// With `stale`: how many other windows of the app are open.
+    public var staleOthers=0
     public var actionText: String {
         switch state {
         case .ready:
             var parts=[String]()
-            if crossDisplay { parts.append(lk("从另一块屏幕移回")) } else if moveSpace { parts.append(overflowFrom != nil ? lk("暂放到最后一个桌面 %@", "\(targetSlot ?? 0)") : lk("移到桌面 %@", "\(targetSlot ?? 0)")) }
+            if crossDisplay { parts.append(lk("从另一块屏幕移回")) } else if moveSpace { parts.append(lk("移到桌面 %@", "\(targetSlot ?? 0)")) }
             if resize { parts.append(lk("调整位置和大小")) }
             return parts.joined(separator:" + ")
         default: return state.label
@@ -261,9 +275,20 @@ public struct QuickRestorePlan {
     public var plan: RestorePlan
     public var entrySavedIndex: [Int]
     public var desktopsNow: Int
+    /// Desks needed so every group with an identified window has its own desk: the desks there are plus one per
+    /// group that found none.
     public var desktopsNeeded: Int
-    /// Spaces to add with Mission Control's + so every window gets its own saved Space again.
+    /// The layout's windows, indexed by `QuickRestoreItem.savedIndex`.
+    public var windows: [SavedWindow]
+    /// One decision per desk group, in saved order.
+    public var groups: [DeskGroupDecision]
+    public init(items: [QuickRestoreItem], plan: RestorePlan, entrySavedIndex: [Int], desktopsNow: Int, desktopsNeeded: Int, windows: [SavedWindow] = [], groups: [DeskGroupDecision] = []) {
+        self.items=items; self.plan=plan; self.entrySavedIndex=entrySavedIndex; self.desktopsNow=desktopsNow; self.desktopsNeeded=desktopsNeeded; self.windows=windows; self.groups=groups
+    }
+    /// Spaces to add with Mission Control's + so every group gets its own desk.
     public var missingDesktops: Int { SharedLayout.missingDesktops(needed:desktopsNeeded,available:desktopsNow) }
+    /// Groups of windows that were identified but have no desk to go to.
+    public var unplacedGroups: [DeskGroupDecision] { groups.filter{ $0.slot == nil && $0.mapping == .none && ($0.desk != nil || $0.ordinal != nil) } }
     public var readyCount: Int { items.filter{$0.state == .ready}.count }
     public var summary: String {
         let c={(s: QuickItemState) in self.items.filter{$0.state==s}.count}
@@ -283,85 +308,181 @@ public struct QuickRestorePlan {
     public var confirmedMatches: [Int:PinnedMatch] {
         Dictionary(uniqueKeysWithValues:items.compactMap{ item in item.state == .ready && item.chosenToken != nil ? (item.savedIndex,PinnedMatch(kind:item.matchKind,autoCertain:item.autoCertain)) : nil })
     }
+    /// Per app, saved windows reported as closed: "Antigravity：保存的 2 个窗口已关闭，现在开着的是另外 1 个窗口".
+    public func staleSummary(appName: (String) -> String = { $0 }) -> [String] {
+        let stale=items.filter(\.stale)
+        return Dictionary(grouping:stale,by:\.bundleID).sorted{ $0.key<$1.key }.map { bundle,list in
+            let others=list.map(\.staleOthers).max() ?? 0
+            return others>0 ? lk("%@：保存的 %@ 个窗口已关闭，现在开着的是另外 %@ 个窗口", appName(bundle), "\(list.count)", "\(others)")
+                            : lk("%@：保存的 %@ 个窗口已关闭", appName(bundle), "\(list.count)")
+        }
+    }
 }
 
 public struct PinnedMatch: Equatable { public var kind: MatchKind; public var autoCertain: Bool
     public init(kind: MatchKind,autoCertain: Bool=false) { self.kind=kind; self.autoCertain=autoCertain }
 }
 
+/// Plans a restore in three phases:
+///  1. Identification: which live window is each saved window. Runtime identity first (live record), then the
+///     window matcher, then elimination. With a live record, saved-only windows take certain matches only and never
+///     a window a live-record window took.
+///  2. Desk mapping (`DeskMapper`): one target desk per group of windows that shared a desk.
+///  3. Placement: target desk and frame per identified window; groups without a desk are left alone and reported.
 public enum QuickRestorePlanner {
     public static let oldRecordReason=lk("旧版布局缺少桌面顺序，请先重新保存一次此屏布局")
+    static let savedOnlyKinds: Set<MatchKind>=[.document,.title,.browserTitle,.tieBreak,.userChoice]
+
+    /// The 1-based slot on `displayToken` that counts as "the saved desk" when judging whether a window sits there:
+    /// its own desk by identity when that desk is on this display; nil when the desk is known to be elsewhere
+    /// (its ordinal then says nothing about this display); else the saved ordinal.
+    public static func evidenceSlot(_ saved: SavedWindow,ordinary: [Space],snapshot s: Snapshot) -> Int? {
+        if let d=saved.desk {
+            if let i=ordinary.firstIndex(where:{ d.matches($0) }) { return i+1 }
+            if s.spaces.contains(where:{ d.matches($0) }) { return nil }
+        }
+        return saved.desktopIndex
+    }
+
     public static func plan(record: MonitorLayoutRecord, monitor: MonitorIdentity, displayToken: String, snapshot s: Snapshot,
                             choices: [Int:QuickChoice] = [:], allowCrossSpace: Bool, crossSpaceBlockReason: String = lk("当前系统版本未验证跨桌面移动"),
-                            overflowToLast: Bool = false,browserProfiles: [String:String] = [:],pinnedMatches: [Int:PinnedMatch] = [:]) throws -> QuickRestorePlan {
+                            browserProfiles: [String:String] = [:],pinnedMatches: [Int:PinnedMatch] = [:],context: RestoreContext? = nil) throws -> QuickRestorePlan {
         try record.validate()
         guard record.monitor.key==monitor.key,let display=s.displays.first(where:{$0.token==displayToken && $0.role == .external}),display.visible.valid else { throw LayoutError.unsupported }
         let ordinary=s.spaces.filter{$0.displayToken==displayToken && $0.kind == .ordinary}
-        var items=[QuickRestoreItem](),entries=[PlanEntry](),pinned=[Int:Bool]()
-        let needed=record.profile.windows.compactMap(\.desktopIndex).max() ?? 0
-        for (index,saved) in record.profile.windows.enumerated() {
+        let windows=record.profile.windows
+        let sources=windows.indices.map{ context?.source($0) ?? .saved }
+        let hasLive=sources.contains{ $0 != .saved }
+        func candidate(_ w: ObservedWindow) -> QuickCandidate { QuickCandidate(token:w.token,title:w.selector.title,slot:WindowMatcher.slot(of:w,displayToken:displayToken,in:s),frame:w.frame) }
+        var items=windows.enumerated().map{ index,saved in
             var item=QuickRestoreItem(savedIndex:index,bundleID:saved.selector.bundleID,savedTitle:saved.selector.title,currentTitle:nil,currentSlot:nil,targetSlot:saved.desktopIndex,chosenToken:nil,candidates:[],matchKind:.none,state:.missing,reason:"")
-            if choices[index] == .skip { item.state = .skippedByUser; item.reason=lk("本次不恢复此窗口"); items.append(item); continue }
+            item.source=sources[index]; item.groupKey=saved.groupKey
+            return item
+        }
+        var identified=Set<Int>(),pinned=[Int:Bool]()
+        // Windows taken by live-record windows; saved-only windows never get them.
+        var liveClaimed=Set<String>()
+        // MARK: 1. Identification (live-record windows first)
+        for index in windows.indices.sorted(by:{ (sources[$0] == .saved ? 1 : 0,$0)<(sources[$1] == .saved ? 1 : 0,$1) }) {
+            let saved=windows[index]; var item=items[index]
+            defer { items[index]=item }
+            if choices[index] == .skip { item.state = .skippedByUser; item.reason=lk("本次不恢复此窗口"); continue }
             var choiceToken: String?
             if case .window(let token)? = choices[index] { choiceToken=token }
-            let m=WindowMatcher.match(saved,displayToken:displayToken,snapshot:s,choice:choiceToken,savedOfApp:record.profile.windows.filter{$0.selector.bundleID==saved.selector.bundleID}.count,browserProfiles:browserProfiles,savedOfProfile:saved.browserProfile.map{ f in record.profile.windows.filter{$0.selector.bundleID==saved.selector.bundleID && $0.browserProfile==f}.count } ?? 0)
-            item.candidates=m.candidates.map{QuickCandidate(token:$0.token,title:$0.selector.title,slot:WindowMatcher.slot(of:$0,displayToken:displayToken,in:s),frame:$0.frame)}
+            let appPool=s.windows.filter{ $0.selector.bundleID==saved.selector.bundleID && WindowMatcher.eligible($0,s) }
+            // Runtime identity: the very window the live record saw (a pinned token from the preview is the same).
+            if let rt=saved.runtime,let w=s.windows.first(where:{ rt.matches($0) }),choiceToken == nil || choiceToken==w.token {
+                item.candidates=appPool.map(candidate)
+                item.chosenToken=w.token; item.currentTitle=w.selector.title; item.currentSlot=WindowMatcher.slot(of:w,displayToken:displayToken,in:s)
+                guard WindowMatcher.eligible(w,s) else {
+                    item.state = .missing; item.chosenToken=nil; item.reason=lk("窗口现在最小化、全屏或在多个桌面上，这次没有移动"); continue
+                }
+                item.matchKind=sources[index] == .live ? .runtime : .deskEvidence; item.autoCertain=true
+                switch sources[index] {
+                case .savedDeskEvidence: item.reason=lk("标题已变化；它还在自己原来的桌面上（拔屏时随桌面移到了内置屏），按它恢复")
+                case .companion: item.reason=lk("拔屏时在这块屏的桌面上，跟同一组窗口一起恢复")
+                default: item.reason=w.selector.title != saved.selector.title ? lk("标题已变化；按拔屏前记下的窗口认出它") : ""
+                }
+                identified.insert(index); pinned[index]=true
+                if sources[index] != .saved { liveClaimed.insert(w.token) }
+                continue
+            }
+            if sources[index] == .companion || sources[index] == .savedDeskEvidence {
+                item.state = .missing; item.reason=lk("拔屏前记下的这个窗口已关闭"); continue
+            }
+            var view=s
+            if sources[index] == .saved && hasLive { view.windows=s.windows.filter{ !liveClaimed.contains($0.token) } }
+            var evidence=saved; evidence.desktopIndex=evidenceSlot(saved,ordinary:ordinary,snapshot:s)
+            let m=WindowMatcher.match(evidence,displayToken:displayToken,snapshot:view,choice:choiceToken,savedOfApp:windows.filter{$0.selector.bundleID==saved.selector.bundleID}.count,browserProfiles:browserProfiles,savedOfProfile:saved.browserProfile.map{ f in windows.filter{$0.selector.bundleID==saved.selector.bundleID && $0.browserProfile==f}.count } ?? 0)
+            item.candidates=m.candidates.map(candidate)
             item.matchKind=m.kind; item.reason=m.reason; item.chosenToken=m.chosen?.token; item.autoCertain=m.certain
             // A pin carried over from the preview keeps the preview's match kind, unless a known Chrome profile now differs.
             if m.kind == .userChoice,let pin=pinnedMatches[index],pin.kind != .userChoice,let w=m.chosen {
                 if let f=saved.browserProfile,let live=browserProfiles[w.token],live != f {
-                    item.state = .needsConfirmation; item.chosenToken=nil; item.reason=lk("窗口已属于其他 Chrome 用户，请重新选择"); items.append(item); continue
+                    item.state = .needsConfirmation; item.chosenToken=nil; item.reason=lk("窗口已属于其他 Chrome 用户，请重新选择"); continue
                 }
                 item.matchKind=pin.kind; item.autoCertain=pin.autoCertain
             }
             if let w=m.chosen { item.currentTitle=w.selector.title; item.currentSlot=WindowMatcher.slot(of:w,displayToken:displayToken,in:s) }
             switch m.verdict {
-            case .missing: item.state = .missing; items.append(item); continue
-            case .needsConfirmation: item.state = .needsConfirmation; items.append(item); continue
+            case .missing:
+                item.state = .missing
+                // The app is open, but each of its windows is a live-record window: this saved one is gone.
+                if sources[index] == .saved && hasLive && !appPool.isEmpty {
+                    item.stale=true; item.staleOthers=appPool.count
+                    item.reason=lk("没有找到保存的这个窗口，可能已关闭；同应用开着的 %@ 个窗口不是它，自动恢复不会拿它们代替", "\(appPool.count)")
+                }
+                continue
+            case .needsConfirmation: item.state = .needsConfirmation; continue
             case .unique: break
             }
+            // Saved-only windows next to a live record: certain matches only. A renamed one is not guessed.
+            if sources[index] == .saved && hasLive && !savedOnlyKinds.contains(item.matchKind) {
+                item.state = .needsConfirmation; item.chosenToken=nil; item.autoCertain=false; item.matchKind = .none
+                item.reason=lk("没有找到保存的这个窗口（可能已关闭）；同应用开着 %@ 个其他窗口，可以选一个代替，或跳过", "\(m.candidates.count)"); continue
+            }
             let w=m.chosen!
-            guard let savedTarget=saved.desktopIndex else { item.state = .blocked; item.reason=oldRecordReason; items.append(item); continue }
-            var target=savedTarget
-            if savedTarget>ordinary.count {
-                guard overflowToLast,let last=SharedLayout.targetSlot(saved:savedTarget,available:ordinary.count) else {
-                    item.state = .blocked; item.reason=lk("保存时在桌面 %@，现在这块屏只有 %@ 个桌面：请先在调度中心新建桌面", "\(savedTarget)", "\(ordinary.count)"); items.append(item); continue
-                }
-                target=last; item.targetSlot=last; item.overflowFrom=savedTarget
-                item.reason=lk("保存时在桌面 %@，现在只有 %@ 个桌面，先放到最后一个桌面；补齐桌面后会自动再恢复", "\(savedTarget)", "\(ordinary.count)")
-            }
-            let targetSpace=ordinary[target-1].id
-            let frame=saved.normalizedFrame.fitted(in:display.visible)
-            item.targetFrame=frame
-            item.moveSpace=w.spaceIDs != [targetSpace]
-            item.resize = !w.frame.near(frame)
-            item.crossDisplay=item.currentSlot==nil
-            if !item.moveSpace && !item.resize { item.state = .alreadyInPlace; if item.overflowFrom == nil { item.reason=lk("已在保存的桌面和位置") }; items.append(item); continue }
-            if item.moveSpace && !allowCrossSpace { item.state = .blocked; item.reason=crossSpaceBlockReason; items.append(item); continue }
-            if item.moveSpace,let why=MoveScope.problem(window:w,targetSpace:targetSpace,targetDisplay:displayToken,snapshot:s) {
-                item.state = .blocked; item.reason=lk("无法跨桌面移动：%@", "\(why)"); items.append(item); continue
-            }
-            item.state = .ready
-            if item.reason.isEmpty { item.reason=item.crossDisplay ? lk("从另一块屏幕移回") : "" }
+            identified.insert(index)
             pinned[index]=m.kind == .userChoice || m.kind == .tieBreak || m.kind == .browserProfile || m.kind == .onlyWindow || s.windows.filter{w.selector.matches($0.selector)}.count != 1
-            items.append(item)
+            if sources[index] != .saved { liveClaimed.insert(w.token) }
         }
         // One live window can satisfy only one saved record.
-        var claimed=items.filter{[.ready,.alreadyInPlace,.blocked].contains($0.state)}.compactMap(\.chosenToken)
-        for i in items.indices where [.ready,.alreadyInPlace,.blocked].contains(items[i].state) {
-            if let token=items[i].chosenToken,claimed.filter({$0==token}).count>1 {
-                items[i].state = .needsConfirmation; items[i].reason=lk("多个保存记录对应到同一个窗口，请逐个选择")
-            }
+        let tokens=identified.compactMap{ items[$0].chosenToken }
+        for i in identified where tokens.filter({ $0==items[i].chosenToken }).count>1 {
+            items[i].state = .needsConfirmation; items[i].reason=lk("多个保存记录对应到同一个窗口，请逐个选择")
+            identified.remove(i); pinned[i]=nil
         }
-        claimed=items.filter{[.ready,.alreadyInPlace,.blocked].contains($0.state)}.compactMap(\.chosenToken)
+        var claimed=identified.compactMap{ items[$0].chosenToken }
         // Leftover windows of the same app: after certain matches are taken, if N unmatched saved windows and N
         // unmatched live windows remain for that app, pair them (manual restore only — not certain enough for auto).
         // Typical cases: a renamed WorkBuddy, or a Chrome tab whose title/URL changed while the other Chrome matched.
-        resolveByElimination(&items,record:record,choices:choices,displayToken:displayToken,snapshot:s,ordinary:ordinary,display:display,allowCrossSpace:allowCrossSpace,crossSpaceBlockReason:crossSpaceBlockReason,overflowToLast:overflowToLast,claimed:&claimed,pinned:&pinned,browserProfiles:browserProfiles)
+        resolveByElimination(&items,windows:windows,choices:choices,displayToken:displayToken,snapshot:s,ordinary:ordinary,claimed:&claimed,identified:&identified,pinned:&pinned,browserProfiles:browserProfiles,excluded:hasLive ? Set(windows.indices.filter{ sources[$0] == .saved }) : [])
+
+        // MARK: 2. Desk mapping
+        var order=[String](),members=[String:[Int]]()
+        for i in windows.indices { let k=windows[i].groupKey; if members[k] == nil { order.append(k) }; members[k,default:[]].append(i) }
+        let groups=order.compactMap { k -> DeskMapper.Group? in
+            let idx=members[k]!
+            let count=idx.filter{ identified.contains($0) }.count
+            guard count>0 else { return nil }
+            return DeskMapper.Group(key:k,ordinal:idx.compactMap{ windows[$0].desktopIndex }.min(),desk:idx.compactMap{ windows[$0].desk }.first,windows:count)
+        }
+        let decisions=DeskMapper.map(groups,target:ordinary)
+        let byKey=Dictionary(uniqueKeysWithValues:decisions.map{ ($0.key,$0) })
+        let unplaced=decisions.filter{ $0.slot == nil && ($0.desk != nil || $0.ordinal != nil) }.count
+
+        // MARK: 3. Placement
+        var entries=[PlanEntry]()
+        for i in identified.sorted() {
+            let saved=windows[i]
+            guard let w=s.windows.first(where:{ $0.token==items[i].chosenToken }) else { continue }
+            let decision=byKey[saved.groupKey]
+            items[i].deskMapping=decision?.mapping ?? .none
+            guard let slot=decision?.slot else {
+                items[i].state = .blocked
+                items[i].targetSlot=nil
+                items[i].reason=(decision?.desk == nil && decision?.ordinal == nil) ? oldRecordReason
+                    : lk("这一组窗口没有空桌面可放（还缺 %@ 个桌面），这次没有移动", "\(unplaced)")
+                continue
+            }
+            let targetSpace=ordinary[slot-1].id
+            let frame=saved.normalizedFrame.fitted(in:display.visible)
+            items[i].targetSlot=slot; items[i].targetSpaceID=targetSpace; items[i].targetFrame=frame
+            items[i].moveSpace=w.spaceIDs != [targetSpace]
+            items[i].resize = !w.frame.near(frame)
+            items[i].crossDisplay=items[i].currentSlot==nil
+            if !items[i].moveSpace && !items[i].resize { items[i].state = .alreadyInPlace; items[i].reason=lk("已在保存的桌面和位置"); continue }
+            if items[i].moveSpace && !allowCrossSpace { items[i].state = .blocked; items[i].reason=crossSpaceBlockReason; continue }
+            if items[i].moveSpace,let why=MoveScope.problem(window:w,targetSpace:targetSpace,targetDisplay:displayToken,snapshot:s) {
+                items[i].state = .blocked; items[i].reason=lk("无法跨桌面移动：%@", "\(why)"); continue
+            }
+            items[i].state = .ready
+            if items[i].reason.isEmpty { items[i].reason=items[i].crossDisplay ? lk("从另一块屏幕移回") : "" }
+        }
         // Last window of an app: when every other saved window of the app is matched for certain and the app has as
         // many live windows as saved ones, the single remaining Chrome slot match is certain too (unless a known
         // profile folder contradicts it).
-        let strongKinds: Set<MatchKind>=[.document,.title,.browserTitle,.browserProfile,.onlyWindow]
+        let strongKinds: Set<MatchKind>=[.document,.title,.browserTitle,.browserProfile,.onlyWindow,.runtime,.deskEvidence]
         for bundle in Set(items.map(\.bundleID)) {
             let mine=items.indices.filter{ items[$0].bundleID==bundle }
             let weak=mine.filter{ !(strongKinds.contains(items[$0].matchKind) && [.ready,.alreadyInPlace].contains(items[$0].state)) }
@@ -369,22 +490,24 @@ public enum QuickRestorePlanner {
                   let token=items[i].chosenToken else { continue }
             let live=s.windows.filter{ $0.selector.bundleID==bundle && WindowMatcher.eligible($0,s) }
             guard live.count==mine.count else { continue }
-            if let f=record.profile.windows[items[i].savedIndex].browserProfile,let lf=browserProfiles[token],lf != f { continue }
+            if let f=windows[items[i].savedIndex].browserProfile,let lf=browserProfiles[token],lf != f { continue }
             items[i].autoCertain=true
         }
         var entrySaved=[Int]()
         for item in items where item.state == .ready {
-            let saved=record.profile.windows[item.savedIndex]
+            let saved=windows[item.savedIndex]
             guard let w=s.windows.first(where:{$0.token==item.chosenToken}),let slot=item.targetSlot else { continue }
             var entry=PlanEntry(saved:saved,status:.ready,reason:item.actionText,window:w,targetSpace:ordinary[slot-1].id,targetDisplay:displayToken,targetFrame:item.targetFrame)
             entry.tokenPinned=pinned[item.savedIndex]==true ? true : nil
             entries.append(entry); entrySaved.append(item.savedIndex)
         }
-        return QuickRestorePlan(items:items,plan:RestorePlan(session:s.session,topology:s.topology,entries:entries),entrySavedIndex:entrySaved,desktopsNow:ordinary.count,desktopsNeeded:needed)
+        return QuickRestorePlan(items:items,plan:RestorePlan(session:s.session,topology:s.topology,entries:entries),entrySavedIndex:entrySaved,
+                                desktopsNow:ordinary.count,desktopsNeeded:ordinary.count+unplaced,windows:windows,groups:decisions)
     }
     /// Auto mode: execute only items that were matched without any user input and are not on an unverified path.
     /// Windows that macOS parked on the other screen (it does this when the monitor is unplugged) come back too,
-    /// but only when their identity is certain: same document, same title, or same browser page.
+    /// but only when their identity is certain: same document, same title, same browser page, or the same window
+    /// the live record saw.
     public static func autoSubset(_ quick: QuickRestorePlan) -> RestorePlan {
         var plan=quick.plan
         plan.entries=zip(quick.plan.entries,quick.entrySavedIndex).filter{ _,index in
@@ -395,12 +518,13 @@ public enum QuickRestorePlanner {
     }
 
     /// Pair leftover unmatched saved windows with leftover live windows of the same app when the counts match.
-    static func resolveByElimination(_ items: inout [QuickRestoreItem],record: MonitorLayoutRecord,choices: [Int:QuickChoice],displayToken: String,snapshot s: Snapshot,ordinary: [Space],display: Display,allowCrossSpace: Bool,crossSpaceBlockReason: String,overflowToLast: Bool,claimed: inout [String],pinned: inout [Int:Bool],browserProfiles: [String:String] = [:]) {
-        let bundles=Set(items.filter{$0.state == .needsConfirmation}.map(\.bundleID))
-        for bundle in bundles {
-            // Never override an explicit user choice, and never guess document windows (another file is another window).
-            let open=items.indices.filter{ items[$0].bundleID==bundle && items[$0].state == .needsConfirmation && choices[items[$0].savedIndex] == nil
-                && (record.profile.windows[items[$0].savedIndex].selector.document ?? "").isEmpty }
+    /// Identification only: the desk comes from the mapping phase like every other window.
+    static func resolveByElimination(_ items: inout [QuickRestoreItem],windows: [SavedWindow],choices: [Int:QuickChoice],displayToken: String,snapshot s: Snapshot,ordinary: [Space],claimed: inout [String],identified: inout Set<Int>,pinned: inout [Int:Bool],browserProfiles: [String:String] = [:],excluded: Set<Int> = []) {
+        let bundles=Set(items.filter{$0.state == .needsConfirmation && !excluded.contains($0.savedIndex)}.map(\.bundleID))
+        func slotOf(_ saved: SavedWindow) -> Int? { evidenceSlot(saved,ordinary:ordinary,snapshot:s) }
+        for bundle in bundles.sorted() {
+            let open=items.indices.filter{ items[$0].bundleID==bundle && items[$0].state == .needsConfirmation && choices[items[$0].savedIndex] == nil && !excluded.contains($0) &&
+                (windows[items[$0].savedIndex].selector.document ?? "").isEmpty }
             // All unresolved records of this app must be eligible, otherwise counts would not mean a one-to-one pairing.
             guard open.count==items.filter({ $0.bundleID==bundle && $0.state == .needsConfirmation }).count else { continue }
             guard !open.isEmpty else { continue }
@@ -408,68 +532,47 @@ public enum QuickRestorePlanner {
             let taken=Set(claimed)
             let leftover=s.windows.filter{ $0.selector.bundleID==bundle && WindowMatcher.eligible($0,s) && !taken.contains($0.token) }
             // A Chrome window known to be another profile is never paired by elimination.
-            let mismatch=open.contains{ i in record.profile.windows[items[i].savedIndex].browserProfile.map{ f in leftover.contains{ browserProfiles[$0.token].map{ $0 != f } ?? false } } ?? false }
+            let mismatch=open.contains{ i in windows[items[i].savedIndex].browserProfile.map{ f in leftover.contains{ browserProfiles[$0.token].map{ $0 != f } ?? false } } ?? false }
             if mismatch { continue }
+            func take(_ i: Int,_ pick: ObservedWindow,certain: Bool,reason: String) {
+                items[i].chosenToken=pick.token; items[i].currentTitle=pick.selector.title
+                items[i].currentSlot=WindowMatcher.slot(of:pick,displayToken:displayToken,in:s)
+                items[i].matchKind = .elimination; items[i].autoCertain=certain; items[i].reason=reason
+                identified.insert(i); pinned[i]=true; claimed.append(pick.token)
+            }
             if leftover.count != open.count {
                 // Counts differ: only take a leftover window when it is the single one on the saved desktop at the
                 // saved position for exactly one open record. Anything else keeps asking.
                 var used=Set<String>()
                 for i in open {
-                    let saved=record.profile.windows[items[i].savedIndex]
-                    guard let slot=saved.desktopIndex,slot<=ordinary.count else { continue }
+                    let saved=windows[items[i].savedIndex]
+                    guard let slot=slotOf(saved),slot<=ordinary.count else { continue }
                     let placed=leftover.filter{ WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==slot && WindowMatcher.geometryMatches(saved,$0,s) }
                     guard placed.count==1,!used.contains(placed[0].token) else { continue }
-                    let rivals=open.filter{ j in j != i && { let o=record.profile.windows[items[j].savedIndex]; return o.desktopIndex==slot && WindowMatcher.geometryMatches(o,placed[0],s) }() }
+                    let rivals=open.filter{ j in j != i && { let o=windows[items[j].savedIndex]; return slotOf(o)==slot && WindowMatcher.geometryMatches(o,placed[0],s) }() }
                     guard rivals.isEmpty else { continue }
-                    let pick=placed[0]; used.insert(pick.token)
-                    let targetSpace=ordinary[slot-1].id
-                    let frame=saved.normalizedFrame.fitted(in:display.visible)
-                    items[i].chosenToken=pick.token; items[i].currentTitle=pick.selector.title; items[i].currentSlot=slot
-                    items[i].matchKind = .elimination; items[i].targetFrame=frame
-                    items[i].moveSpace=pick.spaceIDs != [targetSpace]; items[i].resize = !pick.frame.near(frame); items[i].crossDisplay=false
-                    claimed.append(pick.token)
-                    if !items[i].resize { items[i].state = .alreadyInPlace; items[i].reason=lk("已在保存的桌面和位置"); continue }
-                    items[i].state = .ready; items[i].reason=lk("标题已变化；同一桌面同一位置只有这一个窗口，按它恢复"); pinned[i]=true
+                    used.insert(placed[0].token)
+                    take(i,placed[0],certain:false,reason:lk("标题已变化；同一桌面同一位置只有这一个窗口，按它恢复"))
                 }
                 continue
             }
             // Pair by saved desktop, then by geometry, then by stable token order so the pairing is deterministic.
             var free=leftover
             for i in open.sorted(by:{ (items[$0].targetSlot ?? 0)<(items[$1].targetSlot ?? 0) }) {
-                let saved=record.profile.windows[items[i].savedIndex]
+                let saved=windows[items[i].savedIndex]
                 let pick: ObservedWindow
                 if free.count==1 { pick=free.removeFirst() }
-                else if let slot=saved.desktopIndex,let same=free.first(where:{WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==slot}) {
+                else if let slot=slotOf(saved),let same=free.first(where:{WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==slot}) {
                     pick=same; free.removeAll{$0.token==pick.token}
                 } else if let geo=free.first(where:{WindowMatcher.geometryMatches(saved,$0,s)}) {
                     pick=geo; free.removeAll{$0.token==pick.token}
                 } else {
                     free.sort{$0.token<$1.token}; pick=free.removeFirst()
                 }
-                guard let savedTarget=saved.desktopIndex else { continue }
-                var target=savedTarget
-                if savedTarget>ordinary.count {
-                    guard overflowToLast,let last=SharedLayout.targetSlot(saved:savedTarget,available:ordinary.count) else { continue }
-                    target=last; items[i].targetSlot=last; items[i].overflowFrom=savedTarget
-                }
-                let targetSpace=ordinary[target-1].id
-                let frame=saved.normalizedFrame.fitted(in:display.visible)
-                items[i].chosenToken=pick.token; items[i].currentTitle=pick.selector.title
-                items[i].currentSlot=WindowMatcher.slot(of:pick,displayToken:displayToken,in:s)
                 items[i].candidates=leftover.map{QuickCandidate(token:$0.token,title:$0.selector.title,slot:WindowMatcher.slot(of:$0,displayToken:displayToken,in:s),frame:$0.frame)}
-                items[i].matchKind = .elimination; items[i].targetFrame=frame
-                items[i].moveSpace=pick.spaceIDs != [targetSpace]; items[i].resize = !pick.frame.near(frame)
-                items[i].crossDisplay=items[i].currentSlot==nil
-                if !items[i].moveSpace && !items[i].resize { items[i].state = .alreadyInPlace; items[i].reason=lk("已在保存的桌面和位置"); claimed.append(pick.token); continue }
-                if items[i].moveSpace && !allowCrossSpace { items[i].state = .blocked; items[i].reason=crossSpaceBlockReason; continue }
-                if items[i].moveSpace,let why=MoveScope.problem(window:pick,targetSpace:targetSpace,targetDisplay:displayToken,snapshot:s) {
-                    items[i].state = .blocked; items[i].reason=lk("无法跨桌面移动：%@", "\(why)"); continue
-                }
-                items[i].state = .ready
                 // Every other window of this app is matched with certainty and exactly one saved and one live window are left.
-                items[i].autoCertain = open.count==1 && leftover.count==1 && items.filter{ $0.bundleID==bundle }.count>1
-                items[i].reason=lk("同应用还有 %@ 个未匹配窗口，按剩余数量一一对应", "\(leftover.count)")
-                pinned[i]=true; claimed.append(pick.token)
+                take(i,pick,certain:open.count==1 && leftover.count==1 && items.filter{ $0.bundleID==bundle }.count>1,
+                     reason:lk("同应用还有 %@ 个未匹配窗口，按剩余数量一一对应", "\(leftover.count)"))
             }
         }
     }
@@ -479,33 +582,57 @@ public enum QuickRestorePlanner {
         if item.autoCertain && (item.matchKind == .elimination || item.matchKind == .slotGeometry) { return true }
         // Only confidently identified windows move on their own. Being on the other display is not a reason to hold
         // back: after a plug-in nearly every window is, and manual restore moves them the same way.
-        return [.document,.title,.browserTitle,.browserProfile,.onlyWindow].contains(item.matchKind)
+        return [.document,.title,.browserTitle,.browserProfile,.onlyWindow,.runtime,.deskEvidence].contains(item.matchKind)
+    }
+    /// Whether `w` is plausibly the saved window: same title or document (browser page title for browsers), or the
+    /// same Chrome profile. Only such a window may make a saved window count as "already in place".
+    public static func related(_ saved: SavedWindow,_ w: ObservedWindow,browserProfiles: [String:String]) -> Bool {
+        guard saved.selector.bundleID==w.selector.bundleID else { return false }
+        if WindowMatcher.strong(saved,w) != nil { return true }
+        if !saved.selector.title.isEmpty,saved.selector.title==w.selector.title { return true }
+        if let f=saved.browserProfile { return browserProfiles[w.token]==f }
+        if BrowserTitles.isBrowser(saved.selector.bundleID),let p=BrowserTitles.profile(saved.selector.title,bundleID:saved.selector.bundleID) {
+            return BrowserTitles.profile(w.selector.title,bundleID:w.selector.bundleID)==p
+        }
+        return false
     }
     /// Automatic only. Per app: U = saved windows still needing confirmation, L = live windows of that app that no
-    /// other saved window has claimed. When every window in L already sits on the desk and geometry of every saved
-    /// window in U, any pairing is a no-op, so nothing needs asking:
-    ///  - |L| ≥ |U|: all of U are already in place;
-    ///  - |L| < |U|: |L| of them are in place and the other |U|-|L| saved windows have no live window — missing.
-    /// Otherwise (some candidate is elsewhere) the items stay needsConfirmation. Manual keeps asking.
-    public static func quietAlreadyInPlace(_ quick: QuickRestorePlan,record: MonitorLayoutRecord,snapshot s: Snapshot,displayToken: String) -> (plan: QuickRestorePlan,quieted: [Int],missing: [Int]) {
-        var q=quick, quieted=[Int](), missing=[Int]()
+    /// other saved window has claimed.
+    ///  - A saved window in U that no window in L is related to (title, document or Chrome profile) is stale: the
+    ///    window is gone and the open ones are other windows. It becomes `.missing` with `stale` set and is reported
+    ///    as closed. It never counts as in place.
+    ///  - For the rest of U and the windows of L related to them: when every such window already sits on the saved
+    ///    desk and geometry, any pairing is a no-op, so nothing needs asking: |L| ≥ |U| all in place; |L| < |U|: |L|
+    ///    in place, the other saved windows missing. Otherwise they stay needsConfirmation. Manual keeps asking.
+    public static func quietAlreadyInPlace(_ quick: QuickRestorePlan,record: MonitorLayoutRecord,snapshot s: Snapshot,displayToken: String,browserProfiles: [String:String] = [:]) -> (plan: QuickRestorePlan,quieted: [Int],missing: [Int],stale: [Int]) {
+        var q=quick, quieted=[Int](), missing=[Int](), stale=[Int]()
+        let windows=q.windows.isEmpty ? record.profile.windows : q.windows
+        let ordinary=s.spaces.filter{ $0.displayToken==displayToken && $0.kind == .ordinary }
         let claimed=Set(q.items.filter{ [.ready,.alreadyInPlace,.blocked].contains($0.state) }.compactMap(\.chosenToken))
         for bundle in Set(q.items.filter{ $0.state == .needsConfirmation }.map(\.bundleID)).sorted() {
-            let u=q.items.indices.filter{ q.items[$0].bundleID==bundle && q.items[$0].state == .needsConfirmation && record.profile.windows.indices.contains(q.items[$0].savedIndex) }
+            let u=q.items.indices.filter{ q.items[$0].bundleID==bundle && q.items[$0].state == .needsConfirmation && windows.indices.contains(q.items[$0].savedIndex) }
             let l=s.windows.filter{ $0.selector.bundleID==bundle && WindowMatcher.eligible($0,s) && !claimed.contains($0.token) }
-            guard !u.isEmpty,!l.isEmpty else { continue }
-            let allInPlace=u.allSatisfy { i in
-                let saved=record.profile.windows[q.items[i].savedIndex]
-                guard let desk=saved.desktopIndex else { return false }
-                return l.allSatisfy{ WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==desk && WindowMatcher.geometryMatches(saved,$0,s) }
+            guard !u.isEmpty else { continue }
+            let rel=u.filter{ i in l.contains{ related(windows[q.items[i].savedIndex],$0,browserProfiles:browserProfiles) } }
+            for i in u where !rel.contains(i) {
+                q.items[i].state = .missing; q.items[i].stale=true; q.items[i].staleOthers=l.count; q.items[i].chosenToken=nil
+                q.items[i].reason=l.isEmpty ? lk("没有找到保存的这个窗口，可能已关闭") : lk("没有找到保存的这个窗口，可能已关闭；同应用开着的 %@ 个窗口不是它，自动恢复不会拿它们代替", "\(l.count)")
+                stale.append(q.items[i].savedIndex)
+            }
+            let lRel=l.filter{ w in rel.contains{ related(windows[q.items[$0].savedIndex],w,browserProfiles:browserProfiles) } }
+            guard !rel.isEmpty,!lRel.isEmpty else { continue }
+            let allInPlace=rel.allSatisfy { i in
+                let saved=windows[q.items[i].savedIndex]
+                guard let desk=evidenceSlot(saved,ordinary:ordinary,snapshot:s) else { return false }
+                return lRel.allSatisfy{ WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==desk && WindowMatcher.geometryMatches(saved,$0,s) }
             }
             guard allInPlace else { continue }
-            for (n,i) in u.enumerated() {
-                if n<l.count { q.items[i].state = .alreadyInPlace; q.items[i].reason=lk("已在保存的桌面和位置"); quieted.append(q.items[i].savedIndex) }
+            for (n,i) in rel.enumerated() {
+                if n<lRel.count { q.items[i].state = .alreadyInPlace; q.items[i].reason=lk("已在保存的桌面和位置"); quieted.append(q.items[i].savedIndex) }
                 else { q.items[i].state = .missing; q.items[i].reason=lk("这个应用现在的窗口比保存时少，这个窗口可能已经关闭"); missing.append(q.items[i].savedIndex) }
             }
         }
-        return (q,quieted,missing)
+        return (q,quieted,missing,stale)
     }
     /// What execution runs: the preview's own matches (identification happens once, at plan time), filtered to
     /// `autoEligible` when automatic, each bound to the same live window token in `fresh`. Windows that are gone are

@@ -23,7 +23,11 @@ public struct Display: Codable, Equatable {
 }
 public struct Space: Codable, Equatable {
     public var id: UInt64; public var displayToken: String; public var kind: SpaceKind; public var active: Bool
-    public init(id: UInt64, displayToken: String, kind: SpaceKind = .ordinary, active: Bool = false) { self.id=id; self.displayToken=displayToken; self.kind=kind; self.active=active }
+    /// The desktop's "uuid" from the managed-spaces table, when macOS reports one. Like the ManagedSpaceID it
+    /// survives unplug/replug (macOS carries the desktop to the built-in screen and back); it is the stronger of the
+    /// two identities because IDs are reused after a logout while uuids are not. Optional: older snapshots lack it.
+    public var uuid: String? = nil
+    public init(id: UInt64, displayToken: String, kind: SpaceKind = .ordinary, active: Bool = false, uuid: String? = nil) { self.id=id; self.displayToken=displayToken; self.kind=kind; self.active=active; self.uuid=uuid }
 }
 public struct WindowSelector: Codable, Equatable, Hashable {
     public var bundleID: String; public var document: String?; public var title: String
@@ -43,7 +47,8 @@ public struct ObservedWindow: Codable, Equatable {
         self.token=token; self.selector=selector; self.frame=frame; self.spaceIDs=spaceIDs; self.ordinary=ordinary; self.minimized=minimized; self.fullScreen=fullScreen; self.processStartedAt=processStartedAt
     }
 }
-// Snapshot IDs are scoped to the running observer. Never serialize them into a profile.
+// Window tokens are scoped to the running observer and never go into a saved profile. Desk (Space) IDs and uuids do
+// since 0.6.9 (`SavedWindow.desktopID`): macOS keeps them when the monitor is unplugged and plugged back in.
 public struct Snapshot: Codable {
     public var session: UUID; public var topology: String; public var displays: [Display]; public var spaces: [Space]; public var windows: [ObservedWindow]
     public init(session: UUID, topology: String, displays: [Display], spaces: [Space], windows: [ObservedWindow]) { self.session=session; self.topology=topology; self.displays=displays; self.spaces=spaces; self.windows=windows }
@@ -56,14 +61,37 @@ public struct SavedWindow: Codable, Equatable {
     /// Chrome profile folder ("Default", "Profile 2", …) when it could be determined at save time. Display names can
     /// repeat across Google accounts; the folder cannot. Local only, never synced.
     public var browserProfile: String?=nil
-    public init(selector: WindowSelector, displayRole: DisplayRole, desktopLabel: String, normalizedFrame: Rect, desktopIndex: Int? = nil) { self.selector=selector; self.displayRole=displayRole; self.desktopLabel=desktopLabel; self.normalizedFrame=normalizedFrame; self.desktopIndex=desktopIndex }
+    /// The desktop's ManagedSpaceID when saved. macOS keeps a desktop's ID (and uuid) when the monitor is unplugged
+    /// and plugged back in, so on restore the window goes back to this exact desktop if it is on the target screen,
+    /// regardless of how many desktops were added or removed before it. Absent in records saved before 0.6.9.
+    public var desktopID: UInt64?=nil
+    /// The desktop's managed-spaces uuid when saved (see `Space.uuid`). Absent before 0.6.9 or when macOS has none.
+    public var desktopUUID: String?=nil
+    /// Which live window this was when recorded (live record only). Valid only within one app run: the token is
+    /// "pid:windowID", and the process start time guards against pid reuse.
+    public var runtime: RuntimeWindowIdentity?=nil
+    public init(selector: WindowSelector, displayRole: DisplayRole, desktopLabel: String, normalizedFrame: Rect, desktopIndex: Int? = nil, desktopID: UInt64? = nil, desktopUUID: String? = nil) { self.selector=selector; self.displayRole=displayRole; self.desktopLabel=desktopLabel; self.normalizedFrame=normalizedFrame; self.desktopIndex=desktopIndex; self.desktopID=desktopID; self.desktopUUID=desktopUUID }
+}
+/// A window's identity inside one run of its app: CGWindowID-based token plus the app's launch date. If both match,
+/// it is the same window even if its title changed in between.
+public struct RuntimeWindowIdentity: Codable, Equatable, Hashable {
+    public var token: String; public var processStartedAt: Date?
+    public init(token: String, processStartedAt: Date?) { self.token=token; self.processStartedAt=processStartedAt }
+    /// Same token and the same process run. A missing launch date on either side never matches: a reused pid
+    /// could otherwise inherit an old window's identity.
+    public func matches(_ window: ObservedWindow) -> Bool {
+        guard token == window.token, let a = processStartedAt, let b = window.processStartedAt else { return false }
+        return abs(a.timeIntervalSince(b)) <= 0.5
+    }
+    /// The CGWindowID part of the token, if it has one.
+    public var windowID: UInt32? { token.split(separator: ":").last.flatMap { UInt32($0) } }
 }
 public struct Profile: Codable, Equatable {
     public var schemaVersion = 1; public var location: String; public var windows: [SavedWindow]
     public init(location: String, windows: [SavedWindow]) { self.location=location; self.windows=windows }
     public func validate() throws {
         guard schemaVersion == 1, !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LayoutError.invalidProfile }
-        guard windows.allSatisfy({ $0.selector.usable && !$0.desktopLabel.isEmpty && $0.normalizedFrame.valid && $0.normalizedFrame.width <= 4 && $0.normalizedFrame.height <= 4 && ($0.desktopIndex ?? 1) >= 1 && ($0.desktopIndex ?? 1) <= 64 }) else { throw LayoutError.invalidProfile }
+        guard windows.allSatisfy({ ($0.selector.usable || $0.runtime != nil) && !$0.desktopLabel.isEmpty && $0.normalizedFrame.valid && $0.normalizedFrame.width <= 4 && $0.normalizedFrame.height <= 4 && ($0.desktopIndex ?? 1) >= 1 && ($0.desktopIndex ?? 1) <= 64 }) else { throw LayoutError.invalidProfile }
     }
 }
 public struct DesktopBinding: Equatable {

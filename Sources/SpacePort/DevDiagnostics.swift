@@ -41,7 +41,7 @@ enum DevDiagnostics {
             let map=resolver?.map(s.windows) ?? [:]
             lines.append("chrome status=\(ChromeProfiles.lastStatus)")
             lines+=Model.chromeProfileLines(label:"dry",resolver:resolver,windows:s.windows)
-            let p=try QuickRestorePlanner.plan(record:record,monitor:record.monitor,displayToken:m.runtimeDisplayToken,snapshot:s,allowCrossSpace:true,overflowToLast:record.monitor.isSharedExternal,browserProfiles:map)
+            let p=try QuickRestorePlanner.plan(record:record,monitor:record.monitor,displayToken:m.runtimeDisplayToken,snapshot:s,allowCrossSpace:true,browserProfiles:map)
             lines.append("monitor now: \(m.identity.key)  saved: \(record.monitor.key)  live windows: \(s.windows.count)")
             for i in p.items {
                 let sp=record.profile.windows[i.savedIndex].browserProfile.map{" [\($0)]"} ?? ""
@@ -98,10 +98,10 @@ extension DevDiagnostics {
             RunLoop.current.run(until:Date(timeIntervalSinceNow:0.8))
             let s1=try scanTest()
             log("after scramble: "+s1.windows.map{"\($0.selector.title)@\($0.frame)"}.joined(separator:", "))
-            let pc=try QuickRestorePlanner.plan(record:record,monitor:m.identity,displayToken:m.runtimeDisplayToken,snapshot:s1,allowCrossSpace:true,overflowToLast:false)
+            let pc=try QuickRestorePlanner.plan(record:record,monitor:m.identity,displayToken:m.runtimeDisplayToken,snapshot:s1,allowCrossSpace:true)
             for i in pc.items { log("plan(cross-Space on) #\(i.savedIndex) \(i.savedTitle): \(i.state) \(i.matchKind) | \(i.reason)") }
             log("auto subset entries (cross on): \(QuickRestorePlanner.autoSubset(pc).entries.count)")
-            let p=try QuickRestorePlanner.plan(record:record,monitor:m.identity,displayToken:m.runtimeDisplayToken,snapshot:s1,allowCrossSpace:false,overflowToLast:false)
+            let p=try QuickRestorePlanner.plan(record:record,monitor:m.identity,displayToken:m.runtimeDisplayToken,snapshot:s1,allowCrossSpace:false)
             for i in p.items { log("plan #\(i.savedIndex) \(i.savedTitle): \(i.state) \(i.matchKind) | \(i.reason)") }
             log("auto subset entries: \(QuickRestorePlanner.autoSubset(p).entries.count)")
             let slow=SlowFirstRead(ax,slow:Set(s1.windows.prefix(1).map(\.token)))
