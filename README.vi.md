@@ -32,12 +32,18 @@ LayoutKeeper nằm trên thanh menu và ghi nhớ vị trí từng cửa sổ tr
 - **Lịch sử phiên bản.** Giữ 5 phiên bản gần nhất của mỗi màn hình để bạn quay lại.
 - **Xem trước, hoàn tác bất cứ lúc nào.** Bạn thấy trước từng cửa sổ sẽ di chuyển thế nào, và mọi lần khôi phục đều hoàn tác được bằng một cú nhấp.
 - **Không đoán mò.** Sau khi di chuyển mỗi cửa sổ, ứng dụng kiểm tra lại xem nó đã tới đúng chỗ chưa và hoàn lại nếu thất bại. Nếu không phân biệt được hai cửa sổ cùng tên, nó sẽ hỏi bạn.
+- **Sắp xếp màn hình.** Nếu cùng một màn hình ngoài lúc đặt phía trên MacBook, lúc đặt bên cạnh, chỉ cần chọn vị trí (ngay phía trên / phải / dưới / trái) từ thanh menu, không cần kéo trong Cài đặt hệ thống. Các vị trí khác (căn trái, lệch…) có thể lưu thành vị trí tùy chỉnh. Sau khi chuyển, bạn có 15 giây để bấm **Keep**, nếu không sẽ tự quay lại như cũ. Màn hình chính và độ phân giải giữ nguyên, và không kích hoạt khôi phục cửa sổ.
 - **Phím tắt toàn cục:** ⌃⌥⌘S lưu, ⌃⌥⌘R khôi phục, ⌃⌥⌘Z hoàn tác. Có thể đổi hoặc tắt.
 - **Tự động cập nhật** qua Sparkle. Bản cập nhật được kiểm tra chữ ký và giữ nguyên quyền Trợ năng.
 
 <p align="center">
   <img src="docs/images/settings-general.png" width="440" alt="Cài đặt: chế độ bố cục dùng chung và quản lý màn hình nền">
   <img src="docs/images/settings-display.png" width="440" alt="Cài đặt: màn hình, phím độ sáng và âm lượng">
+</p>
+
+<p align="center">
+  <img src="docs/images/display-arrangement-menu.png" width="520" alt="Thanh menu: sắp xếp màn hình">
+  <img src="docs/images/display-arrangement-confirm.png" width="380" alt="Giữ cách sắp xếp này? Tự quay lại sau 15 giây">
 </p>
 
 ## Cài đặt

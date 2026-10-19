@@ -32,12 +32,18 @@ LayoutKeeper 常驻菜单栏，记住外接屏上每个窗口的位置，**包�
 - **历史版本**：每块屏幕保留最近 5 个版本，随时回退。
 - **先预览、可撤销**：恢复前能看到每个窗口怎么动，每次恢复都能一键撤销。
 - **不乱猜**：每个窗口移动后都会回读确认，没到位就回滚；分不清同名窗口时会问你。
+- **显示器排列**：同一块外接屏有时放在 MacBook 上方、有时放在旁边，可以直接在菜单栏选「外接屏在正上方 / 正右方 / 正下方 / 正左方」，不用再去系统设置里拖。其他位置（靠左、错开…）可以存成自定义位置。切换后 15 秒内点「保留」才会留下，不点就自动还原。主屏幕和分辨率不变，也不会触发窗口恢复。
 - **全局快捷键**：⌃⌥⌘S 保存、⌃⌥⌘R 恢复、⌃⌥⌘Z 撤销，可自定义或关闭。
 - **自动更新**（Sparkle）：更新包有签名校验，更新后辅助功能权限不会丢。
 
 <p align="center">
   <img src="docs/images/settings-general.png" width="440" alt="设置：共用布局模式和桌面管理">
   <img src="docs/images/settings-display.png" width="440" alt="设置：显示器、亮度和音量键">
+</p>
+
+<p align="center">
+  <img src="docs/images/display-arrangement-menu.png" width="520" alt="菜单栏：显示器排列">
+  <img src="docs/images/display-arrangement-confirm.png" width="380" alt="保留这个排列？15 秒后自动还原">
 </p>
 
 ## 安装

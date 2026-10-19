@@ -32,12 +32,18 @@ LayoutKeeper lives in the menu bar. It remembers where each window was on your e
 - **Version history.** It keeps the last 5 versions of each monitor's layout, so you can go back.
 - **Preview first, undo anytime.** You can see how each window will move before you restore, and any restore can be undone in one click.
 - **No guessing.** After moving each window, LayoutKeeper checks that it really arrived and rolls back if it didn't. If it can't tell two windows with the same name apart, it asks you.
+- **Display arrangement.** If the same monitor sometimes sits above your MacBook and sometimes beside it, pick **Monitor directly above / right / below / left** from the menu bar instead of dragging screens around in System Settings. Other positions (left-aligned, offset…) can be saved as custom positions. After a switch you have 15 seconds to click **Keep**; otherwise it switches back. The main display and the resolution stay the same, and no window restore is triggered.
 - **Global shortcuts:** ⌃⌥⌘S save, ⌃⌥⌘R restore, ⌃⌥⌘Z undo. You can change or turn them off.
 - **Automatic updates** via Sparkle. Updates are signed and keep your Accessibility permission.
 
 <p align="center">
   <img src="docs/images/settings-general.png" width="440" alt="Settings: shared layout mode and desktop management">
   <img src="docs/images/settings-display.png" width="440" alt="Settings: displays, brightness and volume keys">
+</p>
+
+<p align="center">
+  <img src="docs/images/display-arrangement-menu.png" width="520" alt="Menu bar: display arrangement">
+  <img src="docs/images/display-arrangement-confirm.png" width="380" alt="Keep this arrangement? Switches back after 15 seconds">
 </p>
 
 ## Install
