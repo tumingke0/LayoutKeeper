@@ -21,7 +21,7 @@ struct ArrangementPreview {
 extension Model {
     static let arrangementConfirmSeconds: TimeInterval=15
 
-    func liveDisplays() -> [LiveDisplay] { RenderMode.snapshot ? [] : DisplayArrangementIO.live() }
+    func liveDisplays() -> [LiveDisplay] { RenderMode.snapshot ? snapshotDisplays : DisplayArrangementIO.live() }
     static func currentDisplayIDs() -> Set<UInt32> {
         Set(NSScreen.screens.compactMap{ ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value })
     }
@@ -240,7 +240,12 @@ struct ArrangementConfirmView: View {
         }
     }
 }
-struct ArrangementPanelBackground: NSViewRepresentable {
+struct ArrangementPanelBackground: View {
+    var body: some View {
+        if RenderMode.snapshot { Color(nsColor:.windowBackgroundColor) } else { ArrangementPanelEffect() }
+    }
+}
+struct ArrangementPanelEffect: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v=NSVisualEffectView(); v.material = .popover; v.blendingMode = .behindWindow; v.state = .active; return v
     }
@@ -292,7 +297,8 @@ struct ArrangementRow: View {
     var body: some View {
         VStack(alignment:.leading,spacing:4) {
             HStack {
-                TextField(lk("名称"),text:$name).textFieldStyle(.plain).font(.body.weight(.medium))
+                TextField("",text:$name,prompt:Text(lk("名称"))).labelsHidden().multilineTextAlignment(.leading)
+                    .textFieldStyle(.plain).font(.body.weight(.medium)).frame(maxWidth:220,alignment:.leading)
                     .onSubmit { model.renameArrangement(preset.id,to:name) }
                 Spacer()
                 pill

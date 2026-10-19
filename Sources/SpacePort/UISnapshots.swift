@@ -215,6 +215,25 @@ enum UISnapshots {
         let noScreen=sampleModel(record:nil,undo:false); noScreen.externalMonitors=[]
         shot("08-menu-no-screen.png",MenuReplica(items:StatusMenuModel.build(noScreen.menuState(optionHeld:false))))
 
+        // 显示器排列: menu, settings section, the keep-or-revert confirmation (sample displays, nothing is read or changed).
+        let arr=sampleModel(record:record)
+        let mac=LiveDisplay(id:1,key:"builtin",uuid:"S-B",name:"Built-in",builtIn:true,isMain:true,x:0,y:0,width:1512,height:982)
+        let above=LiveDisplay(id:2,key:"monitor-1-2-3",uuid:"S-E",name:monitor.name,builtIn:false,isMain:false,x:-204,y:-1080,width:1920,height:1080)
+        var beside=above; beside.x=1512; beside.y = -98
+        func preset(_ ext: LiveDisplay,_ name: String,_ id: String,_ key: Hotkey?) -> ArrangementPreset? {
+            guard case .success(var p)=ArrangementGeometry.capture([mac,ext],id:id,name:name,at:Date()) else { return nil }
+            p.hotkey=key; return p
+        }
+        arr.snapshotDisplays=[mac,above]
+        arr.arrangementPresets=[preset(above,lk("外接屏在上方"),"s1",Hotkey(keyCode:18,modifiers:Hotkey.hyper)),preset(beside,lk("外接屏在右边"),"s2",Hotkey(keyCode:19,modifiers:Hotkey.hyper))].compactMap{ $0 }
+        shot("06c-menu-arrangement.png",MenuReplica(items:StatusMenuModel.build(arr.menuState(optionHeld:false)),expand:"arrangement"))
+        arr.settingsTab = .displays
+        shot("28-settings-arrangement.png",SettingsView(model:arr))
+        if arr.arrangementPresets.count==2 {
+            shot("29-arrangement-confirm.png",ArrangementConfirmView(name:arr.arrangementPresets[1].name,detail:ArrangementGeometry.describe(arr.arrangementPresets[1]),deadline:Date()+11,total:15,keep:{},revert:{}))
+            shot("29b-arrangement-confirm-dark.png",ArrangementConfirmView(name:arr.arrangementPresets[1].name,detail:ArrangementGeometry.describe(arr.arrangementPresets[1]),deadline:Date()+11,total:15,keep:{},revert:{}),dark:true)
+        }
+
         // Reconnect prompts. (Notices are macOS notifications since 0.6.8, so there is nothing of ours to render.)
         shot("11-ask-once.png",ReconnectPanelView(prompt:ReconnectCoordinator.askOncePrompt(name:monitor.name,automatic:{},askEachTime:{},never:{})))
         shot("12-ask-each-time.png",ReconnectPanelView(prompt:ReconnectCoordinator.askPrompt(name:lk("公司"),restore:{},preview:{})))

@@ -142,6 +142,8 @@ final class Model: ObservableObject {
     var hideArrangementConfirm: (() -> Void)?
     /// An attach (plug-in / wake) restore is pending or running.
     var attachInProgress: () -> Bool={ false }
+    /// Sample displays for snapshot rendering only (the real list is read from CoreGraphics).
+    var snapshotDisplays: [LiveDisplay]=[]
     /// Read-only plan for the main window's "differs / matches" state; computed with its own AX reader.
     @Published var livePlan: QuickRestorePlan?
     var livePlanKey: String?
