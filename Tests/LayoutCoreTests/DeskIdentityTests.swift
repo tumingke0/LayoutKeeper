@@ -288,6 +288,62 @@ final class DeskIdentityTests: XCTestCase {
         XCTAssertEqual(LiveRecordStore.load(from:url),rec)
         XCTAssertTrue(rec.sameContent(LiveLayoutRecord.capture(key:"k",monitor:.sharedExternal,displayToken:"home",snapshot:s,browserProfiles:profiles,at:Date())!))
     }
+    // MARK: - log noise and incomplete scans (seen live 10/19 14:28–14:32)
+
+    func cap(_ s: Snapshot) -> LiveLayoutRecord { LiveLayoutRecord.capture(key:"k",monitor:.sharedExternal,displayToken:"home",snapshot:s,browserProfiles:profiles)! }
+    func testTitleOrFrameOnlyChangesAreNotStructural() {
+        let base=homeBefore(); var renamed=base
+        renamed.windows[0].selector.title="queue-tool (2) — Antigravity"; renamed.windows[1].frame=Rect(-204,-1050,960,526)
+        renamed.windows.append(w("2634:255","com.example.db","db",space:3,builtInFrame))
+        var renamedAgain=renamed; renamedAgain.windows[6].selector.title="db — query"
+        let a=cap(base),b=cap(renamed),c=cap(renamedAgain)
+        XCTAssertEqual(b.structuralChanges(from:a),["+elsewhere com.example.db 2634:255"])
+        XCTAssertEqual(c.structuralChanges(from:b),[])            // titles only: no log line
+        XCTAssertFalse(c.sameContent(b))                            // but the file is still updated
+        XCTAssertEqual(cap(homeReplugged(base)).structuralChanges(from:a).first,"desks [259,6,255,254,141]→[315,255,254,141]")
+        var moved=base; moved.windows[4].spaceIDs=[141]
+        XCTAssertEqual(cap(moved).structuralChanges(from:a),["com.google.Chrome 9001:514 desk 254→141"])
+        var closed=base; closed.windows.removeLast()
+        XCTAssertEqual(cap(closed).structuralChanges(from:a),["-com.google.Chrome 9001:437 desk 141"])
+        XCTAssertEqual(a.structuralChanges(from:nil),["first record"])
+    }
+    func testWindowTheScanCouldNotReadButStillExistsKeepsItsEntry() {
+        var withDB=homeBefore(); withDB.windows.append(w("2634:255","com.example.db","db",space:3,builtInFrame))
+        let previous=cap(withDB)
+        // Next scan: the Chrome window on a hidden desk and the built-in window were not resolved in time.
+        var partial=withDB; partial.windows.removeAll{ ["9001:437","2634:255"].contains($0.token) }
+        let all=Set(withDB.windows.map(\.token))
+        let (r,carried)=cap(partial).carryingForward(previous,seenTokens:Set(partial.windows.map(\.token)),existingTokens:all)
+        XCTAssertEqual(Set(carried),["9001:437","2634:255"])
+        XCTAssertEqual(r.structuralChanges(from:previous),[])       // no 4↔5 flicker
+        XCTAssertEqual(r.windows.first{ $0.runtime?.token=="9001:437" }?.desktopID,141)
+        XCTAssertEqual(r.windows.map{ $0.desktopIndex ?? 0 },r.windows.map{ $0.desktopIndex ?? 0 }.sorted())
+        // Closed (the window server no longer lists it): gone.
+        let gone=cap(partial).carryingForward(previous,seenTokens:Set(partial.windows.map(\.token)),existingTokens:all.subtracting(["9001:437"]))
+        XCTAssertEqual(gone.carried,["2634:255"])
+        // Seen by the scan but now minimized: the scan wins, nothing carried.
+        var minimized=withDB; minimized.windows[5].minimized=true
+        XCTAssertEqual(cap(minimized).carryingForward(previous,seenTokens:Set(minimized.windows.map(\.token)),existingTokens:all).carried,[])
+        // Its desk is gone: not carried. Unknown window server state, frozen or other-key record: nothing carried.
+        let replugged=homeReplugged(partial)
+        XCTAssertFalse(cap(replugged).carryingForward(previous,seenTokens:Set(partial.windows.map(\.token)),existingTokens:all).carried.contains("9001:514"))
+        XCTAssertEqual(cap(partial).carryingForward(previous,seenTokens:[],existingTokens:nil).carried,[])
+        XCTAssertEqual(cap(partial).carryingForward(previous.freezing(ceiling:1,at:freezeAt),seenTokens:[],existingTokens:all).carried,[])
+    }
+    func testWindowSeenWithoutADeskIsUnknownNotGoneAndRemovalsSayWhy() {
+        let base=homeBefore(), previous=cap(base), all=Set(base.windows.map(\.token))
+        // The system reported no desk for a window (suspected for 10/19 14:40:18, during a desk switch).
+        var mid=base; mid.windows[5].spaceIDs=[]
+        XCTAssertEqual(LiveLayoutRecord.unplacedTokens(mid),["9001:437"])
+        let seen=Set(mid.windows.map(\.token)).subtracting(LiveLayoutRecord.unplacedTokens(mid))
+        let (r,carried)=cap(mid).carryingForward(previous,seenTokens:seen,existingTokens:all)
+        XCTAssertEqual(carried,["9001:437"]); XCTAssertEqual(r.structuralChanges(from:previous),[])
+        // Minimized is a real state: it leaves the record, and the log line says why.
+        var mini=base; mini.windows[5].minimized=true
+        let why=LiveLayoutRecord.absenceReasons(mini)
+        XCTAssertEqual(LiveLayoutRecord.unplacedTokens(mini),[])
+        XCTAssertEqual(cap(mini).structuralChanges(from:previous,why:why),["-com.google.Chrome 9001:437 desk 141 (minimized)"])
+    }
     func testSavedWindowWithoutDeskIdentityStillDecodesAndNewFieldsRoundTrip() throws {
         var sv=saved(ag,"x",slot:2); sv.desktopID=255; sv.desktopUUID="U-255"
         let data=try JSONEncoder().encode(sv)

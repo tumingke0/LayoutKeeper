@@ -95,6 +95,78 @@ public struct LiveLayoutRecord: Codable, Equatable {
     }
 }
 
+extension LiveLayoutRecord {
+    /// What a restore depends on: the display, its desks, which windows (runtime identity) sit on which desk, and
+    /// which windows were on another display. Titles and frames are left out: they change all the time (a chat or
+    /// terminal title, a moved window) without changing what goes where.
+    public struct Structure: Equatable {
+        public var display: String
+        public var desks: [DeskRef]
+        public var windows: [String:DeskRef]
+        public var elsewhere: Set<String>
+    }
+    public var structure: Structure {
+        var w=[String:DeskRef]()
+        for x in windows { if let t=x.runtime?.token,let d=x.desk { w[t]=d } }
+        return Structure(display:displayToken.uppercased(),desks:desks,windows:w,elsewhere:Set(elsewhere.map(\.runtime.token)))
+    }
+    /// Structural differences from `old` as short log tokens (bundle ID and window token only, never titles).
+    /// Empty when only titles, frames or timestamps changed.
+    public func structuralChanges(from old: LiveLayoutRecord?, why: [String:String] = [:]) -> [String] {
+        guard let old else { return ["first record"] }
+        let a=old.structure,b=structure
+        if a==b { return [] }
+        var out=[String]()
+        if a.display != b.display { out.append("display changed") }
+        if a.desks != b.desks { out.append("desks [\(a.desks.map{ String($0.id) }.joined(separator:","))]→[\(b.desks.map{ String($0.id) }.joined(separator:","))]") }
+        func bundle(_ t: String) -> String {
+            windows.first{ $0.runtime?.token==t }?.selector.bundleID ?? elsewhere.first{ $0.runtime.token==t }?.selector.bundleID
+                ?? old.windows.first{ $0.runtime?.token==t }?.selector.bundleID ?? old.elsewhere.first{ $0.runtime.token==t }?.selector.bundleID ?? "?"
+        }
+        for t in b.windows.keys.sorted() where a.windows[t]==nil { out.append("+\(bundle(t)) \(t) desk \(b.windows[t]!.id)") }
+        func because(_ t: String) -> String { why[t].map{ " (\($0))" } ?? "" }
+        for t in a.windows.keys.sorted() where b.windows[t]==nil { out.append("-\(bundle(t)) \(t) desk \(a.windows[t]!.id)"+(b.elsewhere.contains(t) ? "" : because(t))) }
+        for t in a.windows.keys.sorted() { if let x=a.windows[t],let y=b.windows[t],x != y { out.append("\(bundle(t)) \(t) desk \(x.id)→\(y.id)") } }
+        for t in b.elsewhere.subtracting(a.elsewhere).sorted() { out.append("+elsewhere \(bundle(t)) \(t)") }
+        for t in a.elsewhere.subtracting(b.elsewhere).sorted() { out.append("-elsewhere \(bundle(t)) \(t)"+(b.windows[t] != nil ? "" : because(t))) }
+        return out
+    }
+    /// A scan is not always complete: windows on desks that are not shown are found through a time-limited search,
+    /// and an app that is slow to answer is skipped (`AXWindows` reports such windows as unknown, never as closed).
+    /// So a window that the previous record had, that this scan did not see at all, and that the window server still
+    /// lists (`existingTokens`, "pid:windowID") is still open: keep its previous entry, as long as its desk still
+    /// exists. A window the scan did see (even minimized, full screen or on several desks) follows the new scan, and a
+    /// window the window server no longer lists is gone. Returns the record and the carried tokens.
+    /// Why a window the scan saw is not in the record, for the log ("minimized", "no desk", …; nil = not seen).
+    public static func absenceReasons(_ s: Snapshot) -> [String:String] {
+        var out=[String:String]()
+        for w in s.windows {
+            if w.minimized { out[w.token]="minimized" } else if w.fullScreen { out[w.token]="full screen" }
+            else if !w.ordinary { out[w.token]="not a standard window" } else if w.spaceIDs.isEmpty { out[w.token]="no desk reported" }
+            else if w.spaceIDs.count>1 { out[w.token]="on several desks" } else if !w.frame.valid { out[w.token]="no frame" }
+        }
+        return out
+    }
+    /// Tokens the scan saw but could not place: a window whose desk the system did not report (an empty desk list,
+    /// which happens for a moment during a desk switch and for some apps' windows) is unknown, not moved.
+    public static func unplacedTokens(_ s: Snapshot) -> Set<String> {
+        Set(s.windows.filter{ $0.ordinary && !$0.minimized && !$0.fullScreen && $0.spaceIDs.isEmpty }.map(\.token))
+    }
+    public func carryingForward(_ previous: LiveLayoutRecord?, seenTokens: Set<String>, existingTokens: Set<String>?) -> (record: LiveLayoutRecord, carried: [String]) {
+        guard let previous,let existingTokens,previous.key==key,previous.displayToken.caseInsensitiveCompare(displayToken) == .orderedSame,!previous.frozen else { return (self,[]) }
+        var r=self, carried=[String]()
+        let have=Set(windows.compactMap{ $0.runtime?.token }).union(elsewhere.map(\.runtime.token))
+        func keep(_ t: String) -> Bool { !seenTokens.contains(t) && !have.contains(t) && existingTokens.contains(t) }
+        for var w in previous.windows {
+            guard let t=w.runtime?.token,keep(t),let d=w.desk,let i=desks.firstIndex(where:{ $0.id==d.id && ($0.uuid == nil || d.uuid == nil || $0.uuid==d.uuid) }) else { continue }
+            w.desktopIndex=i+1; r.windows.append(w); carried.append(t)
+        }
+        for e in previous.elsewhere where keep(e.runtime.token) { r.elsewhere.append(e); carried.append(e.runtime.token) }
+        if !carried.isEmpty { r.windows.sort{ ($0.desktopIndex ?? 0,$0.runtime?.token ?? "")<($1.desktopIndex ?? 0,$1.runtime?.token ?? "") } }
+        return (r,carried)
+    }
+}
+
 public enum LiveRecordStore {
     public static func load(from url: URL) -> LiveLayoutRecord? {
         guard let data=try? Data(contentsOf:url),let r=try? JSONDecoder().decode(LiveLayoutRecord.self,from:data),(try? r.validate()) != nil else { return nil }

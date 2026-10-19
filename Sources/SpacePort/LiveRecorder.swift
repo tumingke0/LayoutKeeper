@@ -35,6 +35,14 @@ final class LiveRecorder {
     private var profileTried=Set<String>()
     /// True while an attach session is pending or open; set by the app delegate.
     var attachActive: () -> Bool = { false }
+    /// Cost counters: background scan time, main-thread time in `accept` (of which Chrome profile loading). Every scan
+    /// goes to the unified log (NSLog); a summary goes to the restore log every `statsEvery` scans, and any slow scan
+    /// (background >300 ms or main >50 ms) right away.
+    static let statsEvery=15
+    private var stats=(n:0,scan:0.0,scanMax:0.0,main:0.0,mainMax:0.0,chrome:0.0,chromeMax:0.0,incomplete:0,carried:0)
+    static let contentOnlyLogEvery: TimeInterval=600
+    private var contentOnly=0
+    private var contentOnlyLoggedAt=Date()
 
     func start(model: Model) {
         self.model=model
@@ -67,30 +75,64 @@ final class LiveRecorder {
         scanning=true
         queue.async { [weak self] in
             guard let self else { return }
+            let t0=CFAbsoluteTimeGetCurrent()
             let snapshot=try? self.reader.scan(selectedDisplayToken:token,inspectionBudget:3)
-            DispatchQueue.main.async { self.scanning=false; self.accept(snapshot,generation:gen,key:key,token:token,identity:identity,reason:reason) }
+            // Right after the scan: which windows the window server still has (for windows the scan could not read).
+            let existing=Self.existingWindowTokens()
+            let scanMs=(CFAbsoluteTimeGetCurrent()-t0)*1000
+            DispatchQueue.main.async { self.scanning=false; self.accept(snapshot,existing:existing,generation:gen,key:key,token:token,identity:identity,reason:reason,scanMs:scanMs) }
         }
     }
-    private func accept(_ snapshot: Snapshot?,generation gen: Int,key: String,token: String,identity: MonitorIdentity,reason: String) {
+    private func note(scanMs: Double,mainMs: Double,chromeMs: Double,windows: Int,reason: String) {
+        NSLog("LayoutKeeper live-record scan: %.1f ms background, %.1f ms main (chrome %.1f ms), %d windows, %@",scanMs,mainMs,chromeMs,windows,reason)
+        stats.n+=1; stats.scan+=scanMs; stats.main+=mainMs; stats.chrome+=chromeMs
+        stats.scanMax=max(stats.scanMax,scanMs); stats.mainMax=max(stats.mainMax,mainMs); stats.chromeMax=max(stats.chromeMax,chromeMs)
+        if scanMs>300 || mainMs>50 { model?.logRestore(String(format:"live-record: slow scan background=%.0fms main=%.0fms chrome=%.0fms windows=%d (%@)",scanMs,mainMs,chromeMs,windows,reason)) }
+        if stats.n>=Self.statsEvery {
+            let n=Double(stats.n)
+            model?.logRestore(String(format:"live-record: cost over %d scans: background avg=%.0fms max=%.0fms; main avg=%.1fms max=%.1fms; chrome avg=%.1fms max=%.1fms; incomplete scans=%d (windows kept from the previous record: %d)",stats.n,stats.scan/n,stats.scanMax,stats.main/n,stats.mainMax,stats.chrome/n,stats.chromeMax,stats.incomplete,stats.carried))
+            stats=(0,0,0,0,0,0,0,0,0)
+        }
+    }
+    private func accept(_ snapshot: Snapshot?,existing: Set<String>?,generation gen: Int,key: String,token: String,identity: MonitorIdentity,reason: String,scanMs: Double) {
         guard let model else { return }
         guard let snapshot else { return }
+        let m0=CFAbsoluteTimeGetCurrent()
+        var chromeMs=0.0
+        defer { note(scanMs:scanMs,mainMs:(CFAbsoluteTimeGetCurrent()-m0)*1000,chromeMs:chromeMs,windows:snapshot.windows.count,reason:reason) }
         // A display change (or the start of an attach) while the scan ran: what it read may already be mid-unplug.
         guard gen==generation else { model.logRestore("live-record: scan discarded (display changed while scanning)"); return }
         if let why=pauseReason() { if why != "busy" { model.logRestore("live-record: scan discarded (\(why))") }; return }
         guard let m=model.currentExternalMonitor,m.identity.key==key,m.runtimeDisplayToken==token else { return }
         let chrome=snapshot.windows.filter{ $0.selector.bundleID.hasPrefix("com.google.Chrome") }.map(\.token)
         if chrome.contains(where:{ profileCache[$0] == nil && !profileTried.contains($0) }) {
+            let c0=CFAbsoluteTimeGetCurrent()
             if let resolver=ChromeProfiles.load() { for (t,p) in resolver.map(snapshot.windows) { profileCache[t]=p } }
+            chromeMs=(CFAbsoluteTimeGetCurrent()-c0)*1000
             profileTried.formUnion(chrome)
         }
         let present=Set(snapshot.windows.map(\.token))
         profileCache=profileCache.filter{ present.contains($0.key) }; profileTried=profileTried.intersection(present)
-        guard let record=LiveLayoutRecord.capture(key:key,monitor:identity,displayToken:token,snapshot:snapshot,browserProfiles:profileCache) else { return }
-        let changed=latest.map{ $0.key != key || !$0.sameContent(record) } ?? true
+        guard let captured=LiveLayoutRecord.capture(key:key,monitor:identity,displayToken:token,snapshot:snapshot,browserProfiles:profileCache) else { return }
+        // Windows this scan could not read but that are still open keep their previous entry (see carryingForward).
+        // A window seen without any desk (not minimized or full screen) counts as not read: its desk is unknown.
+        let (record,carried)=captured.carryingForward(latest,seenTokens:present.subtracting(LiveLayoutRecord.unplacedTokens(snapshot)),existingTokens:existing)
+        if !carried.isEmpty { stats.carried+=carried.count; stats.incomplete+=1 }
+        let previous=latest.flatMap{ $0.key==key ? $0 : nil }
+        var why=LiveLayoutRecord.absenceReasons(snapshot)
+        if let existing { for t in Set(previous?.structure.windows.keys.map{ $0 } ?? []).union(previous?.structure.elsewhere ?? []) where why[t]==nil && !present.contains(t) { why[t]=existing.contains(t) ? "not read this scan" : "closed" } }
+        let changes=record.structuralChanges(from:previous,why:why)
         latest=record
-        if changed {
+        if !changes.isEmpty {
             let desks=Dictionary(grouping:record.windows,by:{ $0.desktopID ?? 0 }).sorted{ $0.key<$1.key }.map{ "\($0.key):\($0.value.count)" }.joined(separator:",")
-            model.logRestore("live-record: updated (\(reason)) key=\(RestoreLog.key(key)) display=\(RestoreLog.d(token)) windows=\(record.windows.count) desks=[\(record.desks.map{ String($0.id) }.joined(separator:","))] perDesk=[\(desks)] elsewhere=\(record.elsewhere.count)")
+            model.logRestore("live-record: updated (\(reason)) key=\(RestoreLog.key(key)) display=\(RestoreLog.d(token)) windows=\(record.windows.count) desks=[\(record.desks.map{ String($0.id) }.joined(separator:","))] perDesk=[\(desks)] elsewhere=\(record.elsewhere.count) changes=[\(changes.joined(separator:"; "))]"+(carried.isEmpty ? "" : " carried=\(carried.count)"))
+        } else if let previous,!previous.sameContent(record) {
+            // Only titles or frames changed: the file is updated, the log gets at most one summary per 10 minutes.
+            contentOnly+=1
+            if Date().timeIntervalSince(contentOnlyLoggedAt)>=Self.contentOnlyLogEvery {
+                model.logRestore("live-record: \(contentOnly) title/position-only updates since the last summary (windows and desks unchanged; file kept current)")
+                contentOnly=0; contentOnlyLoggedAt=Date()
+            }
         }
         persist(force:false)
     }
@@ -118,6 +160,14 @@ final class LiveRecorder {
         persist(force:true)
         model.noteLiveFreeze(key:frozen.key,at:now)
         model.logRestore(String(format:"live-record: frozen at unplug key=%@ display=%@ windows=%d desks=[%@] ceiling=%@ recordAge=%.1fs",RestoreLog.key(frozen.key),RestoreLog.d(frozen.displayToken),frozen.windows.count,frozen.desks.map{ String($0.id) }.joined(separator:","),frozen.windowIDCeiling.map(String.init) ?? "-",now.timeIntervalSince(frozen.recordedAt)))
+    }
+    /// "pid:windowID" of every window the window server lists now (all desks, on or off screen), nil if unreadable.
+    static func existingWindowTokens() -> Set<String>? {
+        guard let list=CGWindowListCopyWindowInfo([.optionAll],kCGNullWindowID) as? [[String:Any]] else { return nil }
+        return Set(list.compactMap{ w -> String? in
+            guard let pid=(w[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,let n=(w[kCGWindowNumber as String] as? NSNumber)?.uint32Value else { return nil }
+            return "\(pid):\(n)"
+        })
     }
     /// Highest window number that exists now. Window numbers only grow within a login session, so any window above
     /// it was created later.
