@@ -30,7 +30,30 @@ public struct MenuLayout: Equatable {
     public init(name: String,active: Bool) { self.name=name; self.active=active }
 }
 
+/// The 「显示器排列」 submenu. nil hides it (fewer than two displays and no presets).
+public struct ArrangementMenu: Equatable {
+    public struct Entry: Equatable {
+        public var id: String
+        public var name: String
+        public var active: Bool
+        public var hotkey: Hotkey?
+        /// Why it can't be applied right now (mirroring, asleep…); nil = can be applied.
+        public var blocked: String?
+        public init(id: String,name: String,active: Bool,hotkey: Hotkey? = nil,blocked: String? = nil) { self.id=id; self.name=name; self.active=active; self.hotkey=hotkey; self.blocked=blocked }
+    }
+    /// Presets made for the displays connected now.
+    public var entries: [Entry]
+    /// Presets made for other display combinations (not listed).
+    public var otherCount: Int
+    /// Why the current arrangement can't be saved (nil = it can).
+    public var saveBlock: String?
+    /// Something blocks every switch (a confirmation is open, windows are being restored…).
+    public var busy: String?
+    public init(entries: [Entry] = [],otherCount: Int = 0,saveBlock: String? = nil,busy: String? = nil) { self.entries=entries; self.otherCount=otherCount; self.saveBlock=saveBlock; self.busy=busy }
+}
+
 public struct MenuState {
+    public var arrangement: ArrangementMenu?
     public var layouts: [MenuLayout]=[]
     public var monitorName: String?
     public var windowCount: Int?
@@ -51,6 +74,20 @@ public struct MenuState {
 }
 
 public enum StatusMenuModel {
+    public static let arrangementPrefix="arrange.p."
+    static func arrangementMenu(_ a: ArrangementMenu) -> MenuItemModel {
+        var children=a.entries.map { e in
+            let why=a.busy ?? e.blocked
+            return MenuItemModel(kind:.action,id:arrangementPrefix+e.id,title:e.name,enabled:why == nil,reason:why,hotkey:e.hotkey,checked:e.active)
+        }
+        if a.entries.isEmpty { children.append(MenuItemModel(kind:.status,id:"arrange.none",title:lk("还没有这组屏幕的排列"),enabled:false)) }
+        if a.otherCount>0 { children.append(MenuItemModel(kind:.status,id:"arrange.other",title:lk("另有 %@ 个排列属于别的屏幕组合", "\(a.otherCount)"),enabled:false)) }
+        children.append(.separator("arrange.sep"))
+        let saveWhy=a.busy ?? a.saveBlock
+        children.append(MenuItemModel(kind:.action,id:"arrange.save",title:lk("把当前排列存为…"),symbol:"plus",enabled:saveWhy == nil,reason:saveWhy))
+        children.append(MenuItemModel(kind:.action,id:"arrange.manage",title:lk("管理排列…")))
+        return MenuItemModel(kind:.submenu,id:"arrangement",title:lk("显示器排列"),symbol:"display.2",children:children)
+    }
     public static func statusLine(_ s: MenuState) -> String {
         guard let name=s.monitorName else { return lk("未连接外接屏") }
         guard let saved=s.savedAt,let count=s.windowCount else { return lk("%@ · 尚未保存", "\(name)") }
@@ -88,6 +125,7 @@ public enum StatusMenuModel {
             children.append(MenuItemModel(kind:.action,id:"open",title:lk("管理版式…")))
             items.append(MenuItemModel(kind:.submenu,id:"layouts",title:lk("切换版式"),symbol:"square.stack.3d.up",children:children))
         }
+        if let a=s.arrangement { items.append(arrangementMenu(a)) }
         items.append(.separator("sep1"))
         var modes=AutoRestoreMode.allCases.map { mode in
             MenuItemModel(kind:.action,id:"mode.\(mode.rawValue)",title:mode.title,checked:s.globalMode == mode)

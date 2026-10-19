@@ -129,6 +129,19 @@ final class Model: ObservableObject {
     @Published var hotkeySettings=Prefs.hotkeys() { didSet { Prefs.save(hotkeySettings,key:Prefs.hotkeysKey); applyHotkeys?() } }
     @Published var hotkeyStatus: [HotkeyAction:HotkeyStatus]=[:]
     @Published var recordingHotkey: HotkeyAction?
+    /// 显示器排列预设. Changing them re-registers the hotkeys (a preset can carry one).
+    @Published var arrangementPresets=Prefs.arrangementPresets() { didSet { Prefs.save(arrangementPresets,key:Prefs.arrangementPresetsKey); applyHotkeys?() } }
+    @Published var arrangementHotkeyStatus: [String:HotkeyStatus]=[:]
+    @Published var recordingPresetHotkey: String?
+    /// A switch waiting for 「保留这个排列？」 (blocks restores and other switches until it is kept or reverted).
+    @Published var arrangementPreview: ArrangementPreview?
+    var arrangementTimer: Timer?
+    /// Screen events from LayoutKeeper's own arrangement change are not plug-ins (see ReconnectCoordinator.note).
+    var arrangementGuard=SelfArrangementGuard()
+    var showArrangementConfirm: ((ArrangementPreview) -> Void)?
+    var hideArrangementConfirm: (() -> Void)?
+    /// An attach (plug-in / wake) restore is pending or running.
+    var attachInProgress: () -> Bool={ false }
     /// Read-only plan for the main window's "differs / matches" state; computed with its own AX reader.
     @Published var livePlan: QuickRestorePlan?
     var livePlanKey: String?
@@ -199,6 +212,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     let notifier=SystemNotifier()
     var updater: AppUpdater?
     let hotkeys=GlobalHotkeys()
+    let arrangementPanel=ArrangementConfirmPanel()
     private var liveTimer: Timer?
     private var lastAction: [String:Date]=[:]
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -233,6 +247,14 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         model.requestLiveCheck={ [weak self] in self?.scheduleLiveCheck(after:0.6,force:true) }
         model.openOnboarding={ [weak self] in self?.showOnboarding(.reopened) }
         hotkeys.onPress={ [weak self] action in self?.perform(hotkey:action) }
+        hotkeys.onPresetPress={ [weak self] id in
+            guard let self,self.model.recordingHotkey == nil,self.model.recordingPresetHotkey == nil,self.debounce("arrange.\(id)") else { return }
+            self.model.applyArrangement(id,source:"hotkey")
+        }
+        model.showArrangementConfirm={ [weak self] preview in
+            self?.arrangementPanel.show(preview,keep:{ self?.model.keepArrangement() },revert:{ self?.model.revertArrangement(reason:"user") })
+        }
+        model.hideArrangementConfirm={ [weak self] in self?.arrangementPanel.close() }
         model.applyHotkeys={ [weak self] in self?.applyHotkeys() }
         model.suspendHotkeys={ [weak self] suspended in
             guard let self else { return }
@@ -246,12 +268,17 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         // Opening the window from the menu bar or the reconnect prompt must not switch the user's Space.
         window.collectionBehavior=[.moveToActiveSpace]
         NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main) { [weak self] _ in
+            self?.model.arrangementScreensChanged()
             self?.model.liveRecorder.screensChanged(); self?.spaceWatcher.screensChanged(); self?.model.refresh(); self?.reconnect?.note(.screens); self?.scheduleLiveCheck(after:1.5); self?.scheduleFirstLayoutReminder()
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.activeSpaceDidChangeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.refresh(); self?.scheduleLiveCheck(after:0.8); self?.model.liveRecorder.kick(after:2,reason:"desk switch") }
         NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.liveRecorder.screensChanged(); self?.reconnect?.note(.wake) }
         // Sleep: whatever happens to the screens before wake is not recorded (a scan in flight is void).
-        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.willSleepNotification,object:nil,queue:.main) { [weak self] _ in self?.model.liveRecorder.screensChanged() }
+        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.willSleepNotification,object:nil,queue:.main) { [weak self] _ in
+            // An unconfirmed arrangement switch never survives sleep.
+            self?.model.revertArrangement(reason:"sleep")
+            self?.model.liveRecorder.screensChanged()
+        }
         model.refresh(); model.refreshAuthorization()
         // First launch, or permission missing at launch (e.g. after a rebuild): the guide replaces the main window.
         if let reason=OnboardingPolicy.reasonAtLaunch(completed:Prefs.store?.bool(forKey:OnboardingPolicy.completedKey) ?? false,trusted:model.trusted) {
@@ -261,6 +288,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         model.logSession("app launch")
         spaceWatcher.start(model:model)
         model.liveRecorder.attachActive={ [weak self] in self?.reconnect?.attachActive ?? false }
+        model.attachInProgress={ [weak self] in self?.reconnect?.attachActive ?? false }
         model.liveRecorder.start(model:model)
         displayCoordinator.start(trusted:{ AXIsProcessTrusted() })
         let timer=Timer(timeInterval:2,repeats:true) { [weak self] _ in
@@ -299,7 +327,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             }
         }
     }
-    func applyHotkeys() { model.hotkeyStatus=hotkeys.apply(model.hotkeySettings) }
+    func applyHotkeys() {
+        let result=hotkeys.apply(model.hotkeySettings,presets:model.arrangementPresets)
+        model.hotkeyStatus=result.actions; model.arrangementHotkeyStatus=result.presets
+    }
     func showOnboarding(_ reason: OnboardingReason) {
         onboardingWindow?.close()
         let controller=OnboardingController(model:model,reason:reason)
@@ -334,13 +365,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         reminderTimer=t; RunLoop.main.add(t,forMode:.common)
     }
     /// Ignores a repeat of the same action within 0.8 s (a menu key equivalent and the global hotkey can both fire).
-    private func debounce(_ id: String) -> Bool {
+    func debounce(_ id: String) -> Bool {
         let now=Date()
         if let last=lastAction[id],now.timeIntervalSince(last)<0.8 { return false }
         lastAction[id]=now; return true
     }
     func perform(hotkey action: HotkeyAction) {
-        guard model.recordingHotkey == nil else { return }
+        guard model.recordingHotkey == nil,model.recordingPresetHotkey == nil else { return }
         switch action { case .save: run("save"); case .restore: run("restore"); case .undo: run("undo") }
     }
     @objc func menuAction(_ sender: NSMenuItem) { if let id=sender.representedObject as? String { run(id) } }
@@ -361,6 +392,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "settings": showSettings(.general)
         case "checkUpdates": updater?.checkForUpdates()
         case "quit": NSApplication.shared.terminate(nil)
+        case "arrange.save": model.saveCurrentArrangement()
+        case "arrange.manage": showSettings(.displays)
+        case let preset where preset.hasPrefix(StatusMenuModel.arrangementPrefix):
+            if debounce(preset) { model.applyArrangement(String(preset.dropFirst(StatusMenuModel.arrangementPrefix.count)),source:"menu") }
         case let layout where layout.hasPrefix("layout."): if let i=Int(layout.dropFirst(7)),debounce("layout") { model.applyConnectedLayout(at:i) }
         default: break
         }
@@ -443,7 +478,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     }
     /// Only our own activation re-checks (not every app switch): the check is a read-only scan on the main thread.
     func applicationDidBecomeActive(_ notification: Notification) { model.refreshExternalMonitor(); notifier.refreshPermission(); scheduleLiveCheck(after:0.6) }
-    func applicationWillTerminate(_ notification: Notification) { authorizationTimer?.invalidate(); hotkeys.unregisterAll(); displayCoordinator.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        // macOS undoes an app-only preview itself when we exit; revert explicitly too, so the log says so.
+        model.revertArrangement(reason:"quit")
+        authorizationTimer?.invalidate(); hotkeys.unregisterAll(); displayCoordinator.stop() }
     @objc func quit() { NSApplication.shared.terminate(nil) }
     @objc func checkForUpdates() { updater?.checkForUpdates() }
 }

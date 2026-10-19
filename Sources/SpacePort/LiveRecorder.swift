@@ -66,6 +66,8 @@ final class LiveRecorder {
         if attachActive() { return "attach session" }
         if let resumeAt,Date()<resumeAt { return "attach grace" }
         if model.busy || model.showingQuickRestore || model.autoSpaces.running { return "busy" }
+        // LayoutKeeper's own arrangement switch (busy covers the confirmation): windows move with their screens.
+        if model.ownArrangementChange() { return "arrangement change" }
         if MonitorRecognition.physicalExternalMonitors().count != 1 || model.currentExternalMonitor == nil { return "not exactly one external" }
         return nil
     }

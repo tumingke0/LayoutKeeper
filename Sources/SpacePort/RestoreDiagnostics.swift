@@ -53,7 +53,7 @@ extension Model {
         let desks=Set(r.profile.windows.compactMap(\.desktopIndex))
         return "\(m.identity.key) (\(why)) savedAt=\(r.savedAt) windows=\(r.profile.windows.count) desktopsUsed=\(desks.sorted()) apps=\(Set(r.profile.windows.map(\.selector.bundleID)).sorted())"
     }
-    var busyText: String { "restoring=\(restoring) selfTest=\(selfTestRunning) checkingCapture=\(checkingCapture) quickPanel=\(showingQuickRestore) autoSpacesRunning=\(autoSpaces.running)" }
+    var busyText: String { "restoring=\(restoring) selfTest=\(selfTestRunning) checkingCapture=\(checkingCapture) quickPanel=\(showingQuickRestore) autoSpacesRunning=\(autoSpaces.running) arrangementConfirm=\(arrangementPreview != nil)" }
     func logPlanDetail(trigger: String,plan: QuickRestorePlan,record: MonitorLayoutRecord?,snapshot: Snapshot?,displayToken: String?) {
         guard let record,let snapshot,let displayToken else { logRestore("plan-detail \(trigger) unavailable (no record/snapshot)"); return }
         let bundles=Set(record.profile.windows.map(\.selector.bundleID))

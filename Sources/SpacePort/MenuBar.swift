@@ -48,11 +48,16 @@ enum StatusMenuBuilder {
 }
 
 /// System-wide shortcuts via Carbon RegisterEventHotKey (no Accessibility or Input Monitoring needed).
+/// IDs below `presetBase` are the fixed actions; from `presetBase` on, the display arrangement presets in order.
 final class GlobalHotkeys {
     private var refs: [HotkeyAction:EventHotKeyRef]=[:]
+    private var presetRefs: [String:EventHotKeyRef]=[:]
+    private var presetIDs: [String]=[]
     private var handler: EventHandlerRef?
     var onPress: (HotkeyAction) -> Void={ _ in }
+    var onPresetPress: (String) -> Void={ _ in }
     private static let signature: OSType=0x4C4B4859 // "LKHY"
+    private static let presetBase: UInt32=1000
     func install() {
         guard handler == nil else { return }
         var spec=EventTypeSpec(eventClass:OSType(kEventClassKeyboard),eventKind:UInt32(kEventHotKeyPressed))
@@ -61,25 +66,43 @@ final class GlobalHotkeys {
             guard let event,let userData else { return OSStatus(eventNotHandledErr) }
             var id=EventHotKeyID()
             let status=GetEventParameter(event,EventParamName(kEventParamDirectObject),EventParamType(typeEventHotKeyID),nil,MemoryLayout<EventHotKeyID>.size,nil,&id)
-            guard status == noErr,id.signature == GlobalHotkeys.signature,Int(id.id)<HotkeyAction.allCases.count else { return OSStatus(eventNotHandledErr) }
+            guard status == noErr,id.signature == GlobalHotkeys.signature else { return OSStatus(eventNotHandledErr) }
             let hotkeys=Unmanaged<GlobalHotkeys>.fromOpaque(userData).takeUnretainedValue()
-            let action=HotkeyAction.allCases[Int(id.id)]
-            DispatchQueue.main.async { hotkeys.onPress(action) }
+            if Int(id.id)<HotkeyAction.allCases.count {
+                let action=HotkeyAction.allCases[Int(id.id)]
+                DispatchQueue.main.async { hotkeys.onPress(action) }
+                return noErr
+            }
+            guard id.id>=GlobalHotkeys.presetBase,Int(id.id-GlobalHotkeys.presetBase)<hotkeys.presetIDs.count else { return OSStatus(eventNotHandledErr) }
+            let preset=hotkeys.presetIDs[Int(id.id-GlobalHotkeys.presetBase)]
+            DispatchQueue.main.async { hotkeys.onPresetPress(preset) }
             return noErr
         },1,&spec,me,&handler)
     }
     func unregisterAll() {
         for ref in refs.values { UnregisterEventHotKey(ref) }
-        refs=[:]
+        for ref in presetRefs.values { UnregisterEventHotKey(ref) }
+        refs=[:]; presetRefs=[:]
     }
-    func apply(_ settings: HotkeySettings) -> [HotkeyAction:HotkeyStatus] {
+    func apply(_ settings: HotkeySettings,presets: [ArrangementPreset]) -> (actions: [HotkeyAction:HotkeyStatus],presets: [String:HotkeyStatus]) {
         install(); unregisterAll()
-        return HotkeyRegistrar.register(settings) { action,key in
+        let actions=HotkeyRegistrar.register(settings) { action,key in
             var ref: EventHotKeyRef?
             let index=UInt32(HotkeyAction.allCases.firstIndex(of:action) ?? 0)
             let status=RegisterEventHotKey(key.keyCode,key.modifiers.carbonFlags,EventHotKeyID(signature:GlobalHotkeys.signature,id:index),GetApplicationEventTarget(),0,&ref)
             guard status == noErr,let ref else { return false }
             refs[action]=ref; return true
         }
+        var taken=[Hotkey:String]()
+        for (action,status) in actions where status == .active { if let key=settings.keys[action] { taken[key]=action.title } }
+        presetIDs=presets.map(\.id)
+        let result=HotkeyRegistrar.registerPresets(presets.map{ (id:$0.id,title:$0.name,key:$0.hotkey) },enabled:settings.enabled,taken:taken) { id,key in
+            guard let index=presetIDs.firstIndex(of:id) else { return false }
+            var ref: EventHotKeyRef?
+            let status=RegisterEventHotKey(key.keyCode,key.modifiers.carbonFlags,EventHotKeyID(signature:GlobalHotkeys.signature,id:GlobalHotkeys.presetBase+UInt32(index)),GetApplicationEventTarget(),0,&ref)
+            guard status == noErr,let ref else { return false }
+            presetRefs[id]=ref; return true
+        }
+        return (actions,result)
     }
 }

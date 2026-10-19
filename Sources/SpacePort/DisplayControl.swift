@@ -344,8 +344,10 @@ struct DisplayMenuSection: View {
 
 struct DisplaySettings: View {
     @ObservedObject var control: DisplayControl
+    @ObservedObject var model: Model
     var body: some View {
         Form {
+            ArrangementSettingsSection(model:model)
             Section(lk("菜单栏")) {
                 Toggle(lk("在菜单中显示亮度滑块"),isOn:$control.showInMenu)
             }

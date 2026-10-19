@@ -12,7 +12,7 @@ struct SettingsView: View {
     var body: some View {
         TabView(selection:$model.settingsTab) {
             GeneralSettings(model:model).tabItem { Label(lk("通用"),systemImage:"gearshape") }.tag(SettingsTab.general)
-            DisplaySettings(control:model.displayControl).tabItem { Label(lk("显示器"),systemImage:"sun.max") }.tag(SettingsTab.displays)
+            DisplaySettings(control:model.displayControl,model:model).tabItem { Label(lk("显示器"),systemImage:"sun.max") }.tag(SettingsTab.displays)
             DiagnosticsSettings(model:model).tabItem { Label(lk("诊断"),systemImage:"stethoscope") }.tag(SettingsTab.diagnostics)
         }
         .frame(width:660,height:620)

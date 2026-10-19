@@ -38,6 +38,13 @@ final class ReconnectCoordinator {
     private var eventStarted: Date?
     func note(_ event: ReconnectWatch.Event) {
         eventCount+=1
+        // LayoutKeeper's own display arrangement switch: same displays, only their origins moved. Not a plug-in,
+        // a wake or an unplug, so the attach session is not touched (AttachSession would also classify it as
+        // "same monitor, no wake"; this makes it explicit). A real plug/unplug changes the display set and is never covered.
+        if event == .screens,model.ownArrangementChange() {
+            model.logRestore("event \(event) #\(eventCount): LayoutKeeper's own display arrangement change (\(model.arrangementGuard.inProgress ? "in progress" : "just applied")); not a plug-in, attach session untouched, no restore")
+            return
+        }
         let fp=Self.screenFingerprint()
         model.refreshExternalMonitor()
         let keyNow=model.currentExternalMonitor.map(Self.physicalKey)

@@ -23,7 +23,7 @@ enum SaveOutcome { case saved(count: Int, replaced: Bool), cancelled, failed(Str
 /// Actions shared by the menu bar, global hotkeys, the main window and the reconnect flow.
 extension Model {
     var currentMonitorName: String? { currentExternalMonitor.map{ monitorPreferences.displayName($0.identity) } }
-    var busy: Bool { restoring || selfTestRunning || checkingCapture }
+    var busy: Bool { restoring || selfTestRunning || checkingCapture || arrangementPreview != nil }
     func menuState(optionHeld: Bool) -> MenuState {
         var s=MenuState()
         s.monitorName=currentMonitorName
@@ -37,6 +37,7 @@ extension Model {
         }
         s.pausedUntil=pausedUntil; s.now=Date(); s.hotkeys=hotkeySettings; s.optionHeld=optionHeld
         s.pendingNotice=undeliveredNotice?.title; s.pendingNoticeDetail=undeliveredNotice?.detail
+        s.arrangement=arrangementMenu()
         return s
     }
     /// Why save/restore can't run right now (nil when it can).
