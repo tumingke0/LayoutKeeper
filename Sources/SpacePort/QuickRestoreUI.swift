@@ -60,13 +60,20 @@ extension Model {
             let plan=try QuickRestorePlanner.plan(record:record,monitor:monitor,displayToken:display,snapshot:snapshot,choices:quickChoices,allowCrossSpace:crossSpaceEnabled,crossSpaceBlockReason:lk("需要跨桌面移动，但这台 Mac 不支持：%@", "\(crossSpaceSupport.summary)"),browserProfiles:ChromeProfiles.load()?.map(snapshot.windows) ?? [:],context:quickContext)
             quickPlan=plan
             var text=""
-            if plan.missingDesktops>0,monitor.isSharedExternal { text+=lk("还缺 %@ 个桌面：有 %@ 组窗口暂时没有移动（不会挤到别的桌面上）。在调度中心按「+」补 %@ 个桌面后会自动再恢复。", "\(plan.missingDesktops)", "\(plan.unplacedGroups.count)", "\(plan.missingDesktops)") }
-            else if plan.missingDesktops>0 { text+=lk("还缺 %@ 个桌面：有 %@ 组窗口暂时没有移动（不会挤到别的桌面上）。请先在调度中心新建桌面，再重新预览。", "\(plan.missingDesktops)", "\(plan.unplacedGroups.count)") }
+            let waiting=Model.positionList(plan.unplacedPositions)
+            if plan.missingDesktops>0,monitor.isSharedExternal { text+=plan.unplacedPositions.isEmpty ? lk("还缺 %@ 个空桌面（保持和记录时一样多的桌面），在调度中心按「+」补上后会自动再恢复。", "\(plan.missingDesktops)")
+                : lk("还缺 %@ 个桌面：第 %@ 个桌面的窗口暂时没有移动（不会挤到别的桌面上）。在调度中心按「+」补 %@ 个桌面后会自动再恢复。", "\(plan.missingDesktops)", waiting, "\(plan.missingDesktops)") }
+            else if plan.missingDesktops>0,!plan.unplacedPositions.isEmpty { text+=lk("还缺 %@ 个桌面：第 %@ 个桌面的窗口暂时没有移动（不会挤到别的桌面上）。请先在调度中心新建桌面，再重新预览。", "\(plan.missingDesktops)", waiting) }
+            if let strip=plan.strip,strip.source == .live,let at=strip.recordedAt { text+=lk("按 %@ 时外接屏的 %@ 个桌面恢复。", Self.stripTime.string(from:at), "\(strip.count)") }
+            for n in plan.stripNotices { text+=n+lk("。") }
             if plan.items.contains(where:{$0.reason==QuickRestorePlanner.oldRecordReason}) { text+=lk("这份布局由旧版本保存，缺少桌面顺序，请重新保存一次。") }
-            if !windows.issues.isEmpty { text+=lk("部分窗口信息读取失败，预览可能不完整。") }
+            let issues=ScanIssueSummary.summarize(windows.issues,layoutApps:Set(record.profile.windows.map(\.selector.bundleID)))
+            if let t=ScanIssueSummary.text(issues,appName:{ self.appName($0) }) { text+=t }
+            if !windows.issues.isEmpty { logRestore("prepare: scan issues affected=\(issues.affectedApps) windows=\(issues.windows) unrelated=\(issues.unrelated)") }
             quickMessage=text
         } catch { quickPlan=nil; quickMessage=lk("屏幕或布局无法可靠对应，请重新预览。"); logRestore("replan: planner threw \(String(describing:error).prefix(160)) (display \(RestoreLog.d(display)) role/visible mismatch?)") }
     }
+    static let stripTime: DateFormatter={ let f=DateFormatter(); f.dateFormat="M/d HH:mm"; return f }()
     func setQuickChoice(_ index: Int,_ choice: QuickChoice?) {
         if let choice { quickChoices[index]=choice } else { quickChoices.removeValue(forKey:index) }
         quickResults=[:]; replanQuick()
@@ -185,7 +192,8 @@ struct QuickRestoreSheet: View {
                       systemImage:"info.circle").font(.caption).foregroundStyle(.secondary).help(model.crossSpaceSupport.detail)
             }
             if let plan=model.quickPlan,plan.missingDesktops>0 {
-                Label(lk("还缺 %@ 个桌面，有 %@ 组窗口暂时没有移动。请先在调度中心新建桌面，再点「重新预览」。", "\(plan.missingDesktops)", "\(plan.unplacedGroups.count)"),systemImage:"plus.rectangle.on.rectangle")
+                Label(plan.unplacedPositions.isEmpty ? lk("还缺 %@ 个空桌面（保持和记录时一样多的桌面）。可在调度中心新建桌面后点「重新预览」。", "\(plan.missingDesktops)")
+                      : lk("还缺 %@ 个桌面，第 %@ 个桌面的窗口暂时没有移动。请先在调度中心新建桌面，再点「重新预览」。", "\(plan.missingDesktops)", Model.positionList(plan.unplacedPositions)),systemImage:"plus.rectangle.on.rectangle")
                     .font(.callout).foregroundStyle(Tone.warning.color).padding(10).frame(maxWidth:.infinity,alignment:.leading)
                     .background(RoundedRectangle(cornerRadius:10,style:.continuous).fill(Tone.warning.color.opacity(0.10)))
             }

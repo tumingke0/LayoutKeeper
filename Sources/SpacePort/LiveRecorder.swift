@@ -43,6 +43,10 @@ final class LiveRecorder {
     static let contentOnlyLogEvery: TimeInterval=600
     private var contentOnly=0
     private var contentOnlyLoggedAt=Date()
+    /// 0.6.11 record trust (`LiveRecordTrust`): last wake, and the last reason a scan did not change the strip (logged
+    /// once per change of reason).
+    private var wokeAt: Date?
+    private var untrustedReason: String?
 
     func start(model: Model) {
         self.model=model
@@ -54,6 +58,16 @@ final class LiveRecorder {
         kickWork?.cancel()
         let work=DispatchWorkItem { [weak self] in self?.tick(reason:reason) }
         kickWork=work; DispatchQueue.main.asyncAfter(deadline:.now()+delay,execute:work)
+    }
+    func woke() { wokeAt=Date(); kick(after:LiveRecordTrust.wakeGrace+1,reason:"after wake") }
+    /// Screen locked or every display asleep: nothing the scan reads is the real layout.
+    static func screenLocked() -> Bool {
+        if let d=CGSessionCopyCurrentDictionary() as? [String:Any],(d["CGSSessionScreenIsLocked"] as? Bool) == true || (d["CGSSessionScreenIsLocked"] as? Int) == 1 { return true }
+        var count: UInt32=0
+        guard CGGetOnlineDisplayList(0,nil,&count) == .success,count>0 else { return false }
+        var ids=[CGDirectDisplayID](repeating:0,count:Int(count))
+        guard CGGetOnlineDisplayList(count,&ids,&count) == .success else { return false }
+        return ids.prefix(Int(count)).allSatisfy{ CGDisplayIsAsleep($0) != 0 }
     }
     func attachSessionClosed() {
         resumeAt=Date().addingTimeInterval(Self.resumeGrace)
@@ -115,7 +129,17 @@ final class LiveRecorder {
         }
         let present=Set(snapshot.windows.map(\.token))
         profileCache=profileCache.filter{ present.contains($0.key) }; profileTried=profileTried.intersection(present)
-        guard let captured=LiveLayoutRecord.capture(key:key,monitor:identity,displayToken:token,snapshot:snapshot,browserProfiles:profileCache) else { return }
+        let previousSame=latest.flatMap{ $0.key==key && !$0.frozen ? $0 : nil }
+        let verdict=LiveRecordTrust.assess(snapshot:snapshot,displayToken:token,previous:previousSame,screenLocked:Self.screenLocked(),sinceWake:wokeAt.map{ Date().timeIntervalSince($0) })
+        if verdict.reason != untrustedReason {
+            if let why=verdict.reason { model.logRestore("live-record: desk strip kept — \(why); keeping the last normal record"+(previousSame.map{ " from "+RestoreLog.stamp.string(from:$0.recordedAt)+" desks=[\($0.desks.map{ String($0.id) }.joined(separator:","))]" } ?? "")) }
+            else if untrustedReason != nil { model.logRestore("live-record: back to normal recording") }
+            untrustedReason=verdict.reason
+        }
+        if case .skip=verdict { return }
+        var keep: [DeskRef]?
+        if case .keepDesks=verdict { keep=previousSame?.desks }
+        guard let captured=LiveLayoutRecord.capture(key:key,monitor:identity,displayToken:token,snapshot:snapshot,browserProfiles:profileCache,keepingDesks:keep,builtInDesks:previousSame?.builtInDesks ?? latest?.builtInDesks) else { return }
         // Windows this scan could not read but that are still open keep their previous entry (see carryingForward).
         // A window seen without any desk (not minimized or full screen) counts as not read: its desk is unknown.
         let (record,carried)=captured.carryingForward(latest,seenTokens:present.subtracting(LiveLayoutRecord.unplacedTokens(snapshot)),existingTokens:existing)

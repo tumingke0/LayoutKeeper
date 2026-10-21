@@ -61,10 +61,10 @@ final class DeskIdentityTests: XCTestCase {
         let s=homeReplugged(homeBefore())
         let e=try XCTUnwrap(EffectiveLayout.compose(saved:savedLayout,live:rec,monitor:.sharedExternal,snapshot:s))
         XCTAssertEqual(e.context.sources,[.live,.live,.live,.live,.live,.live,.saved],"3 saved windows correspond to live ones; the closed one stays")
-        XCTAssertEqual(e.record.profile.windows[6].desktopID,255,"ordinal-only saved window joins the live desk with its ordinal")
+        XCTAssertNil(e.record.profile.windows[6].desktopID,"0.6.11: an ordinal-only saved window does not borrow a live desk by ordinal (10/21: that joined a stale window onto desk 1)")
         let p=try plan(e,s,ext:"home")
         for i in 0..<6 {
-            XCTAssertEqual(p.items[i].state,.alreadyInPlace,"#\(i)"); XCTAssertEqual(p.items[i].deskMapping,.identity); XCTAssertEqual(p.items[i].matchKind,.runtime)
+            XCTAssertEqual(p.items[i].state,.alreadyInPlace,"#\(i)"); XCTAssertEqual(p.items[i].deskMapping,.anchor); XCTAssertEqual(p.items[i].matchKind,.runtime)
         }
         XCTAssertEqual(p.items[0...3].map(\.targetSlot),[2,2,2,2]); XCTAssertEqual(p.items[4].targetSlot,3); XCTAssertEqual(p.items[5].targetSlot,4)
         XCTAssertTrue(p.plan.entries.isEmpty,"nothing moves")
@@ -115,35 +115,36 @@ final class DeskIdentityTests: XCTestCase {
         sharedRecord([saved(ag,"project-a — Antigravity",slot:3),saved(ag,"project-b — Antigravity",slot:3),
                       saved(chrome,"Old - Google Chrome - alex",slot:5,profile:"Default"),saved(chrome,"Old2 - Google Chrome - sam",slot:4,profile:"Profile 1")])
     }
-    func test1019OfficePlugCompressesGroupsOntoFreeDesksAndAsksForTheMissingOnes() throws {
+    /// 0.6.11: the strip is kept. Home strip [393·,255·,254●queue-tool,319●Profile 1,141●Default]; the office monitor
+    /// has one desk. Nothing is compressed onto it: the strip needs 5 desks, each group waits for its own position.
+    func test1019OfficePlugKeepsTheStripAndAsksForTheMissingDesks() throws {
         let rec=live(homeLastState(),ext:"home",ceiling:46000)
         let s1=officePlugged(desks:[413])
         let e=try XCTUnwrap(EffectiveLayout.compose(saved:savedLayout1017(),live:rec,monitor:.sharedExternal,snapshot:s1))
         XCTAssertEqual(e.context.sources,[.live,.live,.live,.saved,.saved],"Chrome saved windows correspond by profile; the closed Antigravity ones stay")
-        XCTAssertEqual(e.record.profile.windows[3...].map(\.desktopID),[254,254],"they join the queue-tool desk (same ordinal 3)")
-        // Step 1, one desk: the queue-tool group takes it; each Chrome group waits for its own desk.
+        XCTAssertEqual(e.record.profile.windows[3...].map(\.desktopID),[nil,nil],"no desk borrowed by ordinal")
+        XCTAssertEqual(e.context.strip?.count,5)
+        // Step 1, one desk: nothing fits, nothing moves, 4 desks are asked for.
         let p1=try plan(e,s1,ext:"office")
         let q=try XCTUnwrap(index(p1,"3711:45137"))
-        XCTAssertEqual(p1.items[q].state,.ready); XCTAssertEqual(p1.items[q].targetSpaceID,413); XCTAssertEqual(p1.items[q].deskMapping,.grouped)
-        XCTAssertTrue(QuickRestorePlanner.autoEligible(p1.items[q]))
+        XCTAssertEqual(p1.items[q].state,.blocked); XCTAssertNil(p1.items[q].targetSlot)
+        XCTAssertTrue(p1.items[q].reason.contains("第 3 个桌面还没有"),p1.items[q].reason)
         XCTAssertEqual(p1.items[1].state,.blocked); XCTAssertEqual(p1.items[2].state,.blocked)
-        XCTAssertTrue(p1.items[1].reason.contains("还缺 2 个桌面"))
-        XCTAssertEqual(p1.desktopsNeeded,3); XCTAssertEqual(p1.missingDesktops,2,"2 desks, not 4 (ordinal 5 − 1)")
-        XCTAssertEqual(p1.plan.entries.map(\.targetSpace),[413],"nothing piles onto the last desk")
+        XCTAssertEqual(p1.desktopsNeeded,5); XCTAssertEqual(p1.missingDesktops,4)
+        XCTAssertEqual(p1.unplacedPositions,[3,4,5])
+        XCTAssertTrue(p1.plan.entries.isEmpty,"nothing piles onto desk 1")
         XCTAssertEqual(p1.items[3].state,.missing); XCTAssertTrue(p1.items[3].stale); XCTAssertTrue(p1.items[4].stale)
         XCTAssertEqual(p1.staleSummary{ _ in "Antigravity" },["Antigravity：保存的 2 个窗口已关闭，现在开着的是另外 1 个窗口"])
-        // Step 2, after auto-add: [413,416,417]; queue-tool already on 413.
-        let s2=officePlugged(desks:[413,416,417],moved:["3711:45137":413])
+        // Step 2, after auto-add: [413,416,417,418,419]; positions 3/4/5 → desks 3/4/5, 1–2 stay empty.
+        let s2=officePlugged(desks:[413,416,417,418,419])
         let p2=try plan(e,s2,ext:"office")
-        XCTAssertEqual(p2.items[0].state,.alreadyInPlace)
-        XCTAssertEqual(p2.items[1].targetSpaceID,416); XCTAssertEqual(p2.items[2].targetSpaceID,417)
-        XCTAssertEqual(p2.items[1].state,.ready); XCTAssertEqual(p2.items[2].state,.ready)
-        XCTAssertTrue(p2.items[1...2].allSatisfy{ QuickRestorePlanner.autoEligible($0) && $0.matchKind == .runtime })
+        XCTAssertEqual(p2.items[0].targetSpaceID,417); XCTAssertEqual(p2.items[1].targetSpaceID,418); XCTAssertEqual(p2.items[2].targetSpaceID,419)
+        XCTAssertTrue(p2.items[0...2].allSatisfy{ $0.state == .ready && QuickRestorePlanner.autoEligible($0) && $0.matchKind == .runtime })
         XCTAssertEqual(p2.missingDesktops,0)
         let slots=p2.groups.compactMap(\.slot)
-        XCTAssertEqual(slots.count,Set(slots).count,"no two groups share a desk"); XCTAssertEqual(slots,[1,2,3])
+        XCTAssertEqual(slots.count,Set(slots).count,"no two groups share a desk"); XCTAssertEqual(slots,[3,4,5])
         // Step 3 (re-check): everything in place, nothing moves.
-        let s3=officePlugged(desks:[413,416,417],moved:["3711:45137":413,"9001:514":416,"9001:437":417])
+        let s3=officePlugged(desks:[413,416,417,418,419],moved:["3711:45137":417,"9001:514":418,"9001:437":419])
         XCTAssertTrue(try plan(e,s3,ext:"office").plan.entries.isEmpty)
     }
     /// Without any live record (first plug after updating), the old saved layout alone still never merges groups.
@@ -152,8 +153,8 @@ final class DeskIdentityTests: XCTestCase {
         let p=try QuickRestorePlanner.plan(record:savedLayout1017(),monitor:.sharedExternal,displayToken:"office",snapshot:s1,allowCrossSpace:true,browserProfiles:profiles)
         let slots=p.groups.compactMap(\.slot)
         XCTAssertEqual(slots.count,Set(slots).count)
-        XCTAssertEqual(p.plan.entries.count,1,"one group placed on the single desk")
-        XCTAssertGreaterThan(p.missingDesktops,0)
+        XCTAssertTrue(p.plan.entries.isEmpty,"positions 3–5 wait for their desks; nothing goes onto desk 1")
+        XCTAssertEqual(p.missingDesktops,4)
     }
 
     // MARK: - Merge semantics
@@ -214,7 +215,7 @@ final class DeskIdentityTests: XCTestCase {
 
     func testRenamedSavedWindowOnItsMigratedDeskIsCertain() throws {
         let rec=live(homeLastState(),ext:"home",ceiling:46000)
-        var s=officePlugged(desks:[413,416,417])
+        var s=officePlugged(desks:[413,416,417,418,419])
         // Saved (0.6.9 layout, with desk identity) on desk 319; on the built-in screen now, renamed. Not in the live
         // record (say the last scan missed it).
         s.windows.append(w("7000:900","com.example.notes","Renamed notes",space:319,builtInFrame))
@@ -224,7 +225,7 @@ final class DeskIdentityTests: XCTestCase {
         let p=try plan(e,s,ext:"office")
         let item=p.items.last!
         XCTAssertEqual(item.matchKind,.deskEvidence); XCTAssertEqual(item.chosenToken,"7000:900")
-        XCTAssertEqual(item.targetSpaceID,416,"with the Chrome Profile 1 group (same desk 319)")
+        XCTAssertEqual(item.targetSpaceID,418,"position 4, with the Chrome Profile 1 group (same desk 319)")
         XCTAssertTrue(QuickRestorePlanner.autoEligible(item))
         // Another app's window on that desk is not evidence for this one.
         var other=s; other.windows[other.windows.count-1].selector.bundleID="com.example.other"
@@ -240,7 +241,7 @@ final class DeskIdentityTests: XCTestCase {
         let e=try XCTUnwrap(EffectiveLayout.compose(saved:nil,live:rec,monitor:.sharedExternal,snapshot:s))
         XCTAssertEqual(e.context.sources,[.live,.live,.live,.companion])
         let p=try plan(e,s,ext:"office")
-        XCTAssertEqual(p.items[3].chosenToken,"3711:45100"); XCTAssertEqual(p.items[3].targetSpaceID,413,"same group as queue-tool")
+        XCTAssertEqual(p.items[3].chosenToken,"3711:45100"); XCTAssertEqual(p.items[3].targetSpaceID,417,"same position (3) as queue-tool")
         XCTAssertTrue(QuickRestorePlanner.autoEligible(p.items[3]))
         XCTAssertNil(index(p,"3711:47000")); XCTAssertNil(index(p,"8000:10"))
     }
@@ -253,23 +254,6 @@ final class DeskIdentityTests: XCTestCase {
 
     // MARK: - Desk mapper
 
-    func testDeskMapperIdentityOrdinalAndGrouped() {
-        let target=[Space(id:1,displayToken:"x"),Space(id:2,displayToken:"x",uuid:"B"),Space(id:3,displayToken:"x"),Space(id:4,displayToken:"x")]
-        let groups=[DeskMapper.Group(key:"a",ordinal:1,desk:DeskRef(id:90,uuid:"Z"),windows:1),   // gone → grouped
-                    DeskMapper.Group(key:"b",ordinal:2,desk:DeskRef(id:77,uuid:"B"),windows:2),   // uuid match beats id
-                    DeskMapper.Group(key:"c",ordinal:5,desk:nil,windows:1),                       // old record, ordinal 5 missing → grouped
-                    DeskMapper.Group(key:"d",ordinal:6,desk:DeskRef(id:91,uuid:nil),windows:1)]
-        let m=DeskMapper.map(groups,target:target)
-        XCTAssertEqual(m.map(\.slot),[1,2,3,4]); XCTAssertEqual(m.map(\.mapping),[.grouped,.identity,.grouped,.grouped])
-        let tight=DeskMapper.map(groups,target:Array(target.prefix(2)))
-        XCTAssertEqual(tight.map(\.slot),[1,2,nil,nil],"never two groups on one desk, never overflow onto the last")
-    }
-    func testDeskMapperKeepsOrderAfterAnIdentityAnchor() {
-        let target=[Space(id:1,displayToken:"x"),Space(id:2,displayToken:"x"),Space(id:3,displayToken:"x")]
-        // Group "a" (ordinal 1) is anchored on desk 3; "b" (ordinal 2) must come after it, so it needs a new desk.
-        let m=DeskMapper.map([DeskMapper.Group(key:"a",ordinal:1,desk:DeskRef(id:3,uuid:nil),windows:1),DeskMapper.Group(key:"b",ordinal:2,desk:DeskRef(id:50,uuid:nil),windows:1)],target:target)
-        XCTAssertEqual(m.map(\.slot),[3,nil])
-    }
 
     // MARK: - Records
 

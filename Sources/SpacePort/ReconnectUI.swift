@@ -86,6 +86,8 @@ final class ReconnectCoordinator {
             model.logRestore("attach #\(id) start\(retry ? " (retry)" : ""): screens settled after \(eventStarted.map{ String(format:"%.2fs",Date().timeIntervalSince($0)) } ?? "?"), monitor=\(RestoreLog.key(key))")
             model.logRestoreLines(model.environmentLines(label:"settled"))
             guard let monitor,Self.physicalKey(monitor)==key else { requeue("monitor not readable at start",delay:1); return }
+            // 0.6.11: nothing readable (locked, asleep): no restore session yet, try again later.
+            if LiveRecorder.screenLocked() { if unreadable(id,"screen locked or displays asleep") { return } }
             model.activateArrival(for:monitor,session:id)
             trigger(monitor,id:id)
         }
@@ -153,6 +155,10 @@ final class ReconnectCoordinator {
         model.windows.patientReads=false
         model.logRestore(String(format:"attach #\(id): warm-up + first scan took %.2fs, scan issues=%d",Date().timeIntervalSince(started),model.windows.issues.count))
         guard let snapshot=read else { model.logRestore("attach #\(id): window scan failed, restoring anyway"); finishAuto(monitor,id:id); return }
+        // 0.6.11: a scan that reads no window at all is not the screen (10/21 09:28: macOS still listed the home
+        // monitor for 2 minutes after wake). No restore and no record from it.
+        if snapshot.windows.isEmpty { if unreadable(id,"no window readable (screen locked, asleep, or the monitor is not really there)") { return } }
+        unreadableTries=0
         let bundles=Set(record.profile.windows.map(\.selector.bundleID))
         let tokens=snapshot.windows.filter{bundles.contains($0.selector.bundleID)}.map(\.token)
         var settle=FrameSettle(quiet:1.0,maxWait:6)
@@ -178,6 +184,19 @@ final class ReconnectCoordinator {
             if decision != .waiting { timer.invalidate(); self.settleTimer=nil; self.model.logRestore(String(format:"attach #\(id): windows %@ after %.2fs (%d samples)",decision == .settled ? "settled" : "still moving after 6 s",Date().timeIntervalSince(settleStart),samples)); self.finishAuto(monitor,id:id) }
         }
         settleTimer=t; RunLoop.main.add(t,forMode:.common)
+    }
+    static let unreadableMaxTries=6
+    static let unreadableRetry: TimeInterval=5
+    private var unreadableTries=0
+    /// Back to waiting while nothing is readable; after `unreadableMaxTries` the session ends without a restore.
+    /// Returns true (always: the caller stops).
+    private func unreadable(_ id: Int,_ why: String) -> Bool {
+        unreadableTries+=1
+        if unreadableTries>=Self.unreadableMaxTries {
+            unreadableTries=0
+            close(id,"skipped reason=screen-unreadable (\(why), \(Self.unreadableMaxTries) tries)")
+        } else { requeue("\(why); try \(unreadableTries)/\(Self.unreadableMaxTries)",delay:Self.unreadableRetry) }
+        return true
     }
     static let followUpTimeout: TimeInterval = 30
     private var followUpTimer: Timer?

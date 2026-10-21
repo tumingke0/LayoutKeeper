@@ -15,6 +15,9 @@ struct DirectRestoreOutcome {
     var staleText: [String]=[]
     /// Groups left where they are because there is no free desk for them, and how many desks that needs.
     var unplacedGroups=0, missingDesktops=0
+    /// Strip positions waiting for a desktop ("3、4"), and what to say about the strip (order changed, desk deleted).
+    var unplacedPositions: [Int]=[]
+    var stripNotices: [String]=[]
     var nothingToDo: Bool { error == nil && attempted == 0 }
     var failed: Int { attempted-restored }
 }
@@ -79,6 +82,7 @@ extension Model {
         }
         outcome.staleText=plan.staleSummary{ Self.appName($0) }
         outcome.missingDesktops=plan.missingDesktops; outcome.unplacedGroups=plan.unplacedGroups.count
+        outcome.unplacedPositions=plan.unplacedPositions; outcome.stripNotices=plan.stripNotices
         logRestoreLines(RestoreLog.deskMapLines(trigger:tag,plan:plan))
         logRestore(RestoreLog.planSummary(trigger:tag,plan:plan))
         logPlanDetail(trigger:tag,plan:plan,record:quickRecord,snapshot:quickSnapshot,displayToken:quickDisplayToken)
@@ -106,6 +110,8 @@ extension Model {
         requestLiveCheck?()
         return outcome
     }
+    /// "3、4" for strip positions.
+    static func positionList(_ p: [Int]) -> String { p.map(String.init).joined(separator:lk("、")) }
     func restoreNotice(_ o: DirectRestoreOutcome,trigger: RestoreTrigger) -> UserNotice? {
         // Clicking a result notice (or its 「查看」 button) opens the preview / results panel of this restore.
         let openResult: () -> Void={ [weak self] in self?.openPreviewPanel?(false) }
@@ -120,7 +126,7 @@ extension Model {
         }
         // Closed saved windows and groups without a desk, appended to whatever the notice says.
         var extra=o.staleText
-        if o.unplacedGroups>0 && !sharedModeActive { extra.append(lk("还缺 %@ 个桌面：有 %@ 组窗口没有移动，补好桌面后再恢复一次", "\(o.missingDesktops)", "\(o.unplacedGroups)")) }
+        if o.unplacedGroups>0 && !sharedModeActive { extra.append(lk("还缺 %@ 个桌面：第 %@ 个桌面的窗口没有移动，补好桌面后再恢复一次", "\(o.missingDesktops)", Self.positionList(o.unplacedPositions))) }
         let extraText=extra.isEmpty ? nil : extra.joined(separator:lk("；"))+(o.staleText.isEmpty ? "" : lk("。重新保存一次布局后就不再提示。"))
         func join(_ a: String?,_ b: String?) -> String? { [a,b].compactMap{ $0 }.isEmpty ? nil : [a,b].compactMap{ $0 }.joined(separator:"\n") }
         if o.nothingToDo {
@@ -133,9 +139,10 @@ extension Model {
             // Automatic: nothing moved and nothing needs you → stay silent. Manual: always answer.
             return trigger == .automatic ? nil : UserNotice(title:lk("布局已是保存的样子"))
         }
+        let extraWithStrip=o.stripNotices.isEmpty ? extraText : join(o.stripNotices.joined(separator:lk("；")),extraText)
         var title=lk("已恢复 %@ 个窗口", "\(o.restored)")
         if o.needsConfirmation>0 { title+=lk(" · %@ 个需确认", "\(o.needsConfirmation)") }
-        let detail: String? = join(!o.failures.isEmpty ? Self.failureText(o.failures) : (o.failed>0 ? lk("%@ 个未通过，已回滚", "\(o.failed)") : (o.skippedAuto>0 ? lk("%@ 个窗口无法唯一确认，没有自动移动", "\(o.skippedAuto)") : nil)),extraText)
+        let detail: String? = join(!o.failures.isEmpty ? Self.failureText(o.failures) : (o.failed>0 ? lk("%@ 个未通过，已回滚", "\(o.failed)") : (o.skippedAuto>0 ? lk("%@ 个窗口无法唯一确认，没有自动移动", "\(o.skippedAuto)") : nil)),extraWithStrip)
         var actions=[UserNotice.Action]()
         if !o.failures.isEmpty { actions.append(retry) }
         if lastRestoreJournal?.canUndo == true { actions.append(UserNotice.Action(.undo) { [weak self] in NSApp.activate(ignoringOtherApps:true); self?.undoExternalRestore(); self?.requestLiveCheck?() }) }

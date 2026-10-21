@@ -12,7 +12,7 @@ public struct RestoreLog {
     public var maxBytes: Int
     public init(url: URL,maxBytes: Int = 5_000_000) { self.url=url; self.maxBytes=maxBytes }
     public var oldURL: URL { url.deletingLastPathComponent().appendingPathComponent(url.deletingPathExtension().lastPathComponent+".old."+(url.pathExtension.isEmpty ? "txt" : url.pathExtension)) }
-    static let stamp: DateFormatter = {
+    public static let stamp: DateFormatter = {
         let f=DateFormatter(); f.locale=Locale(identifier:"en_US_POSIX"); f.dateFormat="yyyy-MM-dd HH:mm:ss.SSS"; return f
     }()
     public static func line(_ message: String,at date: Date) -> String {
@@ -147,9 +147,15 @@ public struct RestoreLog {
 
     /// Group keys hold desk uuids; log a short hash for uuid keys, IDs and labels as they are (labels are random).
     public static func groupTag(_ key: String) -> String { key.hasPrefix("u:") ? "u:"+hash(String(key.dropFirst(2))) : key }
-    /// One line per desk group: how its target desk was decided.
+    /// The desk strip of this restore and how it maps onto the display, then one line per position with windows.
     public static func deskMapLines(trigger: String,plan: QuickRestorePlan) -> [String] {
-        plan.groups.map{ g in "deskmap \(trigger) group=\(groupTag(g.key)) ordinal=\(g.ordinal.map(String.init) ?? "-") desk=\(g.desk.map{ String($0.id) } ?? "-") windows=\(g.windows) → \(g.mapping.rawValue) slot=\(g.slot.map(String.init) ?? "-") (\(g.note))" }
+        var out=[String]()
+        if let strip=plan.strip,let m=plan.mapping {
+            out.append("strip: \(trigger) source=\(strip.source.rawValue)\(strip.recordedAt.map{ " at="+stamp.string(from:$0) } ?? "") L=\(strip.count) \(strip.logText)")
+            out.append("strip: \(trigger) now [\(plan.desktopsNow) desktop(s)] plan=\(m.kind.rawValue) anchors=[\(m.anchors.map{ "\($0.0+1)→\($0.1+1)" }.joined(separator:","))] conflicts=[\(m.conflicts.map(String.init).joined(separator:","))] dropped=[\(m.dropped.map(String.init).joined(separator:","))] needed=\(m.needed) append=\(m.appended) holes=\(m.holes) moves=\(m.moves) (other: \(m.alternative))")
+        }
+        out+=plan.groups.map{ g in "strip: \(trigger) pos\(g.ordinal.map(String.init) ?? "-") desk=\(g.desk.map{ String($0.id) } ?? "-") windows=\(g.windows) → \(g.mapping.rawValue) slot=\(g.slot.map(String.init) ?? "-") (\(g.note))" }
+        return out
     }
     /// Per executed window: before/after frames and Spaces, target, final journal state and detail (error text, AX codes).
     public static func journalLines(trigger: String,report: ManualRestoreReport) -> [String] {

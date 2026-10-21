@@ -19,6 +19,12 @@ public struct MonitorLayoutRecord: Codable {
     public var coverage: ExternalCaptureCoverage?
     public var captureReport: CapturePipelineReport?
     public var completeness: CaptureCompleteness?
+    /// 0.6.11: the monitor's ordinary desktops at save time, in order, empty ones included (the desk strip).
+    /// Optional so older layouts load; older versions ignore it.
+    public var desks: [DeskRef]?
+    /// IDs of the desktops in `desks` that held any window at save time, including windows that were not saved
+    /// (minimized, full screen, duplicate title): such a desktop is not an empty position.
+    public var occupiedDesks: [UInt64]?
     public init(monitor: MonitorIdentity, savedAt: Date = Date(), profile: Profile) { self.monitor=monitor; self.savedAt=savedAt; self.profile=profile }
     public func validate() throws {
         guard schemaVersion==1,monitor.vendor != 0,monitor.model != 0,profile.windows.allSatisfy({$0.displayRole == .external}) else { throw LayoutError.invalidProfile }
@@ -90,6 +96,9 @@ public enum ExternalLayoutCapture {
         }
         let profile=Profile(location:monitor.name,windows:saved)
         var record=MonitorLayoutRecord(monitor:monitor,profile:profile)
+        record.desks=ordinary.map(DeskRef.init)
+        let onDisplay=Set(ordinary.map(\.id))
+        record.occupiedDesks=ordinary.map(\.id).filter{ id in snapshot.windows.contains{ $0.spaceIDs.count==1 && $0.spaceIDs[0]==id && onDisplay.contains(id) } }
         record.coverage=ExternalCaptureCoverage(ordinaryDesktopCount:snapshot.spaces.filter{$0.displayToken==displayToken && $0.kind == .ordinary}.count,
             representedDesktopCount:Set(profile.windows.map(\.desktopLabel)).count,readableWindowCount:profile.windows.count,excludedReadableWindowCount:issues.count)
         report.assessmentCompleted=true;report.finish();record.captureReport=report;record.completeness=report.completeness

@@ -55,6 +55,9 @@ public struct LiveLayoutRecord: Codable, Equatable {
     /// it were created after the unplug and never were on the monitor.
     public var windowIDCeiling: UInt32?
     public var frozenAt: Date?
+    /// 0.6.11: the built-in screen's own ordinary desktops at the last normal record. With the lid closed macOS moves
+    /// them onto the external monitor (10/21 09:00:53); they are not part of its desk strip.
+    public var builtInDesks: [DeskRef]?
     public init(key: String, monitor: MonitorIdentity, displayToken: String, recordedAt: Date, windows: [SavedWindow], desks: [DeskRef], elsewhere: [ElsewhereWindow] = []) {
         self.key=key; self.monitor=monitor; self.displayToken=displayToken; self.recordedAt=recordedAt; self.windows=windows; self.desks=desks; self.elsewhere=elsewhere
     }
@@ -72,18 +75,24 @@ public struct LiveLayoutRecord: Codable, Equatable {
     /// Builds the record from one snapshot. Only ordinary, visible, single-desk windows on `displayToken` are
     /// recorded; windows on other displays go to `elsewhere`. Unlike a saved layout, windows with equal titles are
     /// kept: the runtime identity tells them apart.
+    ///
+    /// `keepingDesks` (lid closed, see `LiveRecordTrust`): the strip stays exactly this list; only windows on these
+    /// desks are recorded at their position, every other window counts as elsewhere. `builtInDesks` is taken from
+    /// the snapshot when the built-in screen is there, else the given (carried) value is kept.
     public static func capture(key: String, monitor: MonitorIdentity, displayToken: String, snapshot s: Snapshot,
-                               browserProfiles: [String:String] = [:], at date: Date = Date()) -> LiveLayoutRecord? {
+                               browserProfiles: [String:String] = [:], at date: Date = Date(),
+                               keepingDesks: [DeskRef]? = nil, builtInDesks carried: [DeskRef]? = nil) -> LiveLayoutRecord? {
         guard let display=s.displays.first(where:{ $0.token==displayToken && $0.role == .external }),display.visible.valid else { return nil }
-        let ordinary=s.spaces.filter{ $0.displayToken==displayToken && $0.kind == .ordinary }
-        guard !ordinary.isEmpty else { return nil }
+        let onDisplay=s.spaces.filter{ $0.displayToken==displayToken && $0.kind == .ordinary }
+        guard !onDisplay.isEmpty else { return nil }
+        let strip=keepingDesks ?? onDisplay.map(DeskRef.init)
+        guard !strip.isEmpty else { return nil }
         var windows=[SavedWindow](),elsewhere=[ElsewhereWindow]()
         for w in s.windows where WindowMatcher.eligible(w,s) && !w.selector.bundleID.isEmpty {
             let runtime=RuntimeWindowIdentity(token:w.token,processStartedAt:w.processStartedAt)
-            guard let slot=ordinary.firstIndex(where:{ $0.id==w.spaceIDs[0] }) else {
+            guard let space=onDisplay.first(where:{ $0.id==w.spaceIDs[0] }),let slot=strip.firstIndex(where:{ $0.same(DeskRef(space)) }) else {
                 elsewhere.append(ElsewhereWindow(selector:w.selector,runtime:runtime,browserProfile:browserProfiles[w.token])); continue
             }
-            let space=ordinary[slot]
             let normalized=w.frame.normalized(in:display.visible)
             guard normalized.valid,normalized.width<=4,normalized.height<=4 else { continue }
             var saved=SavedWindow(selector:w.selector,displayRole:.external,desktopLabel:"desk-\(space.id)",normalizedFrame:normalized,desktopIndex:slot+1,desktopID:space.id,desktopUUID:space.uuid)
@@ -91,7 +100,10 @@ public struct LiveLayoutRecord: Codable, Equatable {
             windows.append(saved)
         }
         windows.sort{ ($0.desktopIndex ?? 0,$0.runtime?.token ?? "")<($1.desktopIndex ?? 0,$1.runtime?.token ?? "") }
-        return LiveLayoutRecord(key:key,monitor:monitor,displayToken:displayToken,recordedAt:date,windows:windows,desks:ordinary.map(DeskRef.init),elsewhere:elsewhere)
+        var r=LiveLayoutRecord(key:key,monitor:monitor,displayToken:displayToken,recordedAt:date,windows:windows,desks:strip,elsewhere:elsewhere)
+        let builtIn=Set(s.displays.filter{ $0.role == .builtIn }.map(\.token))
+        r.builtInDesks=builtIn.isEmpty ? carried : s.spaces.filter{ builtIn.contains($0.displayToken) && $0.kind == .ordinary }.map(DeskRef.init)
+        return r
     }
 }
 
@@ -200,7 +212,10 @@ public struct RestoreContext: Equatable {
     public var sources: [WindowSource]
     /// Desks of the frozen live record (the monitor's desks at the unplug).
     public var frozenDesks: [DeskRef]
-    public init(sources: [WindowSource], frozenDesks: [DeskRef] = []) { self.sources=sources; self.frozenDesks=frozenDesks }
+    /// The one desk strip this restore reproduces (0.6.11): the live record's when the layout comes from it, else the
+    /// saved layout's. Windows of the other record only take a position through their own desktop (strictly same).
+    public var strip: DeskStrip?
+    public init(sources: [WindowSource], frozenDesks: [DeskRef] = [], strip: DeskStrip? = nil) { self.sources=sources; self.frozenDesks=frozenDesks; self.strip=strip }
     public func source(_ i: Int) -> WindowSource { sources.indices.contains(i) ? sources[i] : .saved }
 }
 
@@ -213,15 +228,17 @@ public struct RestoreContext: Equatable {
 ///     layout has no more windows of that profile than the live record. The live record is newer and wins.
 ///  3. A saved window that corresponds (same rules) to a window that was on another display at the unplug is
 ///     dropped too: the user had it off the monitor then, so it stays where it is.
-///  4. Other saved windows are kept (source `.saved`). One without desk identity adopts the identity of the live
-///     desk with the same ordinal, if exactly one live desk with windows has it; one with an ID but no uuid takes
-///     the uuid of the live desk with that ID. The planner only takes certain matches for them (document, title,
-///     browser title, title tie-break); a renamed saved window is never guessed, it is reported as not found.
+///  4. Other saved windows are kept (source `.saved`); one with an ID but no uuid takes the uuid of the live desk
+///     with that ID. They never borrow a position from the live record by ordinal (0.6.11: the two records number
+///     their desktops differently): the planner places one only when its own desktop is in the live strip, and
+///     only for certain matches (document, title, browser title, title tie-break); a renamed one is never guessed.
 ///  5. With a frozen record and a snapshot: a saved window from rule 4 whose desk (by identity) is one of the
 ///     monitor's desks that the unplug moved to the built-in screen, and whose title changed, is paired with the
 ///     same app's unclaimed window on that desk when the counts are equal (source `.savedDeskEvidence`). Windows
 ///     on such a desk existed before the unplug (ID ≤ ceiling, app started before the freeze) and are on no list
 ///     are added as `.companion` windows of that desk: they were on the monitor at the unplug.
+///     0.6.11: a window the record lists as elsewhere is never a companion (it was on another screen), and the
+///     built-in screen's own desktops (`builtInDesks`) are never "moved by the unplug" (10/21 09:32:33).
 public struct EffectiveLayout {
     public var record: MonitorLayoutRecord
     public var context: RestoreContext
@@ -243,7 +260,7 @@ public struct EffectiveLayout {
     public static func compose(saved: MonitorLayoutRecord?, live: LiveLayoutRecord?, monitor: MonitorIdentity, snapshot: Snapshot? = nil) -> EffectiveLayout? {
         guard let live else {
             guard let saved else { return nil }
-            return EffectiveLayout(record:saved,context:RestoreContext(sources:saved.profile.windows.map{ _ in .saved }),notes:["layout: saved only (no live record)"])
+            return EffectiveLayout(record:saved,context:RestoreContext(sources:saved.profile.windows.map{ _ in .saved },strip:DeskStrip(saved:saved)),notes:["layout: saved only (no live record)"])
         }
         var notes=["layout: live record \(live.windows.count) window(s) on \(live.desks.count) desk(s) recordedAt=\(RestoreLog.stamp.string(from:live.recordedAt))"+(live.frozenAt.map{" frozenAt=\(RestoreLog.stamp.string(from:$0))"} ?? " (not frozen)")+(live.windowIDCeiling.map{" ceiling=\($0)"} ?? "")]
         var windows=live.windows,sources=[WindowSource](repeating:.live,count:live.windows.count)
@@ -267,24 +284,19 @@ public struct EffectiveLayout {
             }
         }
         // Rule 4.
-        let liveDesks=Dictionary(grouping:live.windows,by:\.desktopIndex)
         for (i,var s) in savedWindows.enumerated() where !dropped.contains(i) {
             s.runtime=nil
-            if s.desktopID == nil,let index=s.desktopIndex {
-                let sameOrdinal=Set((liveDesks[index] ?? []).compactMap(\.desktopID))
-                if sameOrdinal.count==1,let w=liveDesks[index]?.first {
-                    s.desktopID=w.desktopID; s.desktopUUID=w.desktopUUID; s.desktopLabel=w.desktopLabel
-                    notes.append("merge: saved #\(i) \(s.selector.bundleID) \(RestoreLog.hash(s.selector.title)) has no desk identity; joins live desk \(w.desktopID!) (same ordinal \(index))")
-                }
-            } else if let id=s.desktopID,s.desktopUUID == nil,let d=live.desks.first(where:{ $0.id==id }) { s.desktopUUID=d.uuid }
+            if let id=s.desktopID,s.desktopUUID == nil,let d=live.desks.first(where:{ $0.id==id }) { s.desktopUUID=d.uuid }
             windows.append(s); sources.append(.saved)
             notes.append("merge: saved #\(i) \(s.selector.bundleID) \(RestoreLog.hash(s.selector.title)) kept as saved-only (desk \(s.desktopID.map(String.init) ?? "-") ordinal \(s.desktopIndex.map(String.init) ?? "-"))")
         }
         // Rule 5.
         if let snapshot,let frozenAt=live.frozenAt {
             let builtIn=Set(snapshot.displays.filter{ $0.role == .builtIn }.map(\.token))
-            let migrated=snapshot.spaces.filter{ sp in sp.kind == .ordinary && builtIn.contains(sp.displayToken) && live.desks.contains{ $0.matches(sp) } }
-            let claimed=Set(snapshot.windows.filter{ w in windows.contains{ $0.runtime?.matches(w)==true } }.map(\.token))
+            let own=live.builtInDesks ?? []
+            let migrated=snapshot.spaces.filter{ sp in sp.kind == .ordinary && builtIn.contains(sp.displayToken) && live.desks.contains{ $0.matches(sp) } && !own.contains{ $0.matches(sp) } }
+            let elsewhere=Set(live.elsewhere.map(\.runtime.token))
+            let claimed=Set(snapshot.windows.filter{ w in windows.contains{ $0.runtime?.matches(w)==true } || elsewhere.contains(w.token) }.map(\.token))
             func predates(_ w: ObservedWindow) -> Bool {
                 guard let id=RuntimeWindowIdentity(token:w.token,processStartedAt:nil).windowID else { return false }
                 if let c=live.windowIDCeiling,id>c { return false }
@@ -324,13 +336,16 @@ public struct EffectiveLayout {
         var record=MonitorLayoutRecord(monitor:monitor,savedAt:live.frozenAt ?? live.recordedAt,profile:Profile(location:saved?.profile.location ?? monitor.name,windows:windows))
         record.coverage=saved?.coverage
         notes.append("layout: effective \(windows.count) window(s): live=\(sources.filter{ $0 == .live }.count) saved=\(sources.filter{ $0 == .saved }.count) deskEvidence=\(sources.filter{ $0 == .savedDeskEvidence }.count) companion=\(sources.filter{ $0 == .companion }.count) dropped=\(dropped.count)")
-        return EffectiveLayout(record:record,context:RestoreContext(sources:sources,frozenDesks:live.frozen ? live.desks : []),notes:notes)
+        notes.append("strip: source=live \(live.frozenAt.map{ "frozenAt="+RestoreLog.stamp.string(from:$0) } ?? "recordedAt="+RestoreLog.stamp.string(from:live.recordedAt)) L=\(live.desks.count) \(DeskStrip(live:live).logText); saved layout windows only by their own desktop")
+        return EffectiveLayout(record:record,context:RestoreContext(sources:sources,frozenDesks:live.frozen ? live.desks : [],strip:DeskStrip(live:live)),notes:notes)
     }
 }
 
-/// How a group of windows (those that shared a desk) gets its target desk.
-public enum DeskMapping: String, Codable { case identity, ordinal, grouped, none }
+/// How a strip position got its desktop (0.6.11). `anchor`: its own desktop, in order; `position`: by order (the
+/// desktop at its place); `none`: no desktop yet (one has to be added) or no position.
+public enum DeskMapping: String, Codable { case anchor, position, none }
 
+/// One strip position with restorable windows, for the log and the "missing desktops" report.
 public struct DeskGroupDecision: Equatable {
     public var key: String
     public var ordinal: Int?
@@ -339,48 +354,4 @@ public struct DeskGroupDecision: Equatable {
     public var slot: Int?
     public var mapping: DeskMapping
     public var note: String
-}
-
-/// Maps groups onto the target display's ordinary desktops.
-///  1. Identity: the group's own desk is on the target display → that desk (ordinals ignored).
-///  2. A group without any desk identity (records before 0.6.9) keeps its saved ordinal if that desk exists, is not
-///     taken and keeps the order.
-///  3. Otherwise grouped: groups in saved order go to the first free desk after the previous group's desk, so
-///     groups that shared a desk stay together, their order is kept, and empty saved desks take no room.
-///  A desk is never given to two groups. Groups that find no desk stay unassigned (the planner leaves their windows
-///  alone and reports the shortage); they are never put onto the last desk.
-///  Only groups with at least one identified window take part.
-public enum DeskMapper {
-    public struct Group { public var key: String; public var ordinal: Int?; public var desk: DeskRef?; public var windows: Int
-        public init(key: String, ordinal: Int?, desk: DeskRef?, windows: Int) { self.key=key; self.ordinal=ordinal; self.desk=desk; self.windows=windows }
-    }
-    public static func map(_ groups: [Group], target ordinary: [Space]) -> [DeskGroupDecision] {
-        let ordered=groups.enumerated().sorted{ a,b in (a.element.ordinal ?? Int.max,a.offset)<(b.element.ordinal ?? Int.max,b.offset) }.map(\.element)
-        var taken=Set<Int>(),result=[String:DeskGroupDecision]()
-        for g in ordered {
-            if let d=g.desk,let i=ordinary.firstIndex(where:{ d.matches($0) }),!taken.contains(i+1) {
-                taken.insert(i+1)
-                result[g.key]=DeskGroupDecision(key:g.key,ordinal:g.ordinal,desk:d,windows:g.windows,slot:i+1,mapping:.identity,note:"desk \(d.id) is on this display (slot \(i+1))")
-            }
-        }
-        var floor=0
-        for g in ordered {
-            if let r=result[g.key] { floor=max(floor,r.slot ?? 0); continue }
-            guard g.desk != nil || g.ordinal != nil else {
-                result[g.key]=DeskGroupDecision(key:g.key,ordinal:nil,desk:nil,windows:g.windows,slot:nil,mapping:.none,note:"no desk identity and no ordinal"); continue
-            }
-            if g.desk == nil,let o=g.ordinal,o>floor,o<=ordinary.count,!taken.contains(o) {
-                taken.insert(o); floor=o
-                result[g.key]=DeskGroupDecision(key:g.key,ordinal:o,desk:nil,windows:g.windows,slot:o,mapping:.ordinal,note:"no desk identity; saved ordinal \(o) exists"); continue
-            }
-            if let slot=(1...max(1,ordinary.count)).first(where:{ $0>floor && $0<=ordinary.count && !taken.contains($0) }) {
-                taken.insert(slot); floor=slot
-                let why=g.desk.map{ "desk \($0.id) is not on this display" } ?? "saved ordinal \(g.ordinal!) not available"
-                result[g.key]=DeskGroupDecision(key:g.key,ordinal:g.ordinal,desk:g.desk,windows:g.windows,slot:slot,mapping:.grouped,note:"\(why); next free desk in order → slot \(slot)")
-            } else {
-                result[g.key]=DeskGroupDecision(key:g.key,ordinal:g.ordinal,desk:g.desk,windows:g.windows,slot:nil,mapping:.none,note:"no free desk after slot \(floor) (\(ordinary.count) desk(s)); needs one more")
-            }
-        }
-        return ordered.compactMap{ result[$0.key] }
-    }
 }

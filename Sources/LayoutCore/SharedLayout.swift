@@ -27,7 +27,8 @@ public enum SharedLayout {
     /// True when shared mode was chosen but can't apply because several external monitors are attached.
     public static func fellBack(externalCount: Int,mode: LayoutMode) -> Bool { mode == .sharedExternal && externalCount>1 }
 
-    // 0.6.9: the old `targetSlot` (min(saved, available), i.e. piling extra windows onto the final desktop) is gone; `DeskMapper` decides.
+    // 0.6.9: the old `targetSlot` (min(saved, available), i.e. piling extra windows onto the final desktop) is gone;
+    // 0.6.11: `StripMapper` decides, and `needed` is the desk strip's length.
     public static func missingDesktops(needed: Int,available: Int) -> Int { max(0,needed-available) }
 
     /// First switch to shared mode: copies the connected screen's current layout (else the most recently saved one) as the

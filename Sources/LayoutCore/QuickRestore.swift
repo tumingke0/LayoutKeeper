@@ -247,9 +247,9 @@ public struct QuickRestoreItem: Equatable, Identifiable {
     public var targetFrame: Rect?
     /// Where this window of the layout came from (live record, saved layout, …).
     public var source: WindowSource = .saved
-    /// The saved desk group (windows that shared a desk) this window belongs to.
+    /// The strip position this window belongs to ("p:3"), empty when it has none.
     public var groupKey: String=""
-    /// How the group's target desk was chosen; `.none` when it has none (not identified, or no free desk).
+    /// How its position's desktop was chosen; `.none` when it has none (not identified, or no desktop yet).
     public var deskMapping: DeskMapping = .none
     /// ManagedSpaceID of the target desk.
     public var targetSpaceID: UInt64?
@@ -275,15 +275,29 @@ public struct QuickRestorePlan {
     public var plan: RestorePlan
     public var entrySavedIndex: [Int]
     public var desktopsNow: Int
-    /// Desks needed so every group with an identified window has its own desk: the desks there are plus one per
-    /// group that found none.
+    /// Desktops the desk strip needs on this display (0.6.11: its kept length, not the number of groups).
     public var desktopsNeeded: Int
     /// The layout's windows, indexed by `QuickRestoreItem.savedIndex`.
     public var windows: [SavedWindow]
-    /// One decision per desk group, in saved order.
+    /// One decision per strip position with restorable windows, in strip order.
     public var groups: [DeskGroupDecision]
+    /// The strip and how it maps onto this display (nil for hand-built plans).
+    public var strip: DeskStrip?
+    public var mapping: StripMapping?
+    /// Per saved index: the 1-based desktop its position maps to on this display (only when that desktop exists).
+    public var mappedSlot: [Int:Int]=[:]
     public init(items: [QuickRestoreItem], plan: RestorePlan, entrySavedIndex: [Int], desktopsNow: Int, desktopsNeeded: Int, windows: [SavedWindow] = [], groups: [DeskGroupDecision] = []) {
         self.items=items; self.plan=plan; self.entrySavedIndex=entrySavedIndex; self.desktopsNow=desktopsNow; self.desktopsNeeded=desktopsNeeded; self.windows=windows; self.groups=groups
+    }
+    /// Strip positions (1-based) with identified windows that wait for a desktop to be added.
+    public var unplacedPositions: [Int] { unplacedGroups.compactMap(\.ordinal) }
+    /// What the user should know about the strip itself (only said when something was restored).
+    public var stripNotices: [String] {
+        guard let mapping else { return [] }
+        var out=[String]()
+        if !mapping.conflicts.isEmpty { out.append(lk("外接屏的桌面顺序和记录时不一样（macOS 换了顺序），已按原来的顺序把窗口放回")) }
+        if !mapping.dropped.isEmpty { out.append(lk("原第 %@ 个空桌面已被删掉，按删掉后的顺序恢复", mapping.dropped.map(String.init).joined(separator:lk("、")))) }
+        return out
     }
     /// Spaces to add with Mission Control's + so every group gets its own desk.
     public var missingDesktops: Int { SharedLayout.missingDesktops(needed:desktopsNeeded,available:desktopsNow) }
@@ -327,8 +341,10 @@ public struct PinnedMatch: Equatable { public var kind: MatchKind; public var au
 ///  1. Identification: which live window is each saved window. Runtime identity first (live record), then the
 ///     window matcher, then elimination. With a live record, saved-only windows take certain matches only and never
 ///     a window a live-record window took.
-///  2. Desk mapping (`DeskMapper`): one target desk per group of windows that shared a desk.
-///  3. Placement: target desk and frame per identified window; groups without a desk are left alone and reported.
+///  0. Desk strip (0.6.11, `StripMapper`): the strip of this restore's one source, mapped onto the current desktops;
+///     every window's position comes from the strip, not from desk identity alone.
+///  2. Positions → desktops: one decision per strip position with identified windows.
+///  3. Placement: target desk and frame per identified window; positions without a desk are left alone and reported.
 public enum QuickRestorePlanner {
     public static let oldRecordReason=lk("旧版布局缺少桌面顺序，请先重新保存一次此屏布局")
     static let savedOnlyKinds: Set<MatchKind>=[.document,.title,.browserTitle,.tieBreak,.userChoice]
@@ -354,9 +370,25 @@ public enum QuickRestorePlanner {
         let sources=windows.indices.map{ context?.source($0) ?? .saved }
         let hasLive=sources.contains{ $0 != .saved }
         func candidate(_ w: ObservedWindow) -> QuickCandidate { QuickCandidate(token:w.token,title:w.selector.title,slot:WindowMatcher.slot(of:w,displayToken:displayToken,in:s),frame:w.frame) }
+        // MARK: 0. Desk strip (0.6.11): one strip per restore, positions not desk IDs, mapped before identification
+        // so "is it already on its desktop" means "on the desktop of its position".
+        let strip=context?.strip ?? DeskStrip(saved:record)
+        let liveStrip=strip.source == .live
+        let position: [Int?]=windows.indices.map{ i in
+            let w=windows[i]
+            if liveStrip && sources[i] == .saved {
+                // Window of the other (older) record: only through its own desktop, never by its ordinal.
+                return w.desk.flatMap{ strip.strictPosition(of:$0) }
+            }
+            if let d=w.desk,let p=strip.position(of:d) { return p }
+            return w.desktopIndex
+        }
+        let mapping=StripMapper.map(strip,current:ordinary,exists:{ d in s.spaces.contains{ d.matches($0) } })
+        func mapped(_ i: Int) -> Int? { position[i].flatMap{ mapping.slot(forPosition:$0) } }
+        func onDisplay(_ i: Int) -> Int? { mapped(i).flatMap{ $0<=ordinary.count ? $0 : nil } }
         var items=windows.enumerated().map{ index,saved in
-            var item=QuickRestoreItem(savedIndex:index,bundleID:saved.selector.bundleID,savedTitle:saved.selector.title,currentTitle:nil,currentSlot:nil,targetSlot:saved.desktopIndex,chosenToken:nil,candidates:[],matchKind:.none,state:.missing,reason:"")
-            item.source=sources[index]; item.groupKey=saved.groupKey
+            var item=QuickRestoreItem(savedIndex:index,bundleID:saved.selector.bundleID,savedTitle:saved.selector.title,currentTitle:nil,currentSlot:nil,targetSlot:onDisplay(index) ?? position[index],chosenToken:nil,candidates:[],matchKind:.none,state:.missing,reason:"")
+            item.source=sources[index]; item.groupKey=position[index].map{ "p:\($0)" } ?? ""
             return item
         }
         var identified=Set<Int>(),pinned=[Int:Bool]()
@@ -392,7 +424,7 @@ public enum QuickRestorePlanner {
             }
             var view=s
             if sources[index] == .saved && hasLive { view.windows=s.windows.filter{ !liveClaimed.contains($0.token) } }
-            var evidence=saved; evidence.desktopIndex=evidenceSlot(saved,ordinary:ordinary,snapshot:s)
+            var evidence=saved; evidence.desktopIndex=onDisplay(index)
             let m=WindowMatcher.match(evidence,displayToken:displayToken,snapshot:view,choice:choiceToken,savedOfApp:windows.filter{$0.selector.bundleID==saved.selector.bundleID}.count,browserProfiles:browserProfiles,savedOfProfile:saved.browserProfile.map{ f in windows.filter{$0.selector.bundleID==saved.selector.bundleID && $0.browserProfile==f}.count } ?? 0)
             item.candidates=m.candidates.map(candidate)
             item.matchKind=m.kind; item.reason=m.reason; item.chosenToken=m.chosen?.token; item.autoCertain=m.certain
@@ -436,33 +468,43 @@ public enum QuickRestorePlanner {
         // Leftover windows of the same app: after certain matches are taken, if N unmatched saved windows and N
         // unmatched live windows remain for that app, pair them (manual restore only — not certain enough for auto).
         // Typical cases: a renamed WorkBuddy, or a Chrome tab whose title/URL changed while the other Chrome matched.
-        resolveByElimination(&items,windows:windows,choices:choices,displayToken:displayToken,snapshot:s,ordinary:ordinary,claimed:&claimed,identified:&identified,pinned:&pinned,browserProfiles:browserProfiles,excluded:hasLive ? Set(windows.indices.filter{ sources[$0] == .saved }) : [])
+        resolveByElimination(&items,windows:windows,choices:choices,displayToken:displayToken,snapshot:s,ordinary:ordinary,claimed:&claimed,identified:&identified,pinned:&pinned,browserProfiles:browserProfiles,excluded:hasLive ? Set(windows.indices.filter{ sources[$0] == .saved }) : [],slotOf:onDisplay)
 
-        // MARK: 2. Desk mapping
-        var order=[String](),members=[String:[Int]]()
-        for i in windows.indices { let k=windows[i].groupKey; if members[k] == nil { order.append(k) }; members[k,default:[]].append(i) }
-        let groups=order.compactMap { k -> DeskMapper.Group? in
-            let idx=members[k]!
-            let count=idx.filter{ identified.contains($0) }.count
-            guard count>0 else { return nil }
-            return DeskMapper.Group(key:k,ordinal:idx.compactMap{ windows[$0].desktopIndex }.min(),desk:idx.compactMap{ windows[$0].desk }.first,windows:count)
+        // MARK: 2. Positions → desktops
+        var byPosition=[Int:[Int]]()
+        for i in identified { if let p=position[i] { byPosition[p,default:[]].append(i) } }
+        func how(_ p: Int) -> DeskMapping {
+            guard let t=mapping.slot(forPosition:p),t<=ordinary.count else { return .none }
+            if let d=strip.slots.indices.contains(p-1) ? strip.slots[p-1].desk : nil,d.same(DeskRef(ordinary[t-1])) { return .anchor }
+            return .position
         }
-        let decisions=DeskMapper.map(groups,target:ordinary)
-        let byKey=Dictionary(uniqueKeysWithValues:decisions.map{ ($0.key,$0) })
-        let unplaced=decisions.filter{ $0.slot == nil && ($0.desk != nil || $0.ordinal != nil) }.count
+        let decisions=byPosition.keys.sorted().map{ p -> DeskGroupDecision in
+            let desk=strip.slots.indices.contains(p-1) ? strip.slots[p-1].desk : nil
+            let t=mapping.slot(forPosition:p)
+            let m=how(p)
+            let note: String
+            if let t,t<=ordinary.count { note=m == .anchor ? "own desktop \(ordinary[t-1].id), in order" : "by position → desktop \(ordinary[t-1].id)" }
+            else if let t { note="needs desktop \(t) (\(ordinary.count) now)" }
+            else { note="position dropped" }
+            return DeskGroupDecision(key:"p:\(p)",ordinal:p,desk:desk,windows:byPosition[p]!.count,slot:t.flatMap{ $0<=ordinary.count ? $0 : nil },mapping:m,note:note)
+        }
+        let missing=max(0,mapping.needed-ordinary.count)
 
         // MARK: 3. Placement
         var entries=[PlanEntry]()
         for i in identified.sorted() {
             let saved=windows[i]
             guard let w=s.windows.first(where:{ $0.token==items[i].chosenToken }) else { continue }
-            let decision=byKey[saved.groupKey]
-            items[i].deskMapping=decision?.mapping ?? .none
-            guard let slot=decision?.slot else {
+            items[i].deskMapping=position[i].map(how) ?? .none
+            guard let slot=onDisplay(i) else {
                 items[i].state = .blocked
                 items[i].targetSlot=nil
-                items[i].reason=(decision?.desk == nil && decision?.ordinal == nil) ? oldRecordReason
-                    : lk("这一组窗口没有空桌面可放（还缺 %@ 个桌面），这次没有移动", "\(unplaced)")
+                if let p=position[i] {
+                    items[i].reason=mapping.slot(forPosition:p) == nil ? lk("它原来所在的第 %@ 个桌面已被删掉，这次没有移动", "\(p)")
+                        : lk("第 %@ 个桌面还没有（还缺 %@ 个桌面），这次没有移动", "\(p)", "\(missing)")
+                } else if liveStrip && sources[i] == .saved {
+                    items[i].reason=lk("这个窗口来自更早保存的布局，拔屏时不在外接屏的桌面上，这次没有移动")
+                } else { items[i].reason=oldRecordReason }
                 continue
             }
             let targetSpace=ordinary[slot-1].id
@@ -501,8 +543,11 @@ public enum QuickRestorePlanner {
             entry.tokenPinned=pinned[item.savedIndex]==true ? true : nil
             entries.append(entry); entrySaved.append(item.savedIndex)
         }
-        return QuickRestorePlan(items:items,plan:RestorePlan(session:s.session,topology:s.topology,entries:entries),entrySavedIndex:entrySaved,
-                                desktopsNow:ordinary.count,desktopsNeeded:ordinary.count+unplaced,windows:windows,groups:decisions)
+        var result=QuickRestorePlan(items:items,plan:RestorePlan(session:s.session,topology:s.topology,entries:entries),entrySavedIndex:entrySaved,
+                                desktopsNow:ordinary.count,desktopsNeeded:ordinary.count+missing,windows:windows,groups:decisions)
+        result.strip=strip; result.mapping=mapping
+        for i in windows.indices { if let t=onDisplay(i) { result.mappedSlot[i]=t } }
+        return result
     }
     /// Auto mode: execute only items that were matched without any user input and are not on an unverified path.
     /// Windows that macOS parked on the other screen (it does this when the monitor is unplugged) come back too,
@@ -519,9 +564,9 @@ public enum QuickRestorePlanner {
 
     /// Pair leftover unmatched saved windows with leftover live windows of the same app when the counts match.
     /// Identification only: the desk comes from the mapping phase like every other window.
-    static func resolveByElimination(_ items: inout [QuickRestoreItem],windows: [SavedWindow],choices: [Int:QuickChoice],displayToken: String,snapshot s: Snapshot,ordinary: [Space],claimed: inout [String],identified: inout Set<Int>,pinned: inout [Int:Bool],browserProfiles: [String:String] = [:],excluded: Set<Int> = []) {
+    static func resolveByElimination(_ items: inout [QuickRestoreItem],windows: [SavedWindow],choices: [Int:QuickChoice],displayToken: String,snapshot s: Snapshot,ordinary: [Space],claimed: inout [String],identified: inout Set<Int>,pinned: inout [Int:Bool],browserProfiles: [String:String] = [:],excluded: Set<Int> = [],slotOf mappedSlot: (Int) -> Int?) {
         let bundles=Set(items.filter{$0.state == .needsConfirmation && !excluded.contains($0.savedIndex)}.map(\.bundleID))
-        func slotOf(_ saved: SavedWindow) -> Int? { evidenceSlot(saved,ordinary:ordinary,snapshot:s) }
+        func slotOf(_ savedIndex: Int) -> Int? { mappedSlot(savedIndex) }
         for bundle in bundles.sorted() {
             let open=items.indices.filter{ items[$0].bundleID==bundle && items[$0].state == .needsConfirmation && choices[items[$0].savedIndex] == nil && !excluded.contains($0) &&
                 (windows[items[$0].savedIndex].selector.document ?? "").isEmpty }
@@ -546,10 +591,10 @@ public enum QuickRestorePlanner {
                 var used=Set<String>()
                 for i in open {
                     let saved=windows[items[i].savedIndex]
-                    guard let slot=slotOf(saved),slot<=ordinary.count else { continue }
+                    guard let slot=slotOf(items[i].savedIndex),slot<=ordinary.count else { continue }
                     let placed=leftover.filter{ WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==slot && WindowMatcher.geometryMatches(saved,$0,s) }
                     guard placed.count==1,!used.contains(placed[0].token) else { continue }
-                    let rivals=open.filter{ j in j != i && { let o=windows[items[j].savedIndex]; return slotOf(o)==slot && WindowMatcher.geometryMatches(o,placed[0],s) }() }
+                    let rivals=open.filter{ j in j != i && { let o=windows[items[j].savedIndex]; return slotOf(items[j].savedIndex)==slot && WindowMatcher.geometryMatches(o,placed[0],s) }() }
                     guard rivals.isEmpty else { continue }
                     used.insert(placed[0].token)
                     take(i,placed[0],certain:false,reason:lk("标题已变化；同一桌面同一位置只有这一个窗口，按它恢复"))
@@ -562,7 +607,7 @@ public enum QuickRestorePlanner {
                 let saved=windows[items[i].savedIndex]
                 let pick: ObservedWindow
                 if free.count==1 { pick=free.removeFirst() }
-                else if let slot=slotOf(saved),let same=free.first(where:{WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==slot}) {
+                else if let slot=slotOf(items[i].savedIndex),let same=free.first(where:{WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==slot}) {
                     pick=same; free.removeAll{$0.token==pick.token}
                 } else if let geo=free.first(where:{WindowMatcher.geometryMatches(saved,$0,s)}) {
                     pick=geo; free.removeAll{$0.token==pick.token}
@@ -623,7 +668,8 @@ public enum QuickRestorePlanner {
             guard !rel.isEmpty,!lRel.isEmpty else { continue }
             let allInPlace=rel.allSatisfy { i in
                 let saved=windows[q.items[i].savedIndex]
-                guard let desk=evidenceSlot(saved,ordinary:ordinary,snapshot:s) else { return false }
+                // 0.6.11: the desktop of its strip position, not its desk ID (a desk can be back out of order).
+                guard let desk=q.mapping == nil ? evidenceSlot(saved,ordinary:ordinary,snapshot:s) : q.mappedSlot[q.items[i].savedIndex] else { return false }
                 return lRel.allSatisfy{ WindowMatcher.slot(of:$0,displayToken:displayToken,in:s)==desk && WindowMatcher.geometryMatches(saved,$0,s) }
             }
             guard allInPlace else { continue }

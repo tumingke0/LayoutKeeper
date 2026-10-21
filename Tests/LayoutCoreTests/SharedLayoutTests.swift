@@ -46,29 +46,27 @@ final class SharedLayoutTests: XCTestCase {
         XCTAssertEqual(p.items[1].targetFrame,Rect(1200,0,960,1080))
         XCTAssertEqual(p.missingDesktops,0)
     }
-    /// 0.6.9: too few desks never piles groups onto the last desk. Groups keep their order on the free desks; the
-    /// group that finds none stays where it is, and the plan asks for exactly the missing desks.
-    func testTooFewSpacesPlacesGroupsInOrderAndLeavesTheRestUntouched() throws {
+    /// 0.6.11: too few desks: each group waits for the desk at its own position; nothing is compressed or piled.
+    func testTooFewSpacesKeepsPositionsAndLeavesTheRestUntouched() throws {
         let r=sharedRecord([saved("app.a","A",slot:1),saved("app.b","B",slot:4),saved("app.c","C",slot:6)])
         let s=snapshot(extSpaces:[501,502],windows:[w("1:1","app.a","A",space:501),w("1:2","app.b","B",space:501),w("1:3","app.c","C",space:501)])
         let p=try QuickRestorePlanner.plan(record:r,monitor:.sharedExternal,displayToken:"ext",snapshot:s,allowCrossSpace:true)
-        XCTAssertEqual(p.items.map(\.state),[.ready,.ready,.blocked])
-        XCTAssertEqual(p.items[0].targetSlot,1); XCTAssertEqual(p.items[0].deskMapping,.ordinal)
-        XCTAssertEqual(p.items[1].targetSlot,2); XCTAssertEqual(p.items[1].deskMapping,.grouped)
-        XCTAssertNil(p.items[2].targetSlot); XCTAssertTrue(p.items[2].reason.contains("还缺 1 个桌面"))
-        XCTAssertEqual(p.plan.entries.map(\.targetSpace),[501,502])
-        XCTAssertEqual(p.desktopsNeeded,3); XCTAssertEqual(p.missingDesktops,1)
+        XCTAssertEqual(p.items.map(\.state),[.ready,.blocked,.blocked])
+        XCTAssertEqual(p.items[0].targetSlot,1); XCTAssertEqual(p.items[0].deskMapping,.position)
+        XCTAssertNil(p.items[1].targetSlot); XCTAssertTrue(p.items[1].reason.contains("第 4 个桌面还没有（还缺 4 个桌面）"))
+        XCTAssertEqual(p.plan.entries.map(\.targetSpace),[501])
+        XCTAssertEqual(p.desktopsNeeded,6); XCTAssertEqual(p.missingDesktops,4)
         XCTAssertFalse(p.items.contains{ $0.actionText.contains("最后一个桌面") })
     }
-    func testSingleGroupWhoseDeskIsGoneGoesToFirstFreeDesk() throws {
+    func testSingleGroupWhoseDeskIsMissingWaitsForIt() throws {
         let r=sharedRecord([saved("app.b","B",slot:4)])
         let p=try QuickRestorePlanner.plan(record:r,monitor:.sharedExternal,displayToken:"ext",snapshot:snapshot(extSpaces:[501],windows:[w("1:2","app.b","B",space:501)]),allowCrossSpace:true)
-        XCTAssertEqual(p.items[0].state,.ready); XCTAssertEqual(p.items[0].targetSlot,1); XCTAssertEqual(p.missingDesktops,0)
+        XCTAssertEqual(p.items[0].state,.blocked); XCTAssertNil(p.items[0].targetSlot); XCTAssertEqual(p.missingDesktops,3)
     }
     func testAddingSpacesLaterMapsToSavedOrdinal() throws {
         let r=sharedRecord([saved("app.b","B",slot:3)])
         let before=try QuickRestorePlanner.plan(record:r,monitor:.sharedExternal,displayToken:"ext",snapshot:snapshot(extSpaces:[501,502],windows:[w("1:2","app.b","B",space:501)]),allowCrossSpace:true)
-        XCTAssertEqual(before.items[0].targetSlot,1)
+        XCTAssertNil(before.items[0].targetSlot); XCTAssertEqual(before.missingDesktops,1)
         // An old record (ordinal only): once the saved ordinal exists again, the window goes there.
         let after=try QuickRestorePlanner.plan(record:r,monitor:.sharedExternal,displayToken:"ext",snapshot:snapshot(extSpaces:[501,502,509],windows:[w("1:2","app.b","B",space:502)]),allowCrossSpace:true)
         XCTAssertEqual(after.items[0].targetSlot,3); XCTAssertEqual(after.plan.entries.first?.targetSpace,509)

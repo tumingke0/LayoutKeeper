@@ -275,7 +275,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             self?.model.liveRecorder.screensChanged(); self?.spaceWatcher.screensChanged(); self?.model.refresh(); self?.reconnect?.note(.screens); self?.scheduleLiveCheck(after:1.5); self?.scheduleFirstLayoutReminder()
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.activeSpaceDidChangeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.refresh(); self?.scheduleLiveCheck(after:0.8); self?.model.liveRecorder.kick(after:2,reason:"desk switch") }
-        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.liveRecorder.screensChanged(); self?.reconnect?.note(.wake) }
+        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.liveRecorder.screensChanged(); self?.model.liveRecorder.woke(); self?.reconnect?.note(.wake) }
         // Sleep: whatever happens to the screens before wake is not recorded (a scan in flight is void).
         NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.willSleepNotification,object:nil,queue:.main) { [weak self] _ in
             // An unconfirmed arrangement switch never survives sleep.
