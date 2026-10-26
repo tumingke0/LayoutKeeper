@@ -282,4 +282,52 @@ final class DisplayArrangementTests: XCTestCase {
         let refused=HotkeyRegistrar.registerPresets([(id:"a",title:"A",key:k1)],enabled:true,taken:[:]) { _,_ in false }
         if case .conflict=refused["a"] {} else { XCTFail() }
     }
+
+    // MARK: EDID alphanumeric serial fallback & physical port binding (Issue #1, BetterDisplay #5929)
+
+    func testEDIDAlphanumericSerialFallbackAndPreservesRealNumericSerial() {
+        // Sample EDID with 0xFF descriptor "ABC1234" at offset 72.
+        var edid=[UInt8](repeating:0,count:128)
+        let serialBlock: [UInt8]=[0x00,0x00,0x00,0xFF,0x00]+Array("ABC1234\n     ".utf8)
+        for (i,b) in serialBlock.enumerated() { edid[72+i]=b }
+        let data=Data(edid)
+        XCTAssertEqual(EDIDParser.alphanumericSerial(from:data),"ABC1234")
+        // Real numeric serial (e.g. 123456789) is kept unchanged so existing layout keys never change.
+        XCTAssertEqual(EDIDParser.effectiveSerial(numericSerial:123_456_789,edid:data),123_456_789)
+        // Placeholder numeric serials (0 or 0x01010101 = 16843009) fall back to deterministic hash of 0xFF ASCII serial.
+        let s1=EDIDParser.effectiveSerial(numericSerial:0x0101_0101,alphanumericSerial:"T5LMQV009972")
+        let s2=EDIDParser.effectiveSerial(numericSerial:0x0101_0101,alphanumericSerial:"T5LMQV009974")
+        XCTAssertNotEqual(s1,0x0101_0101); XCTAssertNotEqual(s2,0x0101_0101); XCTAssertNotEqual(s1,s2)
+        XCTAssertEqual(EDIDParser.effectiveSerial(numericSerial:0,edid:data),EDIDParser.serialHash("ABC1234"))
+    }
+
+    func testDisplayPortMatchingAndPortArrangementBinding() {
+        let pLeft=DisplayPortDescriptor(builtInPortNumber:1,portType:DisplayPortDescriptor.normalizePortType(explicit:nil,transportDescription:"Port-USB-C@1/DisplayPort"),transportDescription:"Port-USB-C@1/DisplayPort",productID:200,serialNumber:300)
+        let pRight=DisplayPortDescriptor(builtInPortNumber:4,portType:"USB-C",transportDescription:"Port-USB-C@4/DisplayPort",productID:200,serialNumber:300)
+        XCTAssertEqual(pLeft.portID,"usb-c-1"); XCTAssertEqual(pLeft.label,"USB-C 口 #1")
+        XCTAssertEqual(pRight.portID,"usb-c-4"); XCTAssertEqual(pRight.label,"USB-C 口 #4")
+        XCTAssertEqual(DisplayPortMatcher.match(model:200,numericSerial:300,ports:[pLeft])?.portID,"usb-c-1")
+
+        // Same monitor plugged into left USB-C (#1, beside on right) vs right USB-C (#4, centred above).
+        var extLeft=external(1512,-49); extLeft.portID="usb-c-1"; extLeft.portLabel="USB-C 口 #1"
+        var extRight=external(1512,-49); extRight.portID="usb-c-4"; extRight.portLabel="USB-C 口 #4"
+        let liveLeft=[builtIn(),extLeft], liveRight=[builtIn(),extRight]
+        XCTAssertEqual(ArrangementGeometry.activePortTarget(liveLeft,presets:[]),.quick(.right))
+
+        let rules=[
+            PortArrangementRule(monitorKey:eKey,monitorName:"Monitor",portID:"usb-c-1",portLabel:"USB-C 口 #1",target:.quick(.right)),
+            PortArrangementRule(monitorKey:eKey,monitorName:"Monitor",portID:"usb-c-4",portLabel:"USB-C 口 #4",target:.quick(.above)),
+        ]
+        // On USB-C #1 (already on the right): menu shows checked unbind item.
+        let menuLeft=ArrangementMenu.build(presets:[],live:liveLeft,busy:nil,hotkeysEnabled:true,portRules:rules)!
+        XCTAssertEqual(menuLeft.portBinding?.activeIsBound,true)
+        let leftItems=StatusMenuModel.arrangementMenu(menuLeft).children
+        XCTAssertTrue(leftItems.contains{ $0.id=="arrange.port.unbind" && $0.checked })
+
+        // Plugged into USB-C #4 while still arranged on the right: rule resolves to .above and plans (-204, -1080).
+        let resolved=ArrangementGeometry.resolvePortRule(rules[1],live:liveRight,presets:[])!
+        let planned=plan(resolved,liveRight)!
+        XCTAssertFalse(planned.alreadyApplied)
+        XCTAssertEqual(origin(planned,2),[-204,-1080])
+    }
 }

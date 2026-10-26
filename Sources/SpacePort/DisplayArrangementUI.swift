@@ -33,7 +33,7 @@ extension Model {
         return nil
     }
     func arrangementMenu() -> ArrangementMenu? {
-        ArrangementMenu.build(presets:arrangementPresets,live:liveDisplays(),busy:arrangementBusyReason(),hotkeysEnabled:hotkeySettings.enabled)
+        ArrangementMenu.build(presets:arrangementPresets,live:liveDisplays(),busy:arrangementBusyReason(),hotkeysEnabled:hotkeySettings.enabled,portRules:portArrangementRules)
     }
     static func describe(_ live: [LiveDisplay]) -> String {
         live.sorted{ $0.id<$1.id }.map{ "\($0.key)\($0.isMain ? "*" : ""):(\($0.x),\($0.y) \($0.width)x\($0.height))" }.joined(separator:" ")
@@ -125,7 +125,64 @@ extension Model {
     func deleteArrangement(_ id: String) {
         guard let i=arrangementPresets.firstIndex(where:{ $0.id==id }) else { return }
         let p=arrangementPresets.remove(at:i)
+        portArrangementRules.removeAll{ $0.target == .preset(id) }
         logRestore("arrangement: deleted \(Self.logName(p))")
+    }
+    func bindCurrentPortArrangement() {
+        let live=liveDisplays()
+        guard case .success(let p)=ArrangementGeometry.pair(live),let portID=p.external.portID,!portID.isEmpty,
+              let target=ArrangementGeometry.activePortTarget(live,presets:arrangementPresets),
+              let name=ArrangementGeometry.targetName(target,presets:arrangementPresets) else { return }
+        let portLabel=p.external.portLabel ?? portID
+        let rule=PortArrangementRule(monitorKey:p.external.key,monitorName:p.external.name,portID:portID,portLabel:portLabel,target:target)
+        portArrangementRules.removeAll{ $0.monitorKey==p.external.key && $0.portID==portID }
+        portArrangementRules.append(rule)
+        lastAutoAppliedPortKey="\(p.external.key)@\(portID)"
+        logRestore("arrangement: bound port \(portID) for \(p.external.key) -> \(target)")
+        notify?(UserNotice(title:lk("已记住 %@ 的排列", portLabel),detail:lk("下次把显示器插在 %@ 时，会自动切换到「%@」", portLabel, name),duration:4))
+    }
+    func unbindCurrentPortArrangement() {
+        let live=liveDisplays()
+        guard case .success(let p)=ArrangementGeometry.pair(live),let portID=p.external.portID,!portID.isEmpty else { return }
+        let portLabel=p.external.portLabel ?? portID
+        portArrangementRules.removeAll{ $0.monitorKey==p.external.key && $0.portID==portID }
+        logRestore("arrangement: unbound port \(portID) for \(p.external.key)")
+        notify?(UserNotice(title:lk("已取消 %@ 的排列绑定", portLabel),duration:3))
+    }
+    func deletePortArrangementRule(_ id: String) {
+        portArrangementRules.removeAll{ $0.id==id }
+        logRestore("arrangement: deleted port rule \(id)")
+    }
+    /// When an external monitor is plugged into a built-in port that has a saved `PortArrangementRule`, apply that
+    /// arrangement once per connection session before window layout restore runs.
+    func applyPortArrangementIfNeeded() {
+        guard !RenderMode.snapshot else { return }
+        let live=liveDisplays()
+        let externals=live.filter{ !$0.builtIn }
+        guard externals.count==1,let ext=externals.first,let portID=ext.portID,!portID.isEmpty else {
+            if externals.isEmpty { lastAutoAppliedPortKey=nil }
+            return
+        }
+        let sessionKey="\(ext.key)@\(portID)"
+        guard sessionKey != lastAutoAppliedPortKey else { return }
+        guard arrangementBusyReason() == nil else { return }
+        guard case .success=ArrangementGeometry.pair(live) else { return }
+        lastAutoAppliedPortKey=sessionKey
+        guard let rule=portArrangementRules.first(where:{ $0.monitorKey==ext.key && $0.portID==portID }),
+              let preset=ArrangementGeometry.resolvePortRule(rule,live:live,presets:arrangementPresets),
+              case .success(let plan)=ArrangementGeometry.plan(preset,live) else { return }
+        if plan.alreadyApplied {
+            logRestore("arrangement: port \(portID) already arranged as \(Self.logName(preset))")
+            return
+        }
+        let ids=Set(live.map(\.id))
+        arrangementGuard.begin(displays:ids,label:"port-\(portID)")
+        let outcome=DisplayArrangementIO.apply(plan.targets,scope:.permanent)
+        arrangementGuard.end(at:Date())
+        logRestore("arrangement: auto-applied \(Self.logName(preset)) for port \(portID) result=\(outcome.ok ? "ok" : "error \(outcome.error!.rawValue)")")
+        if outcome.ok {
+            notify?(UserNotice(title:lk("已按 %@ 切换到「%@」", rule.portLabel, preset.name),duration:4))
+        }
     }
 
     // MARK: Apply → confirm → keep / revert
@@ -316,6 +373,29 @@ struct ArrangementSettingsSection: View {
             QuickArrangementPicker(model:model,live:live)
             ForEach(model.arrangementPresets.filter{ ArrangementGeometry.quickEquivalent($0,live) == nil }) { preset in
                 ArrangementRow(model:model,preset:preset,status:ArrangementGeometry.status(preset,live),delete:{ confirmDelete=preset })
+            }
+            if let pb=ArrangementGeometry.portBindingInfo(live,presets:model.arrangementPresets,rules:model.portArrangementRules) {
+                HStack {
+                    Image(systemName:"cable.connector").foregroundStyle(.secondary)
+                    if pb.activeIsBound,let bound=pb.boundName {
+                        Text(lk("当前接在 %@：已绑定自动切换到「%@」", pb.portLabel, bound)).font(.caption)
+                        Spacer()
+                        Button(lk("取消绑定")) { model.unbindCurrentPortArrangement(); reload() }.controlSize(.small)
+                    } else if let cur=pb.currentName {
+                        Text(lk("当前接在 %@（现在是「%@」）", pb.portLabel, cur)).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(lk("插在此接口时自动用「%@」", cur)) { model.bindCurrentPortArrangement(); reload() }.controlSize(.small)
+                    }
+                }
+            }
+            ForEach(model.portArrangementRules) { rule in
+                if let targetName=ArrangementGeometry.targetName(rule.target,presets:model.arrangementPresets) {
+                    HStack {
+                        Text(lk("%@ · %@ → %@", rule.monitorName, rule.portLabel, targetName)).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button { model.deletePortArrangementRule(rule.id) } label: { Image(systemName:"trash") }.buttonStyle(.borderless).help(lk("删除"))
+                    }
+                }
             }
             HStack {
                 Button(lk("存当前位置（自定义）…")) { model.saveCurrentArrangement(); reload() }

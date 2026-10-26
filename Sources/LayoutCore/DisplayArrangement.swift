@@ -110,8 +110,11 @@ public struct LiveDisplay: Equatable, Sendable {
     public var height: Int
     public var mirrored: Bool
     public var asleep: Bool
-    public init(id: UInt32,key: String,uuid: String,name: String,builtIn: Bool,isMain: Bool,x: Int,y: Int,width: Int,height: Int,mirrored: Bool = false,asleep: Bool = false) {
-        self.id=id; self.key=key; self.uuid=uuid; self.name=name; self.builtIn=builtIn; self.isMain=isMain; self.x=x; self.y=y; self.width=width; self.height=height; self.mirrored=mirrored; self.asleep=asleep
+    /// Physical port on the Mac body (e.g. "usb-c-1", "hdmi-3") when known from IOKit.
+    public var portID: String?
+    public var portLabel: String?
+    public init(id: UInt32,key: String,uuid: String,name: String,builtIn: Bool,isMain: Bool,x: Int,y: Int,width: Int,height: Int,mirrored: Bool = false,asleep: Bool = false,portID: String? = nil,portLabel: String? = nil) {
+        self.id=id; self.key=key; self.uuid=uuid; self.name=name; self.builtIn=builtIn; self.isMain=isMain; self.x=x; self.y=y; self.width=width; self.height=height; self.mirrored=mirrored; self.asleep=asleep; self.portID=portID; self.portLabel=portLabel
     }
     var rect: IntRect { IntRect(x:x,y:y,width:width,height:height) }
     public static func key(builtIn: Bool,vendor: UInt32,model: UInt32,serial: UInt32) -> String { builtIn ? "builtin" : "monitor-\(vendor)-\(model)-\(serial)" }
@@ -474,9 +477,65 @@ extension HotkeyRegistrar {
     }
 }
 
+/// Which arrangement a physical port is bound to: one of the four quick options or a custom preset by ID.
+public enum PortArrangementTarget: Codable, Equatable, Sendable {
+    case quick(ArrangementEdge)
+    case preset(String)
+}
+
+/// "When monitor `monitorKey` is plugged into physical port `portID`, automatically switch to `target`."
+public struct PortArrangementRule: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { "\(monitorKey)@\(portID)" }
+    public var monitorKey: String
+    public var monitorName: String
+    public var portID: String
+    public var portLabel: String
+    public var target: PortArrangementTarget
+    public init(monitorKey: String,monitorName: String,portID: String,portLabel: String,target: PortArrangementTarget) {
+        self.monitorKey=monitorKey; self.monitorName=monitorName; self.portID=portID; self.portLabel=portLabel; self.target=target
+    }
+}
+
+extension ArrangementGeometry {
+    /// The arrangement active right now on `live`, if it matches one of the four centred quick options or a saved preset.
+    public static func activePortTarget(_ live: [LiveDisplay],presets: [ArrangementPreset]) -> PortArrangementTarget? {
+        if let edge=currentEdge(live),currentAnchor(live) == .center { return .quick(edge) }
+        if let p=presets.first(where:{ status($0,live) == .applicable(active:true) }) { return .preset(p.id) }
+        return nil
+    }
+    public static func targetName(_ target: PortArrangementTarget,presets: [ArrangementPreset]) -> String? {
+        switch target {
+        case .quick(let edge): return quickName(edge:edge)
+        case .preset(let id): return presets.first(where:{ $0.id==id })?.name
+        }
+    }
+    /// Resolves a port rule to the `ArrangementPreset` to apply for `live`.
+    public static func resolvePortRule(_ rule: PortArrangementRule,live: [LiveDisplay],presets: [ArrangementPreset],at date: Date = Date()) -> ArrangementPreset? {
+        guard case .success(let p)=pair(live),p.external.key==rule.monitorKey,p.external.portID==rule.portID else { return nil }
+        switch rule.target {
+        case .quick(let edge):
+            guard case .success(let q)=quickPreset(live,edge:edge,anchor:.center,id:"port-\(rule.portID)-\(edge.rawValue)",at:date) else { return nil }
+            return q
+        case .preset(let id):
+            return presets.first(where:{ $0.id==id })
+        }
+    }
+    public static func portBindingInfo(_ live: [LiveDisplay],presets: [ArrangementPreset],rules: [PortArrangementRule]) -> ArrangementMenu.PortBinding? {
+        guard case .success(let p)=pair(live),let portID=p.external.portID,!portID.isEmpty else { return nil }
+        let portLabel=p.external.portLabel ?? portID
+        let activeTarget=activePortTarget(live,presets:presets)
+        let currentName=activeTarget.flatMap{ targetName($0,presets:presets) }
+        let existing=rules.first(where:{ $0.monitorKey==p.external.key && $0.portID==portID })
+        let boundName=existing.flatMap{ targetName($0.target,presets:presets) }
+        guard currentName != nil || boundName != nil else { return nil }
+        let isBound=existing != nil && existing?.target==activeTarget && boundName != nil
+        return ArrangementMenu.PortBinding(portID:portID,portLabel:portLabel,boundName:boundName,currentName:currentName,activeIsBound:isBound)
+    }
+}
+
 extension ArrangementMenu {
     /// The submenu for the displays connected now. Hidden with a single display and no presets at all.
-    public static func build(presets: [ArrangementPreset],live: [LiveDisplay],busy: String?,hotkeysEnabled: Bool) -> ArrangementMenu? {
+    public static func build(presets: [ArrangementPreset],live: [LiveDisplay],busy: String?,hotkeysEnabled: Bool,portRules: [PortArrangementRule] = []) -> ArrangementMenu? {
         guard live.count>=2 || !presets.isEmpty else { return nil }
         var entries=[Entry](), other=0
         for p in presets {
@@ -496,6 +555,7 @@ extension ArrangementMenu {
         let now=ArrangementGeometry.currentEdge(live)
         // Only one display: nothing to arrange, so no quick options (saved presets are still counted).
         let quick=live.count<2 ? [] : ArrangementGeometry.quickEdges.map{ ArrangementMenu.Quick(edge:$0,active:$0==now) }
-        return ArrangementMenu(quick:quick,quickBlock:quickBlock,entries:entries,otherCount:other,saveBlock:saveBlock,busy:busy)
+        let pb=ArrangementGeometry.portBindingInfo(live,presets:presets,rules:portRules)
+        return ArrangementMenu(quick:quick,quickBlock:quickBlock,entries:entries,otherCount:other,saveBlock:saveBlock,busy:busy,portBinding:pb)
     }
 }

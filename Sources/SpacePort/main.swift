@@ -91,6 +91,22 @@ final class Model: ObservableObject {
     @Published var autoRestoreMode=AutoRestoreMode(rawValue:Prefs.store?.string(forKey:"autoRestoreMode") ?? "") ?? .defaultMode {
         didSet { Prefs.store?.set(autoRestoreMode.rawValue,forKey:"autoRestoreMode") }
     }
+    @Published var keepAwakeMode=KeepAwakeMode(rawValue:Prefs.store?.string(forKey:KeepAwakeMode.preferenceKey) ?? "") ?? .defaultMode {
+        didSet { Prefs.store?.set(keepAwakeMode.rawValue,forKey:KeepAwakeMode.preferenceKey); refreshKeepAwake(reason:"preference") }
+    }
+    @Published var keepAwakeVerified=true
+    let sleepGuard=SystemSleepGuard()
+    private var lastKeepAwakeLog: String?
+    func refreshKeepAwake(reason: String) {
+        guard !RenderMode.snapshot else { return }
+        let res=sleepGuard.apply(mode:keepAwakeMode)
+        if keepAwakeVerified != res.verified { keepAwakeVerified=res.verified }
+        let summary="mode=\(keepAwakeMode.rawValue) clamshell=\(res.clamshell) verified=\(res.verified) assertions=\(res.activeTypes.sorted())"
+        if summary != lastKeepAwakeLog {
+            lastKeepAwakeLog=summary
+            logRestore("keep-awake: \(summary) (\(reason))")
+        }
+    }
     @Published var layoutMode=LayoutMode(rawValue:Prefs.store?.string(forKey:LayoutMode.preferenceKey) ?? "") ?? .defaultMode {
         didSet { Prefs.store?.set(layoutMode.rawValue,forKey:LayoutMode.preferenceKey); if oldValue != layoutMode { layoutModeChanged() } }
     }
@@ -131,6 +147,8 @@ final class Model: ObservableObject {
     @Published var recordingHotkey: HotkeyAction?
     /// 显示器排列预设. Changing them re-registers the hotkeys (a preset can carry one).
     @Published var arrangementPresets=Prefs.arrangementPresets() { didSet { Prefs.save(arrangementPresets,key:Prefs.arrangementPresetsKey); applyHotkeys?() } }
+    @Published var portArrangementRules=Prefs.portArrangementRules() { didSet { Prefs.save(portArrangementRules,key:Prefs.portArrangementRulesKey) } }
+    var lastAutoAppliedPortKey: String?
     @Published var arrangementHotkeyStatus: [String:HotkeyStatus]=[:]
     @Published var recordingPresetHotkey: String?
     /// A switch waiting for 「保留这个排列？」 (blocks restores and other switches until it is kept or reverted).
@@ -272,17 +290,36 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         window.collectionBehavior=[.moveToActiveSpace]
         NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main) { [weak self] _ in
             self?.model.arrangementScreensChanged()
+            self?.model.applyPortArrangementIfNeeded()
+            self?.model.refreshKeepAwake(reason:"screens-changed")
             self?.model.liveRecorder.screensChanged(); self?.spaceWatcher.screensChanged(); self?.model.refresh(); self?.reconnect?.note(.screens); self?.scheduleLiveCheck(after:1.5); self?.scheduleFirstLayoutReminder()
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.activeSpaceDidChangeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.refresh(); self?.scheduleLiveCheck(after:0.8); self?.model.liveRecorder.kick(after:2,reason:"desk switch") }
-        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in self?.model.liveRecorder.screensChanged(); self?.model.liveRecorder.woke(); self?.reconnect?.note(.wake) }
-        // Sleep: whatever happens to the screens before wake is not recorded (a scan in flight is void).
-        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.willSleepNotification,object:nil,queue:.main) { [weak self] _ in
-            // An unconfirmed arrangement switch never survives sleep.
-            self?.model.revertArrangement(reason:"sleep")
-            self?.model.liveRecorder.screensChanged()
+        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in
+            if let m=self?.model,m.keepAwakeMode != .off { _=m.sleepGuard.declareUserActivity(); m.refreshKeepAwake(reason:"system-wake") }
+            self?.model.liveRecorder.screensChanged(); self?.model.liveRecorder.woke(); self?.reconnect?.note(.wake)
         }
-        model.refresh(); model.refreshAuthorization()
+        NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.screensDidWakeNotification,object:nil,queue:.main) { [weak self] _ in
+            self?.model.refreshKeepAwake(reason:"screens-wake")
+            self?.model.liveRecorder.screensChanged(); self?.model.liveRecorder.woke(); self?.reconnect?.note(.wake)
+        }
+        // Sleep (system or display-only): whatever happens to the screens before wake is not recorded (a scan in flight is void).
+        for sleepName in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(forName:sleepName,object:nil,queue:.main) { [weak self] notif in
+                // An unconfirmed arrangement switch never survives sleep.
+                self?.model.revertArrangement(reason:"sleep")
+                self?.model.liveRecorder.screensChanged()
+                if notif.name == NSWorkspace.screensDidSleepNotification,let m=self?.model,m.keepAwakeMode != .off {
+                    let plan=KeepAwakePolicy.plan(mode:m.keepAwakeMode,clamshell:SystemSleepGuard.clamshellState())
+                    if plan.wakeDisplayOnSleepEvent {
+                        _=m.sleepGuard.declareUserActivity()
+                        m.logRestore("keep-awake: declared user activity on display sleep to prevent clamshell/display sleep")
+                    }
+                    m.refreshKeepAwake(reason:"screens-sleep")
+                }
+            }
+        }
+        model.refresh(); model.refreshAuthorization(); model.refreshKeepAwake(reason:"launch")
         // First launch, or permission missing at launch (e.g. after a rebuild): the guide replaces the main window.
         if let reason=OnboardingPolicy.reasonAtLaunch(completed:Prefs.store?.bool(forKey:OnboardingPolicy.completedKey) ?? false,trusted:model.trusted) {
             showOnboarding(reason)
@@ -296,6 +333,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         displayCoordinator.start(trusted:{ AXIsProcessTrusted() })
         let timer=Timer(timeInterval:2,repeats:true) { [weak self] _ in
             self?.model.refreshAuthorization()
+            self?.model.refreshKeepAwake(reason:"periodic")
             self?.displayCoordinator.evaluate(trusted:AXIsProcessTrusted())
         }
         authorizationTimer=timer
@@ -388,6 +426,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "mode.ask": model.autoRestoreMode = .ask
         case "mode.auto": model.autoRestoreMode = .auto
         case "mode.forget": if let key=model.currentExternalMonitor?.identity.key { model.monitorPreferences.setRestore(nil,for:key) }
+        case "keepAwake.off": model.keepAwakeMode = .off
+        case "keepAwake.systemOnly": model.keepAwakeMode = .systemOnly
+        case "keepAwake.systemAndDisplay": model.keepAwakeMode = .systemAndDisplay
         case "open": show()
         case "notice":
             let notice=model.undeliveredNotice; model.undeliveredNotice=nil
@@ -395,6 +436,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "settings": showSettings(.general)
         case "checkUpdates": updater?.checkForUpdates()
         case "quit": NSApplication.shared.terminate(nil)
+        case "arrange.port.bind": if debounce(id) { model.bindCurrentPortArrangement() }
+        case "arrange.port.unbind": if debounce(id) { model.unbindCurrentPortArrangement() }
         case "arrange.save": model.saveCurrentArrangement()
         case "arrange.manage": showSettings(.displays)
         case let quick where quick.hasPrefix(StatusMenuModel.quickArrangementPrefix):
@@ -488,6 +531,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     func applicationWillTerminate(_ notification: Notification) {
         // macOS undoes an app-only preview itself when we exit; revert explicitly too, so the log says so.
         model.revertArrangement(reason:"quit")
+        model.sleepGuard.releaseAll()
         authorizationTimer?.invalidate(); hotkeys.unregisterAll(); displayCoordinator.stop() }
     @objc func quit() { NSApplication.shared.terminate(nil) }
     @objc func checkForUpdates() { updater?.checkForUpdates() }

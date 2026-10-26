@@ -56,11 +56,22 @@ public struct ArrangementMenu: Equatable {
     /// Presets made for other display combinations (not listed).
     public var otherCount: Int
     /// Why the current arrangement can't be saved (nil = it can).
+    public struct PortBinding: Equatable, Sendable {
+        public var portID: String
+        public var portLabel: String
+        public var boundName: String?
+        public var currentName: String?
+        public var activeIsBound: Bool
+        public init(portID: String,portLabel: String,boundName: String?,currentName: String?,activeIsBound: Bool) {
+            self.portID=portID; self.portLabel=portLabel; self.boundName=boundName; self.currentName=currentName; self.activeIsBound=activeIsBound
+        }
+    }
     public var saveBlock: String?
     /// Something blocks every switch (a confirmation is open, windows are being restored…).
     public var busy: String?
-    public init(quick: [Quick] = [],quickBlock: String? = nil,entries: [Entry] = [],otherCount: Int = 0,saveBlock: String? = nil,busy: String? = nil) {
-        self.quick=quick; self.quickBlock=quickBlock; self.entries=entries; self.otherCount=otherCount; self.saveBlock=saveBlock; self.busy=busy
+    public var portBinding: PortBinding?
+    public init(quick: [Quick] = [],quickBlock: String? = nil,entries: [Entry] = [],otherCount: Int = 0,saveBlock: String? = nil,busy: String? = nil,portBinding: PortBinding? = nil) {
+        self.quick=quick; self.quickBlock=quickBlock; self.entries=entries; self.otherCount=otherCount; self.saveBlock=saveBlock; self.busy=busy; self.portBinding=portBinding
     }
 }
 
@@ -75,6 +86,7 @@ public struct MenuState {
     public var canUndo=false
     public var globalMode=AutoRestoreMode.defaultMode
     public var monitorChoice: AutoRestoreMode?
+    public var keepAwakeMode=KeepAwakeMode.defaultMode
     public var pausedUntil: Date?
     public var now=Date()
     public var hotkeys=HotkeySettings.defaults
@@ -102,6 +114,17 @@ public enum StatusMenuModel {
         if a.entries.isEmpty && a.quick.isEmpty { children.append(MenuItemModel(kind:.status,id:"arrange.none",title:lk("还没有这组屏幕的排列"),enabled:false)) }
         if a.otherCount>0 { children.append(MenuItemModel(kind:.status,id:"arrange.other",title:lk("另有 %@ 个排列属于别的屏幕组合", "\(a.otherCount)"),enabled:false)) }
         children.append(.separator("arrange.sep"))
+        if let pb=a.portBinding {
+            let portEnabled=a.busy == nil
+            if pb.activeIsBound,let bound=pb.boundName {
+                children.append(MenuItemModel(kind:.action,id:"arrange.port.unbind",title:lk("插在 %@ 时自动用「%@」", pb.portLabel, bound),enabled:portEnabled,reason:a.busy,checked:true))
+            } else if let cur=pb.currentName {
+                let sub=pb.boundName.map{ lk("当前已绑「%@」", $0) }
+                children.append(MenuItemModel(kind:.action,id:"arrange.port.bind",title:lk("插在 %@ 时自动用「%@」", pb.portLabel, cur),symbol:"cable.connector",enabled:portEnabled,reason:a.busy ?? sub))
+            } else if let bound=pb.boundName {
+                children.append(MenuItemModel(kind:.action,id:"arrange.port.unbind",title:lk("插在 %@ 时自动用「%@」", pb.portLabel, bound),enabled:portEnabled,reason:a.busy,checked:true))
+            }
+        }
         let saveWhy=a.busy ?? a.saveBlock
         children.append(MenuItemModel(kind:.action,id:"arrange.save",title:lk("存当前位置（自定义）…"),symbol:"plus",enabled:saveWhy == nil,reason:saveWhy))
         children.append(MenuItemModel(kind:.action,id:"arrange.manage",title:lk("管理排列…")))
@@ -155,6 +178,10 @@ public enum StatusMenuModel {
             modes.append(MenuItemModel(kind:.action,id:"mode.forget",title:lk("改回跟随上面的设置")))
         }
         items.append(MenuItemModel(kind:.submenu,id:"mode",title:lk("接上屏幕时"),symbol:"cable.connector.horizontal",children:modes))
+        let keepAwakeItems=KeepAwakeMode.allCases.map { mode in
+            MenuItemModel(kind:.action,id:"keepAwake.\(mode.rawValue)",title:mode.title,checked:s.keepAwakeMode == mode)
+        }
+        items.append(MenuItemModel(kind:.submenu,id:"keepAwake",title:s.keepAwakeMode.menuTitle,symbol:s.keepAwakeMode == .off ? "moon.zzz" : "bolt.shield.fill",children:keepAwakeItems))
         items.append(.separator("sep2"))
         items.append(MenuItemModel(kind:.action,id:"open",title:lk("打开 LayoutKeeper…"),symbol:"macwindow"))
         items.append(MenuItemModel(kind:.action,id:"checkUpdates",title:lk("检查更新…"),symbol:"arrow.down.circle"))

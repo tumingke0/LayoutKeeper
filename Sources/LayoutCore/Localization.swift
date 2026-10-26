@@ -41,13 +41,19 @@ public func lk(_ key: String,_ args: String...) -> String {
     return fill(template,args)
 }
 
-private func fill(_ source: String,_ args: [String]) -> String {
+func fill(_ source: String,_ args: [String]) -> String {
     var template=source
     var out=""; var index=0
-    while let r=template.range(of:"%@") {
+    while let r=template.range(of:"%(?:(\\d+)\\$)?@",options:.regularExpression) {
         out+=template[..<r.lowerBound]
-        out += (index < args.count ? args[index] : "")
-        index+=1
+        let token=template[r]
+        let argIndex: Int
+        if token.count > 2,let pos=Int(token.dropFirst().dropLast(2)),pos >= 1 {
+            argIndex=pos-1
+        } else {
+            argIndex=index; index+=1
+        }
+        out += (argIndex < args.count ? args[argIndex] : "")
         template=String(template[r.upperBound...])
     }
     return out+template

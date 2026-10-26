@@ -77,3 +77,64 @@ public enum RelativeTime {
         return f.string(from:date)
     }
 }
+
+public enum KeepAwakeMode: String, CaseIterable, Codable, Sendable {
+    case off, systemOnly, systemAndDisplay
+    public static let preferenceKey="keepAwakeMode"
+    public static let defaultMode=KeepAwakeMode.off
+    public var title: String {
+        switch self {
+        case .off: return lk("关闭")
+        case .systemOnly: return lk("息屏不休眠（允许黑屏，合盖自动保活）")
+        case .systemAndDisplay: return lk("常亮不休眠（屏幕与系统常开）")
+        }
+    }
+    public var menuTitle: String {
+        switch self {
+        case .off: return lk("防休眠")
+        case .systemOnly: return lk("防休眠：息屏不休眠")
+        case .systemAndDisplay: return lk("防休眠：常亮不休眠")
+        }
+    }
+}
+
+public struct KeepAwakePlan: Equatable, Sendable {
+    public var preventIdleSystemSleep: Bool
+    public var preventSystemSleep: Bool
+    public var preventIdleDisplaySleep: Bool
+    public var wakeDisplayOnSleepEvent: Bool
+    public init(preventIdleSystemSleep: Bool,preventSystemSleep: Bool,preventIdleDisplaySleep: Bool,wakeDisplayOnSleepEvent: Bool) {
+        self.preventIdleSystemSleep=preventIdleSystemSleep
+        self.preventSystemSleep=preventSystemSleep
+        self.preventIdleDisplaySleep=preventIdleDisplaySleep
+        self.wakeDisplayOnSleepEvent=wakeDisplayOnSleepEvent
+    }
+    public static let inactive=KeepAwakePlan(preventIdleSystemSleep:false,preventSystemSleep:false,preventIdleDisplaySleep:false,wakeDisplayOnSleepEvent:false)
+    public var isActive: Bool { preventIdleSystemSleep || preventSystemSleep || preventIdleDisplaySleep }
+    public var expectedAssertionTypes: Set<String> {
+        var out=Set<String>()
+        if preventIdleSystemSleep { out.insert("PreventUserIdleSystemSleep") }
+        if preventSystemSleep { out.insert("PreventSystemSleep") }
+        if preventIdleDisplaySleep { out.insert("PreventUserIdleDisplaySleep") }
+        return out
+    }
+}
+
+public enum KeepAwakePolicy {
+    /// Computes which IOKit power assertions to hold for `mode` and whether the MacBook lid is closed (`clamshell`).
+    /// When the lid is closed, macOS forces `Clamshell Sleep` 5 s after the external monitor turns off even on AC power
+    /// with `sleep = 0`, so `.systemOnly` automatically upgrades to hold `PreventUserIdleDisplaySleep` while in clamshell mode.
+    public static func plan(mode: KeepAwakeMode,clamshell: Bool) -> KeepAwakePlan {
+        switch mode {
+        case .off:
+            return .inactive
+        case .systemOnly:
+            return KeepAwakePlan(preventIdleSystemSleep:true,preventSystemSleep:true,preventIdleDisplaySleep:clamshell,wakeDisplayOnSleepEvent:clamshell)
+        case .systemAndDisplay:
+            return KeepAwakePlan(preventIdleSystemSleep:true,preventSystemSleep:true,preventIdleDisplaySleep:true,wakeDisplayOnSleepEvent:true)
+        }
+    }
+    public static func satisfied(plan: KeepAwakePlan,activeAssertionTypes: Set<String>) -> Bool {
+        plan.expectedAssertionTypes.isSubset(of:activeAssertionTypes)
+    }
+}

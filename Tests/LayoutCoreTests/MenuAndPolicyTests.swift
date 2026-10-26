@@ -17,7 +17,7 @@ final class StatusMenuModelTests: XCTestCase {
     func testNormalOrderShortcutsAndStatusLine() {
         var s=state(); s.canUndo=true
         let items=StatusMenuModel.build(s)
-        XCTAssertEqual(ids(items),["status","save","restore","undo","sep1","mode","sep2","open","checkUpdates","settings","quit"])
+        XCTAssertEqual(ids(items),["status","save","restore","undo","sep1","mode","keepAwake","sep2","open","checkUpdates","settings","quit"])
         XCTAssertTrue(item(items,"status")!.title.hasPrefix("公司 · 7 个窗口 · "))
         XCTAssertTrue(item(items,"status")!.title.hasSuffix("09:42"))
         XCTAssertFalse(item(items,"status")!.enabled)
@@ -216,5 +216,36 @@ final class MainWindowStateTests: XCTestCase {
         XCTAssertEqual(StatusMenuModel.build(s).first{$0.id=="layouts"}?.children.first?.enabled,false)
         s.monitorName=nil
         XCTAssertNil(StatusMenuModel.build(s).first{$0.id=="layouts"})
+    }
+
+    func testKeepAwakePolicyAndSubmenu() {
+        var s=MenuState()
+        let offItem=StatusMenuModel.build(s).first{ $0.id=="keepAwake" }!
+        XCTAssertEqual(offItem.title,"防休眠")
+        XCTAssertEqual(offItem.children.filter(\.checked).map(\.id),["keepAwake.off"])
+
+        s.keepAwakeMode = .systemOnly
+        let sysItem=StatusMenuModel.build(s).first{ $0.id=="keepAwake" }!
+        XCTAssertEqual(sysItem.title,"防休眠：息屏不休眠")
+        XCTAssertEqual(sysItem.children.filter(\.checked).map(\.id),["keepAwake.systemOnly"])
+
+        // Policy: lid open in .systemOnly allows display sleep while holding system sleep assertions.
+        let openPlan=KeepAwakePolicy.plan(mode:.systemOnly,clamshell:false)
+        XCTAssertTrue(openPlan.preventIdleSystemSleep); XCTAssertTrue(openPlan.preventSystemSleep)
+        XCTAssertFalse(openPlan.preventIdleDisplaySleep); XCTAssertFalse(openPlan.wakeDisplayOnSleepEvent)
+        XCTAssertTrue(KeepAwakePolicy.satisfied(plan:openPlan,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep"]))
+        XCTAssertFalse(KeepAwakePolicy.satisfied(plan:openPlan,activeAssertionTypes:["PreventUserIdleSystemSleep"]))
+
+        // Policy: lid closed (clamshell) in .systemOnly automatically holds display sleep assertion to prevent Clamshell Sleep.
+        let clamPlan=KeepAwakePolicy.plan(mode:.systemOnly,clamshell:true)
+        XCTAssertTrue(clamPlan.preventIdleDisplaySleep); XCTAssertTrue(clamPlan.wakeDisplayOnSleepEvent)
+        XCTAssertFalse(KeepAwakePolicy.satisfied(plan:clamPlan,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep"]))
+        XCTAssertTrue(KeepAwakePolicy.satisfied(plan:clamPlan,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep","PreventUserIdleDisplaySleep"]))
+
+        // Positional format specifiers (%1$@, %2$@) in English strings table.
+        XCTAssertEqual(fill("Use “%2$@” automatically on %1$@",["USB-C port #1","Monitor directly right"]),
+                       "Use “Monitor directly right” automatically on USB-C port #1")
+        XCTAssertEqual(Localization.singularize(fill("Restoring the monitor's %2$@ desktops as of %1$@.",["10/26 21:57","1"])),
+                       "Restoring the monitor's 1 desktop as of 10/26 21:57.")
     }
 }

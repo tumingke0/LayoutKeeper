@@ -12,7 +12,7 @@ public enum LiveRecordTrust {
     public enum Verdict: Equatable {
         /// Normal: record as scanned.
         case normal
-        /// Lid closed: keep the previous strip; windows on those desktops are recorded at their position.
+        /// Lid closed: keep the previous strip (plus any new desktops created while the lid is closed); windows on those desktops are recorded at their position.
         case keepDesks(String)
         /// Nothing trustworthy: do not touch the record.
         case skip(String)
@@ -22,9 +22,15 @@ public enum LiveRecordTrust {
     }
     /// Seconds after a wake during which scans are not recorded (the window server and screens are still settling).
     public static let wakeGrace: TimeInterval=8
+    /// Fast pre-scan check (before starting a background AX scan): while the screen is locked, all displays are asleep,
+    /// or inside the wake grace window, scanning would only time out against WindowServer and produce an untrusted snapshot.
+    public static func preScanSkipReason(screenLocked: Bool,sinceWake: TimeInterval?) -> String? {
+        if screenLocked { return "screen locked or displays asleep" }
+        if let t=sinceWake,t<wakeGrace { return String(format:"%.0fs after wake",t) }
+        return nil
+    }
     public static func assess(snapshot s: Snapshot,displayToken: String,previous: LiveLayoutRecord?,screenLocked: Bool,sinceWake: TimeInterval?) -> Verdict {
-        if screenLocked { return .skip("screen locked or displays asleep") }
-        if let t=sinceWake,t<wakeGrace { return .skip(String(format:"%.0fs after wake",t)) }
+        if let why=preScanSkipReason(screenLocked:screenLocked,sinceWake:sinceWake) { return .skip(why) }
         // A real desktop session always has some window (Finder, menu-bar apps' windows, …): none at all means the
         // window server could not be read (locked, asleep, or a monitor that is not really there).
         if s.windows.isEmpty { return .skip("no window readable (screen locked, asleep, or the monitor is not really there)") }
@@ -32,7 +38,9 @@ public enum LiveRecordTrust {
         if !hasBuiltIn,let own=previous?.builtInDesks,!own.isEmpty {
             let onExternal=s.spaces.filter{ $0.displayToken==displayToken && $0.kind == .ordinary }
             if onExternal.contains(where:{ sp in own.contains{ $0.matches(sp) } }) {
-                guard previous != nil else { return .skip("lid closed, no earlier strip") }
+                guard let prev=previous,onExternal.contains(where:{ sp in prev.desks.contains{ $0.matches(sp) } }) else {
+                    return .skip("lid closed, no earlier strip")
+                }
                 return .keepDesks("lid closed: the built-in screen's desktops are on the external one")
             }
         }

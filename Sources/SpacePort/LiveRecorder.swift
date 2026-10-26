@@ -85,9 +85,20 @@ final class LiveRecorder {
         if MonitorRecognition.physicalExternalMonitors().count != 1 || model.currentExternalMonitor == nil { return "not exactly one external" }
         return nil
     }
+    private func reportTrustReason(_ reason: String?,previous: LiveLayoutRecord?) {
+        guard reason != untrustedReason else { return }
+        if let why=reason { model?.logRestore("live-record: desk strip kept — \(why); keeping the last normal record"+(previous.map{ " from "+RestoreLog.stamp.string(from:$0.recordedAt)+" desks=[\($0.desks.map{ String($0.id) }.joined(separator:","))]" } ?? "")) }
+        else if untrustedReason != nil { model?.logRestore("live-record: back to normal recording") }
+        untrustedReason=reason
+    }
     private func tick(reason: String) {
         guard !scanning,pauseReason() == nil,let monitor=model?.currentExternalMonitor else { return }
         let key=monitor.identity.key, token=monitor.runtimeDisplayToken, identity=monitor.identity, gen=generation
+        let previousSame=latest.flatMap{ $0.key==key && !$0.frozen ? $0 : nil }
+        if let why=LiveRecordTrust.preScanSkipReason(screenLocked:Self.screenLocked(),sinceWake:wokeAt.map{ Date().timeIntervalSince($0) }) {
+            reportTrustReason(why,previous:previousSame)
+            return
+        }
         scanning=true
         queue.async { [weak self] in
             guard let self else { return }
@@ -115,11 +126,20 @@ final class LiveRecorder {
         guard let snapshot else { return }
         let m0=CFAbsoluteTimeGetCurrent()
         var chromeMs=0.0
-        defer { note(scanMs:scanMs,mainMs:(CFAbsoluteTimeGetCurrent()-m0)*1000,chromeMs:chromeMs,windows:snapshot.windows.count,reason:reason) }
         // A display change (or the start of an attach) while the scan ran: what it read may already be mid-unplug.
         guard gen==generation else { model.logRestore("live-record: scan discarded (display changed while scanning)"); return }
         if let why=pauseReason() { if why != "busy" { model.logRestore("live-record: scan discarded (\(why))") }; return }
         guard let m=model.currentExternalMonitor,m.identity.key==key,m.runtimeDisplayToken==token else { return }
+        let previousSame=latest.flatMap { rec -> LiveLayoutRecord? in
+            guard rec.key==key else { return nil }
+            if !rec.frozen { return rec }
+            let onExternal=snapshot.spaces.filter{ $0.displayToken==token && $0.kind == .ordinary }
+            return onExternal.contains(where:{ sp in rec.desks.contains{ $0.matches(sp) } }) ? rec : nil
+        }
+        let verdict=LiveRecordTrust.assess(snapshot:snapshot,displayToken:token,previous:previousSame,screenLocked:Self.screenLocked(),sinceWake:wokeAt.map{ Date().timeIntervalSince($0) })
+        reportTrustReason(verdict.reason,previous:previousSame)
+        if case .skip=verdict { return }
+        defer { note(scanMs:scanMs,mainMs:(CFAbsoluteTimeGetCurrent()-m0)*1000,chromeMs:chromeMs,windows:snapshot.windows.count,reason:reason) }
         let chrome=snapshot.windows.filter{ $0.selector.bundleID.hasPrefix("com.google.Chrome") }.map(\.token)
         if chrome.contains(where:{ profileCache[$0] == nil && !profileTried.contains($0) }) {
             let c0=CFAbsoluteTimeGetCurrent()
@@ -129,17 +149,9 @@ final class LiveRecorder {
         }
         let present=Set(snapshot.windows.map(\.token))
         profileCache=profileCache.filter{ present.contains($0.key) }; profileTried=profileTried.intersection(present)
-        let previousSame=latest.flatMap{ $0.key==key && !$0.frozen ? $0 : nil }
-        let verdict=LiveRecordTrust.assess(snapshot:snapshot,displayToken:token,previous:previousSame,screenLocked:Self.screenLocked(),sinceWake:wokeAt.map{ Date().timeIntervalSince($0) })
-        if verdict.reason != untrustedReason {
-            if let why=verdict.reason { model.logRestore("live-record: desk strip kept — \(why); keeping the last normal record"+(previousSame.map{ " from "+RestoreLog.stamp.string(from:$0.recordedAt)+" desks=[\($0.desks.map{ String($0.id) }.joined(separator:","))]" } ?? "")) }
-            else if untrustedReason != nil { model.logRestore("live-record: back to normal recording") }
-            untrustedReason=verdict.reason
-        }
-        if case .skip=verdict { return }
         var keep: [DeskRef]?
         if case .keepDesks=verdict { keep=previousSame?.desks }
-        guard let captured=LiveLayoutRecord.capture(key:key,monitor:identity,displayToken:token,snapshot:snapshot,browserProfiles:profileCache,keepingDesks:keep,builtInDesks:previousSame?.builtInDesks ?? latest?.builtInDesks) else { return }
+        guard let captured=LiveLayoutRecord.capture(key:key,monitor:identity,displayToken:token,snapshot:snapshot,browserProfiles:profileCache,keepingDesks:keep,builtInDesks:previousSame?.builtInDesks) else { return }
         // Windows this scan could not read but that are still open keep their previous entry (see carryingForward).
         // A window seen without any desk (not minimized or full screen) counts as not read: its desk is unknown.
         let (record,carried)=captured.carryingForward(latest,seenTokens:present.subtracting(LiveLayoutRecord.unplacedTokens(snapshot)),existingTokens:existing)

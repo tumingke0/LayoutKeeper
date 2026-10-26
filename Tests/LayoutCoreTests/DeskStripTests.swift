@@ -363,4 +363,51 @@ final class DeskStripTests: XCTestCase {
         XCTAssertTrue(ScanIssueSummary.text(r,appName:{ _ in "Chrome" })?.contains("Chrome 的窗口这次没读全") == true)
         XCTAssertNil(ScanIssueSummary.text(ScanIssueSummary.summarize(["com.example.unrelated：x"],layoutApps:["a"]),appName:{ $0 }))
     }
+
+    // MARK: - 0.6.12 optimizations: pre-scan lock/wake gate, clamshell new-desk & reconnect, live-vs-saved stale summary
+
+    func testPreScanSkipReasonStopsLockedAndWakeGraceBeforeScanning() {
+        XCTAssertEqual(LiveRecordTrust.preScanSkipReason(screenLocked:true,sinceWake:nil),"screen locked or displays asleep")
+        XCTAssertEqual(LiveRecordTrust.preScanSkipReason(screenLocked:false,sinceWake:2.4),"2s after wake")
+        XCTAssertNil(LiveRecordTrust.preScanSkipReason(screenLocked:false,sinceWake:8.0))
+        XCTAssertNil(LiveRecordTrust.preScanSkipReason(screenLocked:false,sinceWake:nil))
+    }
+
+    func testClamshellNewDesktopCreatedWhileLidClosedIsAddedToStripAndRecorded() throws {
+        let normal=try XCTUnwrap(capture(homeNormal(),ext:"home"))
+        let clam1=try XCTUnwrap(capture(homeClamshell(),ext:"home",previous:normal))
+        XCTAssertEqual(clam1.desks.map(\.id),[443,444,484,446,445])
+        // User creates a new desktop 510 in Mission Control while the lid is closed and opens a Notes window on it.
+        var clamWithNew=homeClamshell()
+        clamWithNew.spaces.append(Space(id:510,displayToken:"home",active:true,uuid:"U-510"))
+        let newWin=w("9500:1","com.example.notes","Clamshell Note",space:510,extFrame)
+        clamWithNew.windows.append(newWin)
+        let clam2=try XCTUnwrap(capture(clamWithNew,ext:"home",previous:clam1))
+        XCTAssertEqual(clam2.desks.map(\.id),[443,444,484,446,445,510],"newly created external desktop in clamshell mode is appended to the strip")
+        let recordedNote=try XCTUnwrap(clam2.windows.first{ $0.runtime?.token=="9500:1" })
+        XCTAssertEqual(recordedNote.desktopIndex,6)
+        XCTAssertEqual(recordedNote.desktopID,510)
+        XCTAssertFalse(clam2.elsewhere.contains{ $0.runtime.token=="9500:1" },"window on the new clamshell desktop is recorded, not elsewhere")
+        XCTAssertEqual(clam2.builtInDesks?.map(\.id),[275,277,304],"builtInDesks stays preserved throughout the clamshell session")
+        // Normal clamshell-only session (no keepingDesks) never carries dormant builtInDesks that could re-arm later.
+        let pureClam=try XCTUnwrap(LiveLayoutRecord.capture(key:"shared-external",monitor:.sharedExternal,displayToken:"home",snapshot:homeClamshell(),browserProfiles:profiles,at:freezeAt,keepingDesks:nil,builtInDesks:normal.builtInDesks))
+        XCTAssertNil(pureClam.builtInDesks)
+    }
+
+    func testClosedLiveWindowIsNotReportedAsStaleSavedWindow() throws {
+        let rec=try XCTUnwrap(capture(homeNormal(),ext:"home")).freezing(ceiling:99_999,at:freezeAt)
+        var s=officePlug()
+        // Close the live Chrome Default window (9001:437) while keeping an unrelated saved window closed too.
+        s.windows.removeAll{ $0.token=="9001:437" }
+        let e=try XCTUnwrap(EffectiveLayout.compose(saved:savedHome1019(),live:rec,monitor:.sharedExternal,snapshot:s))
+        let p=try plan(e,s,ext:"office")
+        let q=QuickRestorePlanner.quietAlreadyInPlace(p,record:e.record,snapshot:s,displayToken:"office",browserProfiles:profiles)
+        let liveClosed=try XCTUnwrap(q.plan.items.first{ $0.source == .live && $0.bundleID==chrome && $0.chosenToken == nil })
+        XCTAssertEqual(liveClosed.state,.missing)
+        XCTAssertFalse(liveClosed.stale,"closed live-record window must not be flagged as a stale saved window")
+        XCTAssertEqual(liveClosed.reason,lk("拔屏前记下的这个窗口已关闭"))
+        // Only the closed window from the manual saved layout (Antigravity) appears in staleSummary.
+        let summary=q.plan.staleSummary{ $0 }
+        XCTAssertFalse(summary.contains{ $0.contains(chrome) })
+    }
 }

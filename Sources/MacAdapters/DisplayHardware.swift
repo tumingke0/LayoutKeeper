@@ -2,6 +2,7 @@
 // Copyright (C) 2026 LayoutKeeper contributors
 import Foundation
 import IOKit
+import IOKit.pwr_mgt
 import CoreGraphics
 import LayoutCore
 
@@ -85,4 +86,133 @@ public enum SoftwareDimming {
         return CGSetDisplayTransferByFormula(id,0,f,1,0,f,1,0,f,1) == .success
     }
     public static func restoreAll() { CGDisplayRestoreColorSyncSettings() }
+}
+
+/// Reads active external DisplayPort transports (`IOPortTransportStateDisplayPort`) from IOKit to identify which
+/// built-in physical port (e.g. left/right USB-C or HDMI) a monitor is connected through, plus its raw EDID.
+public enum DisplayPortReader {
+    public static func activePorts() -> [DisplayPortDescriptor] {
+        var it=io_iterator_t()
+        guard IOServiceGetMatchingServices(kIOMainPortDefault,IOServiceMatching("IOPortTransportStateDisplayPort"),&it)==KERN_SUCCESS else { return [] }
+        defer { IOObjectRelease(it) }
+        var out=[DisplayPortDescriptor]()
+        while case let s=IOIteratorNext(it),s != 0 {
+            defer { IOObjectRelease(s) }
+            var propsRef: Unmanaged<CFMutableDictionary>?
+            guard IORegistryEntryCreateCFProperties(s,&propsRef,kCFAllocatorDefault,0)==KERN_SUCCESS,
+                  let dict=propsRef?.takeRetainedValue() as? [String:Any] else { continue }
+            let active=(dict["Active"] as? Bool) ?? ((dict["Active"] as? NSNumber)?.boolValue ?? false)
+            guard active else { continue }
+            let builtIn=(dict["ParentBuiltInPortNumber"] as? NSNumber)?.intValue ?? (dict["ParentPortNumber"] as? NSNumber)?.intValue ?? 0
+            guard builtIn>0 else { continue }
+            let explicitType=(dict["ParentBuiltInPortTypeDescription"] as? String) ?? (dict["ParentPortTypeDescription"] as? String)
+            let td=dict["TransportDescription"] as? String
+            let meta=dict["Metadata"] as? [String:Any]
+            let productID=((dict["ProductID"] as? NSNumber) ?? (meta?["ProductID"] as? NSNumber))?.uint32Value
+            let serialNumber=((dict["SerialNumber"] as? NSNumber) ?? (meta?["SerialNumber"] as? NSNumber))?.uint32Value
+            let edid=(dict["EDID"] as? Data) ?? (meta?["EDID"] as? Data)
+            out.append(DisplayPortDescriptor(
+                builtInPortNumber:builtIn,
+                portType:DisplayPortDescriptor.normalizePortType(explicit:explicitType,transportDescription:td),
+                transportDescription:td,
+                productID:productID,
+                serialNumber:serialNumber,
+                edid:edid
+            ))
+        }
+        return out
+    }
+}
+
+/// Holds and verifies IOKit power assertions (`PreventUserIdleSystemSleep`, `PreventSystemSleep`,
+/// `PreventUserIdleDisplaySleep`) and Cocoa `ProcessInfo` activity tokens so macOS stays awake and keeps background
+/// network/CLI tools (such as Codex, SSH, remote desktop) alive across screen lock, display off, battery power,
+/// notification wakes, and clamshell mode.
+public final class SystemSleepGuard {
+    private static let assertionReason="LayoutKeeper Keep Awake" as CFString
+    private var idleSystemID: IOPMAssertionID=0
+    private var systemSleepID: IOPMAssertionID=0
+    private var displaySleepID: IOPMAssertionID=0
+    private var activityToken: NSObjectProtocol?
+    public private(set) var lastPlan: KeepAwakePlan = .inactive
+    public private(set) var lastVerified=true
+    public init() {}
+    deinit { releaseAll() }
+
+    /// True when the MacBook lid is closed (`IOPMrootDomain` -> `"AppleClamshellState"`).
+    public static func clamshellState() -> Bool {
+        let root=IOServiceGetMatchingService(kIOMainPortDefault,IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        return (IORegistryEntryCreateCFProperty(root,"AppleClamshellState" as CFString,kCFAllocatorDefault,0)?.takeRetainedValue() as? Bool) ?? false
+    }
+
+    /// Reads back the assertion types currently held by `pid` in `powerd` (`IOPMCopyAssertionsByProcess`).
+    public static func activeAssertionTypes(pid: pid_t = getpid()) -> Set<String> {
+        var dictRef: Unmanaged<CFDictionary>?
+        guard IOPMCopyAssertionsByProcess(&dictRef)==kIOReturnSuccess,
+              let dict=dictRef?.takeRetainedValue() as? [NSNumber:[[String:Any]]] else { return [] }
+        let list=dict[NSNumber(value:pid)] ?? []
+        return Set(list.compactMap{ ($0["AssertType"] as? String) ?? ($0["AssertionTrueType"] as? String) })
+    }
+
+    /// Declares local user activity once (e.g. on a notification wake so `powerd` promotes the wake to FullWake instead
+    /// of entering `Notification Wake Back to Sleep` 20 s later, or in clamshell mode if the external display tries to sleep).
+    @discardableResult public func declareUserActivity() -> Bool {
+        var id: IOPMAssertionID=0
+        return IOPMAssertionDeclareUserActivity(Self.assertionReason,kIOPMUserActiveLocal,&id)==kIOReturnSuccess
+    }
+
+    public func releaseAll() {
+        if idleSystemID != 0 { IOPMAssertionRelease(idleSystemID); idleSystemID=0 }
+        if systemSleepID != 0 { IOPMAssertionRelease(systemSleepID); systemSleepID=0 }
+        if displaySleepID != 0 { IOPMAssertionRelease(displaySleepID); displaySleepID=0 }
+        if let token=activityToken { ProcessInfo.processInfo.endActivity(token); activityToken=nil }
+        lastPlan = .inactive; lastVerified=true
+    }
+
+    @discardableResult
+    public func apply(mode: KeepAwakeMode) -> (plan: KeepAwakePlan,verified: Bool,activeTypes: Set<String>,clamshell: Bool) {
+        let clamshell=Self.clamshellState()
+        let plan=KeepAwakePolicy.plan(mode:mode,clamshell:clamshell)
+        guard plan.isActive else {
+            releaseAll()
+            return (plan,true,[],clamshell)
+        }
+        syncAssertions(to:plan)
+        var active=Self.activeAssertionTypes()
+        if !KeepAwakePolicy.satisfied(plan:plan,activeAssertionTypes:active) {
+            // Self-heal if powerd dropped an assertion across sleep/wake.
+            releaseAll()
+            syncAssertions(to:plan)
+            active=Self.activeAssertionTypes()
+        }
+        let ok=KeepAwakePolicy.satisfied(plan:plan,activeAssertionTypes:active)
+        lastPlan=plan; lastVerified=ok
+        return (plan,ok,active,clamshell)
+    }
+
+    private func syncAssertions(to plan: KeepAwakePlan) {
+        if plan.preventIdleSystemSleep {
+            if idleSystemID==0 { _=IOPMAssertionCreateWithName("PreventUserIdleSystemSleep" as CFString,IOPMAssertionLevel(kIOPMAssertionLevelOn),Self.assertionReason,&idleSystemID) }
+        } else if idleSystemID != 0 {
+            IOPMAssertionRelease(idleSystemID); idleSystemID=0
+        }
+        if plan.preventSystemSleep {
+            if systemSleepID==0 { _=IOPMAssertionCreateWithName("PreventSystemSleep" as CFString,IOPMAssertionLevel(kIOPMAssertionLevelOn),Self.assertionReason,&systemSleepID) }
+        } else if systemSleepID != 0 {
+            IOPMAssertionRelease(systemSleepID); systemSleepID=0
+        }
+        if plan.preventIdleDisplaySleep {
+            if displaySleepID==0 { _=IOPMAssertionCreateWithName("PreventUserIdleDisplaySleep" as CFString,IOPMAssertionLevel(kIOPMAssertionLevelOn),Self.assertionReason,&displaySleepID) }
+        } else if displaySleepID != 0 {
+            IOPMAssertionRelease(displaySleepID); displaySleepID=0
+        }
+        if plan != lastPlan || activityToken == nil {
+            if let token=activityToken { ProcessInfo.processInfo.endActivity(token); activityToken=nil }
+            var opts: ProcessInfo.ActivityOptions=[.idleSystemSleepDisabled,.suddenTerminationDisabled]
+            if plan.preventIdleDisplaySleep { opts.insert(.idleDisplaySleepDisabled) }
+            activityToken=ProcessInfo.processInfo.beginActivity(options:opts,reason:"LayoutKeeper Keep Awake")
+        }
+    }
 }

@@ -59,9 +59,16 @@ final class AutoSpacesRunner {
                     guard Date()<deadline else { throw RunError(description:lk("超时")) }
                     let before=try ordinary(on:token)
                     guard !AutoSpaces.fullScreenActive(before.all) else { throw RunError(description:AutoSpaces.Blocker.fullScreenActive.description) }
-                    // The + button can appear a moment after the desks; look it up again once before giving up.
+                    // The + button or the Mission Control AX group (mc / mc.display) can briefly rebuild while
+                    // WindowManager animates the previous desktop insertion; wait for it before giving up.
                     do { try driver.pressAdd(screen:frame) }
-                    catch MissionControlDriver.Failure.addButtonMissing { Thread.sleep(forTimeInterval:0.7); try driver.pressAdd(screen:frame) }
+                    catch MissionControlDriver.Failure.addButtonMissing,
+                          MissionControlDriver.Failure.didNotOpen,
+                          MissionControlDriver.Failure.displayNotFound {
+                        try driver.ensureOpen(wait:0.8)
+                        do { try driver.pressAdd(screen:frame) }
+                        catch MissionControlDriver.Failure.addButtonMissing { Thread.sleep(forTimeInterval:0.5); try driver.pressAdd(screen:frame) }
+                    }
                     let ok=try waitFor(deadline) { AutoSpaces.verifyAdded(before:before.ids,after:try ordinary(on:token).ids) }
                     guard ok else { throw RunError(description:lk("按「+」后桌面数量没有按预期增加")) }
                     added+=1

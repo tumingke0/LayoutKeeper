@@ -9,6 +9,7 @@ enum Prefs {
     static let pausedUntilKey="autoRestorePausedUntil"
     static let hotkeysKey="globalHotkeys"
     static let arrangementPresetsKey="displayArrangementPresets"
+    static let portArrangementRulesKey="displayPortArrangementRules"
     /// nil while rendering snapshots: sample data must never read or write the user's real preferences.
     static var store: UserDefaults? { RenderMode.snapshot ? nil : UserDefaults.standard }
     static func load<T: Decodable>(_ type: T.Type,key: String) -> T? {
@@ -20,6 +21,7 @@ enum Prefs {
     static func monitorPreferences() -> MonitorPreferences { load(MonitorPreferences.self,key:monitorPreferencesKey) ?? MonitorPreferences() }
     static func hotkeys() -> HotkeySettings { load(HotkeySettings.self,key:hotkeysKey) ?? .defaults }
     static func arrangementPresets() -> [ArrangementPreset] { load([ArrangementPreset].self,key:arrangementPresetsKey) ?? [] }
+    static func portArrangementRules() -> [PortArrangementRule] { load([PortArrangementRule].self,key:portArrangementRulesKey) ?? [] }
 }
 
 struct RestoreSummary: Equatable {

@@ -120,6 +120,12 @@ public final class MissionControlDriver {
         }
         throw Failure.didNotOpenAfter(tried:tried,ctrlUpEnabled:ctrlUp)
     }
+    /// Waits up to `seconds` for `mc.display` to be ready (while WindowManager animates a newly added desktop),
+    /// and re-opens Mission Control only if it is still not open after waiting.
+    public func ensureOpen(wait seconds: TimeInterval = 0.8) throws {
+        if waitReady(seconds) { return }
+        try open()
+    }
     /// Closes Mission Control with Escape (falls back to toggling it once more).
     public func close() {
         guard isOpen else { return }

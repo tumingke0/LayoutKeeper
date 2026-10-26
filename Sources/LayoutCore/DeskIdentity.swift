@@ -85,7 +85,7 @@ public struct LiveLayoutRecord: Codable, Equatable {
         guard let display=s.displays.first(where:{ $0.token==displayToken && $0.role == .external }),display.visible.valid else { return nil }
         let onDisplay=s.spaces.filter{ $0.displayToken==displayToken && $0.kind == .ordinary }
         guard !onDisplay.isEmpty else { return nil }
-        let strip=keepingDesks ?? onDisplay.map(DeskRef.init)
+        let strip=keepingDesks.map{ Self.clamshellStrip(keepingDesks:$0,onDisplay:onDisplay,builtInDesks:carried ?? []) } ?? onDisplay.map(DeskRef.init)
         guard !strip.isEmpty else { return nil }
         var windows=[SavedWindow](),elsewhere=[ElsewhereWindow]()
         for w in s.windows where WindowMatcher.eligible(w,s) && !w.selector.bundleID.isEmpty {
@@ -102,8 +102,24 @@ public struct LiveLayoutRecord: Codable, Equatable {
         windows.sort{ ($0.desktopIndex ?? 0,$0.runtime?.token ?? "")<($1.desktopIndex ?? 0,$1.runtime?.token ?? "") }
         var r=LiveLayoutRecord(key:key,monitor:monitor,displayToken:displayToken,recordedAt:date,windows:windows,desks:strip,elsewhere:elsewhere)
         let builtIn=Set(s.displays.filter{ $0.role == .builtIn }.map(\.token))
-        r.builtInDesks=builtIn.isEmpty ? carried : s.spaces.filter{ builtIn.contains($0.displayToken) && $0.kind == .ordinary }.map(DeskRef.init)
+        r.builtInDesks=builtIn.isEmpty ? (keepingDesks != nil ? carried : nil) : s.spaces.filter{ builtIn.contains($0.displayToken) && $0.kind == .ordinary }.map(DeskRef.init)
         return r
+    }
+    /// With the lid closed (`keepingDesks`), the strip keeps the pre-clamshell external desktops in order (including
+    /// an empty first desktop that macOS destroyed when merging the built-in screen's desktops onto the external one),
+    /// excludes the built-in screen's desktops ($E' \setminus B$), and appends any new external desktops created while the lid is closed.
+    public static func clamshellStrip(keepingDesks: [DeskRef], onDisplay: [Space], builtInDesks: [DeskRef]) -> [DeskRef] {
+        var strip=keepingDesks
+        let lastKnownIndex=onDisplay.indices.last{ i in keepingDesks.contains{ $0.matches(onDisplay[i]) } }
+        let maxKnownID=(keepingDesks.map(\.id)+builtInDesks.map(\.id)).max() ?? 0
+        for (i,sp) in onDisplay.enumerated() {
+            if strip.contains(where:{ $0.matches(sp) }) || builtInDesks.contains(where:{ $0.matches(sp) }) { continue }
+            let afterKnown=lastKnownIndex.map{ i>$0 } ?? false
+            if afterKnown || sp.id>maxKnownID {
+                strip.append(DeskRef(sp))
+            }
+        }
+        return strip
     }
 }
 

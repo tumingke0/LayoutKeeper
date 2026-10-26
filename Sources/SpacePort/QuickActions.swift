@@ -34,6 +34,7 @@ extension Model {
         s.trusted=trusted; s.busy=busy; s.canUndo=lastRestoreJournal?.canUndo == true
         s.globalMode=autoRestoreMode
         s.monitorChoice=currentExternalMonitor.flatMap{ monitorPreferences.restore($0.identity.key) }
+        s.keepAwakeMode=keepAwakeMode
         if let key=currentExternalMonitor?.identity.key {
             let list=selectedScreenKey==key ? namedLayouts : (screenLibrary?.namedLayouts(key) ?? [])
             s.layouts=list.map { MenuLayout(name:$0.name,active:$0.isActive) }
@@ -131,6 +132,9 @@ extension Model {
         func join(_ a: String?,_ b: String?) -> String? { [a,b].compactMap{ $0 }.isEmpty ? nil : [a,b].compactMap{ $0 }.joined(separator:"\n") }
         if o.nothingToDo {
             if o.failures.isEmpty && o.needsConfirmation == 0 && o.skippedAuto == 0,let extraText {
+                // Automatic: when all open windows are already in place and no desktops are missing, closed windows from an
+                // older save need no banner; manual restore still reports them.
+                if trigger == .automatic && (o.unplacedGroups == 0 || sharedModeActive) { return nil }
                 return UserNotice(title:o.staleText.isEmpty ? lk("有窗口没有移动") : lk("保存的部分窗口已关闭"),detail:extraText,actions:[view],duration:attention,open:openResult)
             }
             if !o.failures.isEmpty { return UserNotice(title:lk("没有恢复窗口"),detail:Self.failureText(o.failures),actions:[retry,view],duration:attention,open:openResult) }

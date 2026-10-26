@@ -15,15 +15,19 @@ public enum DisplayArrangementIO {
         guard CGGetOnlineDisplayList(count,&ids,&count) == .success else { return [] }
         var names=[CGDirectDisplayID:String]()
         for screen in NSScreen.screens { if let n=screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber { names[n.uint32Value]=screen.localizedName } }
+        let ports=DisplayPortReader.activePorts()
         return ids.prefix(Int(count)).compactMap { id in
             let mirrored=CGDisplayIsInMirrorSet(id) != 0
             guard CGDisplayIsActive(id) != 0 || mirrored else { return nil }
             guard let uuid=CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue(),let text=CFUUIDCreateString(nil,uuid) as String? else { return nil }
             let b=CGDisplayBounds(id), builtIn=CGDisplayIsBuiltin(id) != 0
-            return LiveDisplay(id:id,key:LiveDisplay.key(builtIn:builtIn,vendor:CGDisplayVendorNumber(id),model:CGDisplayModelNumber(id),serial:CGDisplaySerialNumber(id)),
+            let vendor=CGDisplayVendorNumber(id), model=CGDisplayModelNumber(id), rawSerial=CGDisplaySerialNumber(id)
+            let port=builtIn ? nil : DisplayPortMatcher.match(model:model,numericSerial:rawSerial,ports:ports)
+            let serial=builtIn ? rawSerial : EDIDParser.effectiveSerial(numericSerial:rawSerial,edid:port?.edid)
+            return LiveDisplay(id:id,key:LiveDisplay.key(builtIn:builtIn,vendor:vendor,model:model,serial:serial),
                                uuid:text.uppercased(),name:names[id] ?? (builtIn ? "Built-in" : "Display \(id)"),builtIn:builtIn,isMain:CGDisplayIsMain(id) != 0,
                                x:Int(b.origin.x.rounded()),y:Int(b.origin.y.rounded()),width:Int(b.width.rounded()),height:Int(b.height.rounded()),
-                               mirrored:mirrored,asleep:CGDisplayIsAsleep(id) != 0)
+                               mirrored:mirrored,asleep:CGDisplayIsAsleep(id) != 0,portID:port?.portID,portLabel:port?.label)
         }
     }
 

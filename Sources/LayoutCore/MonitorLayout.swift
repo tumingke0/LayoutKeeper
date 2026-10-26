@@ -110,3 +110,86 @@ public enum ExternalLayoutCapture {
         guard let result=record.captureReport else{throw LayoutError.readbackUnavailable};return result
     }
 }
+
+/// Parses the 0xFF Monitor Serial Number descriptor from raw EDID bytes and provides a deterministic fallback serial
+/// when `CGDisplaySerialNumber` reports 0 or a placeholder such as `0x01010101` (16843009).
+public enum EDIDParser {
+    public static let placeholderSerials: Set<UInt32>=[0, 0x0101_0101, 0xFFFF_FFFF]
+    public static func alphanumericSerial(from edid: Data) -> String? {
+        guard edid.count>=128 else { return nil }
+        let bytes=[UInt8](edid)
+        for offset in stride(from:54,through:108,by:18) {
+            guard bytes[offset]==0,bytes[offset+1]==0,bytes[offset+2]==0,bytes[offset+3]==0xFF else { continue }
+            let slice=bytes[(offset+5)..<(offset+18)]
+            let raw=slice.prefix{ $0 != 0x0A && $0 != 0x00 }
+            let str=String(bytes:raw,encoding:.ascii)?.trimmingCharacters(in:.whitespacesAndNewlines) ?? ""
+            if !str.isEmpty { return str }
+        }
+        return nil
+    }
+    /// Deterministic non-zero 32-bit FNV-1a hash of an alphanumeric serial.
+    public static func serialHash(_ alphanumeric: String) -> UInt32 {
+        var hash: UInt32=2_166_136_261
+        for b in alphanumeric.utf8 { hash=(hash ^ UInt32(b)) &* 16_777_619 }
+        return placeholderSerials.contains(hash) ? (hash | 1) : hash
+    }
+    /// Returns `numericSerial` when it is a real serial number; falls back to hashing the EDID 0xFF ASCII serial
+    /// when `numericSerial` is 0 or placeholder (`0x01010101` / `0xFFFFFFFF`).
+    public static func effectiveSerial(numericSerial: UInt32,alphanumericSerial: String?) -> UInt32 {
+        if !placeholderSerials.contains(numericSerial) { return numericSerial }
+        guard let alpha=alphanumericSerial?.trimmingCharacters(in:.whitespacesAndNewlines),
+              !alpha.isEmpty,alpha != "0",alpha.lowercased() != "01010101" else { return numericSerial }
+        return serialHash(alpha)
+    }
+    public static func effectiveSerial(numericSerial: UInt32,edid: Data?) -> UInt32 {
+        effectiveSerial(numericSerial:numericSerial,alphanumericSerial:edid.flatMap(alphanumericSerial(from:)))
+    }
+}
+
+/// Active external DisplayPort transport on a built-in Mac port (from IOKit `IOPortTransportStateDisplayPort`).
+public struct DisplayPortDescriptor: Equatable, Sendable {
+    public var builtInPortNumber: Int
+    public var portType: String
+    public var transportDescription: String?
+    public var productID: UInt32?
+    public var serialNumber: UInt32?
+    public var edid: Data?
+    public init(builtInPortNumber: Int,portType: String,transportDescription: String? = nil,productID: UInt32? = nil,serialNumber: UInt32? = nil,edid: Data? = nil) {
+        self.builtInPortNumber=builtInPortNumber; self.portType=portType; self.transportDescription=transportDescription
+        self.productID=productID; self.serialNumber=serialNumber; self.edid=edid
+    }
+    /// Stable identifier for the physical port on the Mac body, e.g. "usb-c-1", "hdmi-3".
+    public var portID: String {
+        let clean=portType.lowercased().replacingOccurrences(of:" ",with:"-")
+        return "\(clean.isEmpty ? "port" : clean)-\(builtInPortNumber)"
+    }
+    /// User-facing label, e.g. "USB-C 口 #1" / "HDMI 口 #3".
+    public var label: String {
+        let kind=portType.isEmpty ? "USB-C" : portType
+        return lk("%@ 口 #%@", kind, "\(builtInPortNumber)")
+    }
+    /// Extracts the port type ("USB-C", "HDMI", "Thunderbolt") from explicit properties or `"Port-USB-C@1/DisplayPort"`.
+    public static func normalizePortType(explicit: String?,transportDescription: String?) -> String {
+        if let e=explicit?.trimmingCharacters(in:.whitespacesAndNewlines),!e.isEmpty { return e }
+        if let td=transportDescription,td.hasPrefix("Port-"),let at=td.firstIndex(of:"@") {
+            let sub=String(td[td.index(td.startIndex,offsetBy:5)..<at]).trimmingCharacters(in:.whitespacesAndNewlines)
+            if !sub.isEmpty { return sub }
+        }
+        return "USB-C"
+    }
+}
+
+public enum DisplayPortMatcher {
+    /// Matches a connected external display `(model, numericSerial)` to its active `IOPortTransportStateDisplayPort` entry.
+    public static func match(model: UInt32,numericSerial: UInt32,ports: [DisplayPortDescriptor]) -> DisplayPortDescriptor? {
+        guard !ports.isEmpty else { return nil }
+        if !EDIDParser.placeholderSerials.contains(numericSerial) {
+            let exact=ports.filter{ $0.productID==model && $0.serialNumber==numericSerial }
+            if exact.count==1 { return exact[0] }
+        }
+        let byModel=ports.filter{ $0.productID==model }
+        if byModel.count==1 { return byModel[0] }
+        if ports.count==1 { return ports[0] }
+        return nil
+    }
+}

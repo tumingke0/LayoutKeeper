@@ -324,7 +324,7 @@ public struct QuickRestorePlan {
     }
     /// Per app, saved windows reported as closed: "Antigravity：保存的 2 个窗口已关闭，现在开着的是另外 1 个窗口".
     public func staleSummary(appName: (String) -> String = { $0 }) -> [String] {
-        let stale=items.filter(\.stale)
+        let stale=items.filter{ $0.stale && $0.source == .saved }
         return Dictionary(grouping:stale,by:\.bundleID).sorted{ $0.key<$1.key }.map { bundle,list in
             let others=list.map(\.staleOthers).max() ?? 0
             return others>0 ? lk("%@：保存的 %@ 个窗口已关闭，现在开着的是另外 %@ 个窗口", appName(bundle), "\(list.count)", "\(others)")
@@ -660,9 +660,14 @@ public enum QuickRestorePlanner {
             guard !u.isEmpty else { continue }
             let rel=u.filter{ i in l.contains{ related(windows[q.items[i].savedIndex],$0,browserProfiles:browserProfiles) } }
             for i in u where !rel.contains(i) {
-                q.items[i].state = .missing; q.items[i].stale=true; q.items[i].staleOthers=l.count; q.items[i].chosenToken=nil
-                q.items[i].reason=l.isEmpty ? lk("没有找到保存的这个窗口，可能已关闭") : lk("没有找到保存的这个窗口，可能已关闭；同应用开着的 %@ 个窗口不是它，自动恢复不会拿它们代替", "\(l.count)")
-                stale.append(q.items[i].savedIndex)
+                let fromLive=q.items[i].source != .saved
+                q.items[i].state = .missing; q.items[i].stale = !fromLive; q.items[i].staleOthers=l.count; q.items[i].chosenToken=nil
+                if fromLive {
+                    q.items[i].reason=lk("拔屏前记下的这个窗口已关闭")
+                } else {
+                    q.items[i].reason=l.isEmpty ? lk("没有找到保存的这个窗口，可能已关闭") : lk("没有找到保存的这个窗口，可能已关闭；同应用开着的 %@ 个窗口不是它，自动恢复不会拿它们代替", "\(l.count)")
+                    stale.append(q.items[i].savedIndex)
+                }
             }
             let lRel=l.filter{ w in rel.contains{ related(windows[q.items[$0].savedIndex],w,browserProfiles:browserProfiles) } }
             guard !rel.isEmpty,!lRel.isEmpty else { continue }

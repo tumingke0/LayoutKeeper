@@ -42,7 +42,7 @@ extension Model {
         out.append("\(label) layoutMode=\(layoutMode) physicalExternal=\(physical.map{ "\($0.identity.key)@\(RestoreLog.d($0.runtimeDisplayToken))" }) effective=\(RestoreLog.key(currentExternalMonitor?.identity.key)) shared=\(currentExternalMonitor?.identity.isSharedExternal == true)")
         out.append("\(label) layout=\(layoutChoiceText)")
         let perMonitor=currentExternalMonitor.flatMap{ monitorPreferences.restore($0.identity.key) }
-        out.append("\(label) trusted=\(trusted) globalMode=\(autoRestoreMode) perMonitor=\(perMonitor.map{"\($0)"} ?? "-") pausedUntil=\(pausedUntil.map{"\($0)"} ?? "-") busy=\(busyText) separateSpaces=\(SeparateSpaces.enabled) crossSpace=\(crossSpaceEnabled) autoAddSpaces=\(autoAddSpaces) autoRemoveSpaces=\(AutoSpaces.removeLogValue(stored:autoRemoveSpacesStored)) notifications=\(notificationPermission.rawValue) pendingSpacesNeeded=\(pendingSpacesNeeded.map(String.init) ?? "-")")
+        out.append("\(label) trusted=\(trusted) globalMode=\(autoRestoreMode) perMonitor=\(perMonitor.map{"\($0)"} ?? "-") pausedUntil=\(pausedUntil.map{"\($0)"} ?? "-") busy=\(busyText) separateSpaces=\(SeparateSpaces.enabled) crossSpace=\(crossSpaceEnabled) autoAddSpaces=\(autoAddSpaces) autoRemoveSpaces=\(AutoSpaces.removeLogValue(stored:autoRemoveSpacesStored)) notifications=\(notificationPermission.rawValue) keepAwake=\(keepAwakeMode.rawValue) pendingSpacesNeeded=\(pendingSpacesNeeded.map(String.init) ?? "-")")
         return out
     }
     /// Which saved layout is used now and why (per-monitor key vs the shared "office/home" layout).
