@@ -99,9 +99,15 @@ final class Model: ObservableObject {
     private var lastKeepAwakeLog: String?
     func refreshKeepAwake(reason: String) {
         guard !RenderMode.snapshot else { return }
-        let res=sleepGuard.apply(mode:keepAwakeMode)
+        let allowPrompt=(reason == "preference" || reason == "launch")
+        let res=sleepGuard.apply(mode:keepAwakeMode,allowPrompt:allowPrompt)
+        if res.authCancelled && keepAwakeMode == .clamshellUnplugged {
+            logRestore("keep-awake: administrator prompt cancelled; reverting to systemOnly")
+            keepAwakeMode = .systemOnly
+            return
+        }
         if keepAwakeVerified != res.verified { keepAwakeVerified=res.verified }
-        let summary="mode=\(keepAwakeMode.rawValue) clamshell=\(res.clamshell) verified=\(res.verified) assertions=\(res.activeTypes.sorted())"
+        let summary="mode=\(keepAwakeMode.rawValue) clamshell=\(res.clamshell) sleepDisabled=\(res.sleepDisabled) verified=\(res.verified) assertions=\(res.activeTypes.sorted())"
         if summary != lastKeepAwakeLog {
             lastKeepAwakeLog=summary
             logRestore("keep-awake: \(summary) (\(reason))")
@@ -429,6 +435,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "keepAwake.off": model.keepAwakeMode = .off
         case "keepAwake.systemOnly": model.keepAwakeMode = .systemOnly
         case "keepAwake.systemAndDisplay": model.keepAwakeMode = .systemAndDisplay
+        case "keepAwake.clamshellUnplugged": model.keepAwakeMode = .clamshellUnplugged
         case "open": show()
         case "notice":
             let notice=model.undeliveredNotice; model.undeliveredNotice=nil

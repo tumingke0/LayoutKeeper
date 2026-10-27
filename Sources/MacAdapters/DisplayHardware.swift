@@ -130,14 +130,24 @@ public enum DisplayPortReader {
 /// notification wakes, and clamshell mode.
 public final class SystemSleepGuard {
     private static let assertionReason="LayoutKeeper Keep Awake" as CFString
+    public static let ownsSleepDisabledKey="keepAwakeOwnsSleepDisabled"
     private var idleSystemID: IOPMAssertionID=0
     private var systemSleepID: IOPMAssertionID=0
     private var displaySleepID: IOPMAssertionID=0
     private var activityToken: NSObjectProtocol?
+    private var didSetSleepDisabled=false
     public private(set) var lastPlan: KeepAwakePlan = .inactive
     public private(set) var lastVerified=true
     public init() {}
     deinit { releaseAll() }
+
+    private static var ownsSleepDisabled: Bool {
+        get { UserDefaults.standard.bool(forKey:ownsSleepDisabledKey) }
+        set {
+            if newValue { UserDefaults.standard.set(true,forKey:ownsSleepDisabledKey) }
+            else { UserDefaults.standard.removeObject(forKey:ownsSleepDisabledKey) }
+        }
+    }
 
     /// True when the MacBook lid is closed (`IOPMrootDomain` -> `"AppleClamshellState"`).
     public static func clamshellState() -> Bool {
@@ -145,6 +155,15 @@ public final class SystemSleepGuard {
         guard root != 0 else { return false }
         defer { IOObjectRelease(root) }
         return (IORegistryEntryCreateCFProperty(root,"AppleClamshellState" as CFString,kCFAllocatorDefault,0)?.takeRetainedValue() as? Bool) ?? false
+    }
+
+    /// True when system-wide sleep is disabled (`pmset -a disablesleep 1`, reflected on `IOPMrootDomain` -> `"SleepDisabled"`).
+    public static func sleepDisabledState() -> Bool {
+        let root=IOServiceGetMatchingService(kIOMainPortDefault,IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        guard let val=IORegistryEntryCreateCFProperty(root,"SleepDisabled" as CFString,kCFAllocatorDefault,0)?.takeRetainedValue() else { return false }
+        return (val as? Bool) ?? ((val as? NSNumber)?.boolValue ?? false)
     }
 
     /// Reads back the assertion types currently held by `pid` in `powerd` (`IOPMCopyAssertionsByProcess`).
@@ -163,33 +182,117 @@ public final class SystemSleepGuard {
         return IOPMAssertionDeclareUserActivity(Self.assertionReason,kIOPMUserActiveLocal,&id)==kIOReturnSuccess
     }
 
-    public func releaseAll() {
+    private func releaseAssertions() {
         if idleSystemID != 0 { IOPMAssertionRelease(idleSystemID); idleSystemID=0 }
         if systemSleepID != 0 { IOPMAssertionRelease(systemSleepID); systemSleepID=0 }
         if displaySleepID != 0 { IOPMAssertionRelease(displaySleepID); displaySleepID=0 }
         if let token=activityToken { ProcessInfo.processInfo.endActivity(token); activityToken=nil }
+    }
+
+    public func releaseAll() {
+        releaseAssertions()
+        restoreSleepDisabledIfNeeded()
         lastPlan = .inactive; lastVerified=true
     }
 
+    private func restoreSleepDisabledIfNeeded() {
+        guard didSetSleepDisabled || Self.ownsSleepDisabled else { return }
+        if Self.sleepDisabledState() {
+            _=setSleepDisabled(false,allowPrompt:true)
+        }
+        if !Self.sleepDisabledState() {
+            didSetSleepDisabled=false
+            Self.ownsSleepDisabled=false
+        }
+    }
+
     @discardableResult
-    public func apply(mode: KeepAwakeMode) -> (plan: KeepAwakePlan,verified: Bool,activeTypes: Set<String>,clamshell: Bool) {
+    private func setSleepDisabled(_ disable: Bool,allowPrompt: Bool) -> Bool {
+        let target=disable ? "1" : "0"
+        if Self.runProcess("/usr/bin/sudo",["-n","/usr/bin/pmset","-a","disablesleep",target])==0,
+           Self.sleepDisabledState()==disable {
+            return true
+        }
+        guard allowPrompt else { return false }
+        let user=NSUserName()
+        let safeCharset=CharacterSet(charactersIn:"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        let validUser = !user.isEmpty && user.unicodeScalars.allSatisfy({ safeCharset.contains($0) })
+        let script: String
+        if validUser {
+            let rule="\(user) ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1"
+            let tmp="/etc/sudoers.d/.layoutkeeper-pmset.tmp"
+            let dst="/etc/sudoers.d/layoutkeeper-pmset"
+            script="umask 0227; /bin/mkdir -p /etc/sudoers.d && echo '\(rule)' > \(tmp) && /usr/sbin/visudo -cf \(tmp) >/dev/null 2>&1 && /bin/chmod 0440 \(tmp) && /bin/mv -f \(tmp) \(dst) || /bin/rm -f \(tmp); /usr/bin/pmset -a disablesleep \(target)"
+        } else {
+            script="/usr/bin/pmset -a disablesleep \(target)"
+        }
+        let appleScript="do shell script \"\(script)\" with administrator privileges"
+        _=Self.runProcess("/usr/bin/osascript",["-e",appleScript])
+        return Self.sleepDisabledState()==disable
+    }
+
+    private static func runProcess(_ executable: String,_ arguments: [String]) -> Int32 {
+        let p=Process()
+        p.executableURL=URL(fileURLWithPath:executable)
+        p.arguments=arguments
+        p.standardOutput=FileHandle.nullDevice
+        p.standardError=FileHandle.nullDevice
+        do {
+            try p.run()
+            p.waitUntilExit()
+            return p.terminationStatus
+        } catch {
+            return -1
+        }
+    }
+
+    @discardableResult
+    public func apply(mode: KeepAwakeMode,allowPrompt: Bool = false) -> (plan: KeepAwakePlan,verified: Bool,activeTypes: Set<String>,clamshell: Bool,sleepDisabled: Bool,authCancelled: Bool) {
         let clamshell=Self.clamshellState()
         let plan=KeepAwakePolicy.plan(mode:mode,clamshell:clamshell)
+        if !plan.disableClamshellSleep {
+            restoreSleepDisabledIfNeeded()
+        }
         guard plan.isActive else {
-            releaseAll()
-            return (plan,true,[],clamshell)
+            releaseAssertions()
+            lastPlan = .inactive; lastVerified=true
+            return (plan,true,[],clamshell,Self.sleepDisabledState(),false)
         }
         syncAssertions(to:plan)
-        var active=Self.activeAssertionTypes()
-        if !KeepAwakePolicy.satisfied(plan:plan,activeAssertionTypes:active) {
-            // Self-heal if powerd dropped an assertion across sleep/wake.
-            releaseAll()
-            syncAssertions(to:plan)
-            active=Self.activeAssertionTypes()
+        var authCancelled=false
+        if plan.disableClamshellSleep {
+            if !Self.sleepDisabledState() {
+                if setSleepDisabled(true,allowPrompt:allowPrompt) {
+                    didSetSleepDisabled=true
+                    Self.ownsSleepDisabled=true
+                } else if allowPrompt {
+                    authCancelled=true
+                }
+            } else {
+                didSetSleepDisabled=true
+                Self.ownsSleepDisabled=true
+            }
         }
-        let ok=KeepAwakePolicy.satisfied(plan:plan,activeAssertionTypes:active)
+        var active=Self.activeAssertionTypes()
+        var sleepDisabled=Self.sleepDisabledState()
+        if !KeepAwakePolicy.satisfied(plan:plan,activeAssertionTypes:active,sleepDisabled:sleepDisabled) {
+            if !plan.expectedAssertionTypes.isSubset(of:active) {
+                // Self-heal if powerd dropped an assertion across sleep/wake.
+                releaseAssertions()
+                syncAssertions(to:plan)
+                active=Self.activeAssertionTypes()
+            }
+            if plan.disableClamshellSleep && !sleepDisabled && !authCancelled {
+                if setSleepDisabled(true,allowPrompt:false) {
+                    didSetSleepDisabled=true
+                    Self.ownsSleepDisabled=true
+                    sleepDisabled=Self.sleepDisabledState()
+                }
+            }
+        }
+        let ok=KeepAwakePolicy.satisfied(plan:plan,activeAssertionTypes:active,sleepDisabled:sleepDisabled)
         lastPlan=plan; lastVerified=ok
-        return (plan,ok,active,clamshell)
+        return (plan,ok,active,clamshell,sleepDisabled,authCancelled)
     }
 
     private func syncAssertions(to plan: KeepAwakePlan) {

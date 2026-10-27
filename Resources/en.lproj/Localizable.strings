@@ -964,3 +964,11 @@
 "同时阻止屏幕自动熄灭和系统休眠（等同 caffeinate -d -i -s），保持屏幕常亮与后台任务持续运行。" = "Prevents both display sleep and system sleep (equivalent to caffeinate -d -i -s), keeping the screen on and background tasks running.";
 "已生效（电源断言已通过系统回读验证）" = "Active (power assertions verified with macOS)";
 "正在同步电源断言…" = "Syncing power assertions…";
+"息屏不休眠" = "Keep System Awake";
+"常亮不休眠" = "Keep Screen & System Awake";
+"合盖断电也不休眠" = "Keep Awake Even Closed on Battery";
+"闲置、用电池或合盖时正常休眠" = "Sleeps normally when idle, on battery, or with the lid closed";
+"允许黑屏；开盖拔电不休眠，合盖接电源或外接屏时不休眠" = "Allows screen off; stays awake on battery with lid open, or with lid closed on power/monitor";
+"屏幕常亮；开盖拔电不休眠，合盖需接电源不休眠" = "Keeps screen on; stays awake on battery with lid open, or with lid closed on power";
+"合盖拔掉电源和显示器也不休眠（装包前请关闭）" = "Stays awake even with lid closed on battery and no monitor (turn off before packing)";
+"防休眠：合盖断电不休眠" = "Keep Awake: Closed on Battery";

@@ -79,14 +79,23 @@ public enum RelativeTime {
 }
 
 public enum KeepAwakeMode: String, CaseIterable, Codable, Sendable {
-    case off, systemOnly, systemAndDisplay
+    case off, systemOnly, systemAndDisplay, clamshellUnplugged
     public static let preferenceKey="keepAwakeMode"
     public static let defaultMode=KeepAwakeMode.off
     public var title: String {
         switch self {
         case .off: return lk("关闭")
-        case .systemOnly: return lk("息屏不休眠（允许黑屏，合盖自动保活）")
-        case .systemAndDisplay: return lk("常亮不休眠（屏幕与系统常开）")
+        case .systemOnly: return lk("息屏不休眠")
+        case .systemAndDisplay: return lk("常亮不休眠")
+        case .clamshellUnplugged: return lk("合盖断电也不休眠")
+        }
+    }
+    public var subtitle: String {
+        switch self {
+        case .off: return lk("闲置、用电池或合盖时正常休眠")
+        case .systemOnly: return lk("允许黑屏；开盖拔电不休眠，合盖接电源或外接屏时不休眠")
+        case .systemAndDisplay: return lk("屏幕常亮；开盖拔电不休眠，合盖需接电源不休眠")
+        case .clamshellUnplugged: return lk("合盖拔掉电源和显示器也不休眠（装包前请关闭）")
         }
     }
     public var menuTitle: String {
@@ -94,6 +103,7 @@ public enum KeepAwakeMode: String, CaseIterable, Codable, Sendable {
         case .off: return lk("防休眠")
         case .systemOnly: return lk("防休眠：息屏不休眠")
         case .systemAndDisplay: return lk("防休眠：常亮不休眠")
+        case .clamshellUnplugged: return lk("防休眠：合盖断电不休眠")
         }
     }
 }
@@ -103,14 +113,16 @@ public struct KeepAwakePlan: Equatable, Sendable {
     public var preventSystemSleep: Bool
     public var preventIdleDisplaySleep: Bool
     public var wakeDisplayOnSleepEvent: Bool
-    public init(preventIdleSystemSleep: Bool,preventSystemSleep: Bool,preventIdleDisplaySleep: Bool,wakeDisplayOnSleepEvent: Bool) {
+    public var disableClamshellSleep: Bool
+    public init(preventIdleSystemSleep: Bool,preventSystemSleep: Bool,preventIdleDisplaySleep: Bool,wakeDisplayOnSleepEvent: Bool,disableClamshellSleep: Bool = false) {
         self.preventIdleSystemSleep=preventIdleSystemSleep
         self.preventSystemSleep=preventSystemSleep
         self.preventIdleDisplaySleep=preventIdleDisplaySleep
         self.wakeDisplayOnSleepEvent=wakeDisplayOnSleepEvent
+        self.disableClamshellSleep=disableClamshellSleep
     }
-    public static let inactive=KeepAwakePlan(preventIdleSystemSleep:false,preventSystemSleep:false,preventIdleDisplaySleep:false,wakeDisplayOnSleepEvent:false)
-    public var isActive: Bool { preventIdleSystemSleep || preventSystemSleep || preventIdleDisplaySleep }
+    public static let inactive=KeepAwakePlan(preventIdleSystemSleep:false,preventSystemSleep:false,preventIdleDisplaySleep:false,wakeDisplayOnSleepEvent:false,disableClamshellSleep:false)
+    public var isActive: Bool { preventIdleSystemSleep || preventSystemSleep || preventIdleDisplaySleep || disableClamshellSleep }
     public var expectedAssertionTypes: Set<String> {
         var out=Set<String>()
         if preventIdleSystemSleep { out.insert("PreventUserIdleSystemSleep") }
@@ -124,17 +136,23 @@ public enum KeepAwakePolicy {
     /// Computes which IOKit power assertions to hold for `mode` and whether the MacBook lid is closed (`clamshell`).
     /// When the lid is closed, macOS forces `Clamshell Sleep` 5 s after the external monitor turns off even on AC power
     /// with `sleep = 0`, so `.systemOnly` automatically upgrades to hold `PreventUserIdleDisplaySleep` while in clamshell mode.
+    /// `.clamshellUnplugged` additionally sets system-wide `SleepDisabled` (`pmset -a disablesleep 1`) so closing the lid
+    /// without AC power or an external monitor does not trigger kernel Clamshell Sleep.
     public static func plan(mode: KeepAwakeMode,clamshell: Bool) -> KeepAwakePlan {
         switch mode {
         case .off:
             return .inactive
         case .systemOnly:
-            return KeepAwakePlan(preventIdleSystemSleep:true,preventSystemSleep:true,preventIdleDisplaySleep:clamshell,wakeDisplayOnSleepEvent:clamshell)
+            return KeepAwakePlan(preventIdleSystemSleep:true,preventSystemSleep:true,preventIdleDisplaySleep:clamshell,wakeDisplayOnSleepEvent:clamshell,disableClamshellSleep:false)
         case .systemAndDisplay:
-            return KeepAwakePlan(preventIdleSystemSleep:true,preventSystemSleep:true,preventIdleDisplaySleep:true,wakeDisplayOnSleepEvent:true)
+            return KeepAwakePlan(preventIdleSystemSleep:true,preventSystemSleep:true,preventIdleDisplaySleep:true,wakeDisplayOnSleepEvent:true,disableClamshellSleep:false)
+        case .clamshellUnplugged:
+            return KeepAwakePlan(preventIdleSystemSleep:true,preventSystemSleep:true,preventIdleDisplaySleep:clamshell,wakeDisplayOnSleepEvent:true,disableClamshellSleep:true)
         }
     }
-    public static func satisfied(plan: KeepAwakePlan,activeAssertionTypes: Set<String>) -> Bool {
-        plan.expectedAssertionTypes.isSubset(of:activeAssertionTypes)
+    public static func satisfied(plan: KeepAwakePlan,activeAssertionTypes: Set<String>,sleepDisabled: Bool = false) -> Bool {
+        guard plan.expectedAssertionTypes.isSubset(of:activeAssertionTypes) else { return false }
+        if plan.disableClamshellSleep && !sleepDisabled { return false }
+        return true
     }
 }

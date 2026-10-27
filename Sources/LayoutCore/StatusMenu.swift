@@ -179,7 +179,7 @@ public enum StatusMenuModel {
         }
         items.append(MenuItemModel(kind:.submenu,id:"mode",title:lk("接上屏幕时"),symbol:"cable.connector.horizontal",children:modes))
         let keepAwakeItems=KeepAwakeMode.allCases.map { mode in
-            MenuItemModel(kind:.action,id:"keepAwake.\(mode.rawValue)",title:mode.title,checked:s.keepAwakeMode == mode)
+            MenuItemModel(kind:.action,id:"keepAwake.\(mode.rawValue)",title:mode.title,reason:mode.subtitle,checked:s.keepAwakeMode == mode)
         }
         items.append(MenuItemModel(kind:.submenu,id:"keepAwake",title:s.keepAwakeMode.menuTitle,symbol:s.keepAwakeMode == .off ? "moon.zzz" : "bolt.shield.fill",children:keepAwakeItems))
         items.append(.separator("sep2"))

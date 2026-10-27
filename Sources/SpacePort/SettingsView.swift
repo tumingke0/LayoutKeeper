@@ -87,11 +87,7 @@ struct GeneralSettings: View {
             }
             Section(lk("防休眠")) {
                 Picker(lk("模式"),selection:$model.keepAwakeMode) { ForEach(KeepAwakeMode.allCases,id:\.self) { Text($0.title).tag($0) } }
-                Text(model.keepAwakeMode == .off
-                     ? lk("跟随 macOS 默认睡眠设置。注意：系统自带的「显示器关闭时防止自动睡眠」在电池供电、插线唤醒（Notification Wake）或合盖黑屏（Clamshell Sleep）时仍会进入休眠。")
-                     : (model.keepAwakeMode == .systemOnly
-                        ? lk("开盖时允许屏幕到时间或按 ⌃⌘Q 锁屏后变黑，同时通过 IOKit 电源断言保持系统、网络、Codex 与远程连接不断线；合盖外接屏时自动阻止屏幕熄灭，避免触发 macOS 合盖强制睡眠。")
-                        : lk("同时阻止屏幕自动熄灭和系统休眠（等同 caffeinate -d -i -s），保持屏幕常亮与后台任务持续运行。")))
+                Text(model.keepAwakeMode.subtitle)
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 if model.keepAwakeMode != .off {
                     HStack {

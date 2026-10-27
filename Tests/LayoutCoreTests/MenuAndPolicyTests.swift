@@ -222,6 +222,14 @@ final class MainWindowStateTests: XCTestCase {
         var s=MenuState()
         let offItem=StatusMenuModel.build(s).first{ $0.id=="keepAwake" }!
         XCTAssertEqual(offItem.title,"防休眠")
+        XCTAssertEqual(offItem.children.map(\.id),["keepAwake.off","keepAwake.systemOnly","keepAwake.systemAndDisplay","keepAwake.clamshellUnplugged"])
+        XCTAssertEqual(offItem.children.map(\.title),["关闭","息屏不休眠","常亮不休眠","合盖断电也不休眠"])
+        XCTAssertEqual(offItem.children.compactMap(\.reason),[
+            "闲置、用电池或合盖时正常休眠",
+            "允许黑屏；开盖拔电不休眠，合盖接电源或外接屏时不休眠",
+            "屏幕常亮；开盖拔电不休眠，合盖需接电源不休眠",
+            "合盖拔掉电源和显示器也不休眠（装包前请关闭）"
+        ])
         XCTAssertEqual(offItem.children.filter(\.checked).map(\.id),["keepAwake.off"])
 
         s.keepAwakeMode = .systemOnly
@@ -229,18 +237,38 @@ final class MainWindowStateTests: XCTestCase {
         XCTAssertEqual(sysItem.title,"防休眠：息屏不休眠")
         XCTAssertEqual(sysItem.children.filter(\.checked).map(\.id),["keepAwake.systemOnly"])
 
+        s.keepAwakeMode = .clamshellUnplugged
+        let unpItem=StatusMenuModel.build(s).first{ $0.id=="keepAwake" }!
+        XCTAssertEqual(unpItem.title,"防休眠：合盖断电不休眠")
+        XCTAssertEqual(unpItem.children.filter(\.checked).map(\.id),["keepAwake.clamshellUnplugged"])
+
         // Policy: lid open in .systemOnly allows display sleep while holding system sleep assertions.
         let openPlan=KeepAwakePolicy.plan(mode:.systemOnly,clamshell:false)
         XCTAssertTrue(openPlan.preventIdleSystemSleep); XCTAssertTrue(openPlan.preventSystemSleep)
         XCTAssertFalse(openPlan.preventIdleDisplaySleep); XCTAssertFalse(openPlan.wakeDisplayOnSleepEvent)
+        XCTAssertFalse(openPlan.disableClamshellSleep)
         XCTAssertTrue(KeepAwakePolicy.satisfied(plan:openPlan,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep"]))
         XCTAssertFalse(KeepAwakePolicy.satisfied(plan:openPlan,activeAssertionTypes:["PreventUserIdleSystemSleep"]))
 
         // Policy: lid closed (clamshell) in .systemOnly automatically holds display sleep assertion to prevent Clamshell Sleep.
         let clamPlan=KeepAwakePolicy.plan(mode:.systemOnly,clamshell:true)
         XCTAssertTrue(clamPlan.preventIdleDisplaySleep); XCTAssertTrue(clamPlan.wakeDisplayOnSleepEvent)
+        XCTAssertFalse(clamPlan.disableClamshellSleep)
         XCTAssertFalse(KeepAwakePolicy.satisfied(plan:clamPlan,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep"]))
         XCTAssertTrue(KeepAwakePolicy.satisfied(plan:clamPlan,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep","PreventUserIdleDisplaySleep"]))
+
+        // Policy: .clamshellUnplugged requires both IOKit assertions and system-wide sleepDisabled == true.
+        let unpOpen=KeepAwakePolicy.plan(mode:.clamshellUnplugged,clamshell:false)
+        XCTAssertTrue(unpOpen.preventIdleSystemSleep); XCTAssertTrue(unpOpen.preventSystemSleep)
+        XCTAssertFalse(unpOpen.preventIdleDisplaySleep); XCTAssertTrue(unpOpen.wakeDisplayOnSleepEvent)
+        XCTAssertTrue(unpOpen.disableClamshellSleep)
+        XCTAssertFalse(KeepAwakePolicy.satisfied(plan:unpOpen,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep"],sleepDisabled:false))
+        XCTAssertTrue(KeepAwakePolicy.satisfied(plan:unpOpen,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep"],sleepDisabled:true))
+
+        let unpClam=KeepAwakePolicy.plan(mode:.clamshellUnplugged,clamshell:true)
+        XCTAssertTrue(unpClam.preventIdleDisplaySleep); XCTAssertTrue(unpClam.disableClamshellSleep)
+        XCTAssertFalse(KeepAwakePolicy.satisfied(plan:unpClam,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep","PreventUserIdleDisplaySleep"],sleepDisabled:false))
+        XCTAssertTrue(KeepAwakePolicy.satisfied(plan:unpClam,activeAssertionTypes:["PreventUserIdleSystemSleep","PreventSystemSleep","PreventUserIdleDisplaySleep"],sleepDisabled:true))
 
         // Positional format specifiers (%1$@, %2$@) in English strings table.
         XCTAssertEqual(fill("Use “%2$@” automatically on %1$@",["USB-C port #1","Monitor directly right"]),

@@ -317,7 +317,7 @@ struct MenuReplica: View {
         for item in items { if item.id==id { break }; y+=height(item) }
         return y-5
     }
-    private func height(_ item: MenuItemModel) -> CGFloat { item.kind == .separator ? 11 : (item.reason != nil && !item.enabled ? 38 : 24) }
+    private func height(_ item: MenuItemModel) -> CGFloat { item.kind == .separator ? 11 : (item.reason != nil ? 38 : 24) }
     private func column(_ list: [MenuItemModel],width: CGFloat) -> some View {
         VStack(alignment:.leading,spacing:0) {
             ForEach(list) { item in row(item).frame(height:height(item)) }
@@ -338,7 +338,7 @@ struct MenuReplica: View {
                 if let symbol=item.symbol { Image(systemName:symbol).font(.system(size:12)).frame(width:16) }
                 VStack(alignment:.leading,spacing:1) {
                     Text(item.title).font(.system(size:13))
-                    if !item.enabled,let reason=item.reason { Text(reason).font(.system(size:11)).foregroundStyle(.secondary) }
+                    if let reason=item.reason { Text(reason).font(.system(size:11)).foregroundStyle(highlighted ? Color.white.opacity(0.85) : .secondary) }
                 }
                 Spacer(minLength:12)
                 if item.kind == .submenu { Image(systemName:"chevron.right").font(.system(size:10,weight:.semibold)) }
