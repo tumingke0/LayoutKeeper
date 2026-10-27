@@ -972,3 +972,5 @@
 "屏幕常亮；开盖拔电不休眠，合盖需接电源不休眠" = "Keeps screen on; stays awake on battery with lid open, or with lid closed on power";
 "合盖拔掉电源和显示器也不休眠（装包前请关闭）" = "Stays awake even with lid closed on battery and no monitor (turn off before packing)";
 "防休眠：合盖断电不休眠" = "Keep Awake: Closed on Battery";
+"外接屏亮度跟随内建屏幕自动变化" = "Sync external brightness with built-in display";
+"内建屏幕随环境光变亮或变暗时，外接显示器按相同幅度自动增减亮度。" = "When the built-in display adjusts to ambient light, external monitors change by the same amount.";

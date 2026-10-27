@@ -568,6 +568,34 @@ if let index=CommandLine.arguments.firstIndex(of:"--test-display-control"),Comma
         let fin=s.readVCP(DDCPacket.brightness)
         L("  final=\(fin.map{ "\($0.current)" } ?? "nil") \(fin?.current==b.current ? "RESTORED" : "MISMATCH")")
     }
+    if let builtInID=DisplayControl.onlineDisplays().first(where:{ CGDisplayIsBuiltin($0) != 0 }),
+       let b0=BuiltInBrightness.get(builtInID) {
+        let suite="local.layoutkeeper.test.sync.\(UUID().uuidString)"
+        let ud=UserDefaults(suiteName:suite)
+        defer { ud?.removePersistentDomain(forName:suite) }
+        let ctrl=DisplayControl(defaults:ud)
+        let extID: CGDirectDisplayID=999_001
+        let e0=0.50
+        ctrl.loadDisplaysForTest([
+            ControlledDisplay(id:builtInID,name:DisplayControl.name(builtInID),method:.builtIn,brightness:b0),
+            ControlledDisplay(id:extID,name:"External-Test",method:.ddc,brightness:e0,ddcMax:100),
+        ])
+        ctrl.syncWithBuiltIn=true
+        ctrl.pollBuiltInBrightnessForSync() // Establish baseline B0
+        let step = b0 >= 0.15 ? -0.05 : 0.05
+        let b1 = min(1,max(0,b0 + step))
+        _=BuiltInBrightness.set(builtInID,b1); usleep(300000)
+        let hw1=BuiltInBrightness.get(builtInID) ?? -1
+        ctrl.pollBuiltInBrightnessForSync()
+        let actualDelta=hw1 - b0
+        let extAfterPoll=ctrl.displays.first(where:{ $0.id==extID })?.brightness ?? -1
+        L("sync-test(poll): B0=\(String(format:"%.4f",b0)) -> hw1=\(String(format:"%.4f",hw1)) (delta=\(String(format:"%+.4f",actualDelta))) | E0=\(String(format:"%.4f",e0)) -> E1=\(String(format:"%.4f",extAfterPoll))")
+        _=BuiltInBrightness.set(builtInID,b0); usleep(300000)
+        let hwRestored=BuiltInBrightness.get(builtInID) ?? -1
+        ctrl.pollBuiltInBrightnessForSync()
+        let extRestored=ctrl.displays.first(where:{ $0.id==extID })?.brightness ?? -1
+        L("sync-test(restore): builtIn=\(String(format:"%.4f",hwRestored)) | E_restored=\(String(format:"%.4f",extRestored))")
+    }
     try? log.joined(separator:"\n").write(toFile:CommandLine.arguments[index+1],atomically:true,encoding:.utf8)
     exit(0)
 }

@@ -31,11 +31,19 @@ final class DisplayControl: ObservableObject {
     @Published var volumeKeys: Bool { didSet { defaults?.set(volumeKeys,forKey:DisplayControlPrefs.volumeKeys); onKeySettingsChanged?() } }
     @Published var softwareFallback: Bool { didSet { defaults?.set(softwareFallback,forKey:DisplayControlPrefs.softwareFallback); refresh() } }
     @Published var ddcDisabled: Set<String> { didSet { defaults?.set(Array(ddcDisabled),forKey:DisplayControlPrefs.ddcDisabled); refresh() } }
+    @Published var syncWithBuiltIn: Bool {
+        didSet {
+            defaults?.set(syncWithBuiltIn,forKey:DisplayControlPrefs.syncWithBuiltIn)
+            if !syncWithBuiltIn { lastSyncedBuiltIn=nil }
+            onSyncSettingsChanged?()
+        }
+    }
     /// Names of running apps that also grab the brightness keys (BetterDisplay, MonitorControl, Lunar).
     @Published var conflicts: [String]=[]
     @Published var keyTapActive=false
     @Published var keyTapError: String?
     var onKeySettingsChanged: (() -> Void)?
+    var onSyncSettingsChanged: (() -> Void)?
     var showHUD: ((ControlledDisplay,BrightnessHUD.Kind) -> Void)?
     /// Volume HUD: output device name, level, muted, and the screen under the mouse to show it on.
     var showVolumeHUD: ((String,Double,Bool,CGDirectDisplayID?) -> Void)?
@@ -47,6 +55,7 @@ final class DisplayControl: ObservableObject {
     private var pending: [String:(DDCService,UInt8,UInt16)]=[:]
     private var draining: Set<String>=[]
     private var refreshing=false
+    private var lastSyncedBuiltIn: Double?
 
     init(defaults: UserDefaults?=Prefs.store) {
         self.defaults=defaults
@@ -56,6 +65,7 @@ final class DisplayControl: ObservableObject {
         volumeKeys=b(DisplayControlPrefs.volumeKeys,true)
         softwareFallback=b(DisplayControlPrefs.softwareFallback,true)
         ddcDisabled=Set(defaults?.stringArray(forKey:DisplayControlPrefs.ddcDisabled) ?? [])
+        syncWithBuiltIn=b(DisplayControlPrefs.syncWithBuiltIn,false)
     }
 
     static func onlineDisplays() -> [CGDirectDisplayID] {
@@ -102,6 +112,11 @@ final class DisplayControl: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.services=map; self.displays=out; self.refreshing=false
+                if self.syncWithBuiltIn,!SystemSleepGuard.clamshellState(),let b=out.first(where:{ $0.method == .builtIn })?.brightness {
+                    if self.lastSyncedBuiltIn == nil { self.lastSyncedBuiltIn=b }
+                } else {
+                    self.lastSyncedBuiltIn=nil
+                }
                 if !fallback { SoftwareDimming.restoreAll() }
             }
         }
@@ -112,13 +127,66 @@ final class DisplayControl: ObservableObject {
         change(&displays[i]); return displays[i]
     }
     func setBrightness(_ id: CGDirectDisplayID,_ v: Double,hud: Bool=false) {
+        let prevBuiltIn=displays.first(where:{ $0.id==id && $0.method == .builtIn })?.brightness
         guard let d=update(id,{ $0.brightness=min(1,max(0,v)) }) else { return }
         switch d.method {
-        case .builtIn: BuiltInBrightness.set(id,d.brightness)
+        case .builtIn:
+            BuiltInBrightness.set(id,d.brightness)
+            if syncWithBuiltIn {
+                let clamshell=SystemSleepGuard.clamshellState()
+                let externals=displays.filter{ $0.method != .builtIn }.map{ (id:$0.id,brightness:$0.brightness) }
+                let result=BuiltInBrightnessSync.evaluate(
+                    enabled:syncWithBuiltIn,
+                    clamshell:clamshell,
+                    previousBuiltIn:lastSyncedBuiltIn ?? prevBuiltIn,
+                    currentBuiltIn:d.brightness,
+                    externalBrightnesses:externals
+                )
+                lastSyncedBuiltIn=result.baseline
+                for u in result.updates {
+                    setBrightness(u.id,u.newBrightness,hud:false)
+                }
+            }
         case .software: SoftwareDimming.set(id,d.brightness)
         case .ddc: if let s=services[id] { enqueue(s,id,DDCPacket.brightness,BrightnessStep.toDDC(d.brightness,max:d.ddcMax)) }
         }
         if hud { showHUD?(d,.brightness) }
+    }
+    func resetSyncBaseline() {
+        lastSyncedBuiltIn=nil
+    }
+    func loadDisplaysForTest(_ list: [ControlledDisplay]) {
+        displays=list
+        lastSyncedBuiltIn=nil
+    }
+    func pollBuiltInBrightnessForSync() {
+        guard syncWithBuiltIn,!RenderMode.snapshot,!refreshing else { return }
+        guard !SystemSleepGuard.clamshellState() else {
+            lastSyncedBuiltIn=nil
+            return
+        }
+        guard let builtIn=displays.first(where:{ $0.method == .builtIn }),
+              displays.contains(where:{ $0.method != .builtIn }),
+              let now=BuiltInBrightness.get(builtIn.id) else {
+            lastSyncedBuiltIn=nil
+            return
+        }
+        let clamped=min(1,max(0,now))
+        if abs(clamped-builtIn.brightness) >= 0.01 {
+            _=update(builtIn.id,{ $0.brightness=clamped })
+        }
+        let externals=displays.filter{ $0.method != .builtIn }.map{ (id:$0.id,brightness:$0.brightness) }
+        let result=BuiltInBrightnessSync.evaluate(
+            enabled:syncWithBuiltIn,
+            clamshell:false,
+            previousBuiltIn:lastSyncedBuiltIn,
+            currentBuiltIn:clamped,
+            externalBrightnesses:externals
+        )
+        lastSyncedBuiltIn=result.baseline
+        for u in result.updates {
+            setBrightness(u.id,u.newBrightness,hud:false)
+        }
     }
     /// Volume / mute key on the system output. Returns false (key goes to macOS) when the device can't take it.
     func handleSystemVolume(_ key: MediaKey,fine: Bool) -> Bool {
@@ -272,24 +340,68 @@ final class DisplayControlCoordinator {
     let tap=MediaKeyTap()
     let hud=BrightnessHUDCenter()
     private var observers: [NSObjectProtocol]=[]
+    private var distributedObservers: [NSObjectProtocol]=[]
+    private var syncTimer: Timer?
+    private var isSleepingOrLocked=false
     init(control: DisplayControl) { self.control=control }
     func start(trusted: @escaping () -> Bool) {
         control.showHUD={ [weak self] d,k in self?.hud.show(d,kind:k) }
         control.showVolumeHUD={ [weak self] name,level,muted,screen in self?.hud.show(name:name,percent:level,kind:muted ? .muted : .volume,note:nil,screenID:screen) }
         tap.handler={ [weak self] key,fine in self?.control.handle(key,fine:fine) ?? false }
         control.onKeySettingsChanged={ [weak self] in self?.evaluate(trusted:trusted()) }
+        control.onSyncSettingsChanged={ [weak self] in self?.updateSyncTimer() }
         let nc=NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification,NSWorkspace.didTerminateApplicationNotification] {
             observers.append(nc.addObserver(forName:name,object:nil,queue:.main) { [weak self] _ in self?.evaluate(trusted:trusted()) })
         }
         observers.append(NotificationCenter.default.addObserver(forName:NSApplication.didChangeScreenParametersNotification,object:nil,queue:.main) { [weak self] _ in
+            self?.control.resetSyncBaseline()
             DispatchQueue.main.asyncAfter(deadline:.now()+1.5) { self?.control.refresh() }
         })
+        observers.append(nc.addObserver(forName:NSWorkspace.willSleepNotification,object:nil,queue:.main) { [weak self] _ in
+            guard let self else { return }
+            self.isSleepingOrLocked=true
+            self.control.resetSyncBaseline()
+            self.updateSyncTimer()
+        })
         observers.append(nc.addObserver(forName:NSWorkspace.didWakeNotification,object:nil,queue:.main) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline:.now()+3) { self?.control.refresh() }
+            guard let self else { return }
+            self.isSleepingOrLocked=false
+            self.control.resetSyncBaseline()
+            self.updateSyncTimer()
+            DispatchQueue.main.asyncAfter(deadline:.now()+3) { self.control.refresh() }
+        })
+        let dnc=DistributedNotificationCenter.default()
+        distributedObservers.append(dnc.addObserver(forName:Notification.Name("com.apple.screenIsLocked"),object:nil,queue:.main) { [weak self] _ in
+            guard let self else { return }
+            self.isSleepingOrLocked=true
+            self.control.resetSyncBaseline()
+            self.updateSyncTimer()
+        })
+        distributedObservers.append(dnc.addObserver(forName:Notification.Name("com.apple.screenIsUnlocked"),object:nil,queue:.main) { [weak self] _ in
+            guard let self else { return }
+            self.isSleepingOrLocked=false
+            self.control.resetSyncBaseline()
+            self.updateSyncTimer()
         })
         control.refresh()
         evaluate(trusted:trusted())
+        updateSyncTimer()
+    }
+    private func updateSyncTimer() {
+        let shouldRun=control.syncWithBuiltIn && !isSleepingOrLocked
+        if shouldRun {
+            guard syncTimer == nil else { return }
+            let timer=Timer(timeInterval:2.0,repeats:true) { [weak self] _ in
+                self?.control.pollBuiltInBrightnessForSync()
+            }
+            syncTimer=timer
+            RunLoop.main.add(timer,forMode:.common)
+            control.pollBuiltInBrightnessForSync()
+        } else {
+            syncTimer?.invalidate()
+            syncTimer=nil
+        }
     }
     /// Called at launch, on app launch/quit, on settings change and when Accessibility changes.
     func evaluate(trusted: Bool) {
@@ -304,7 +416,10 @@ final class DisplayControlCoordinator {
         } else if !want && tap.isInstalled { tap.uninstall() }
         if control.keyTapActive != tap.isInstalled { control.keyTapActive=tap.isInstalled }
     }
-    func stop() { tap.uninstall(); SoftwareDimming.restoreAll() }
+    func stop() {
+        syncTimer?.invalidate(); syncTimer=nil
+        tap.uninstall(); SoftwareDimming.restoreAll()
+    }
 }
 
 // MARK: - Menu and settings UI
@@ -312,6 +427,9 @@ final class DisplayControlCoordinator {
 /// Menu-bar section: one block per display, sliders apply live.
 struct DisplayMenuSection: View {
     @ObservedObject var control: DisplayControl
+    var hasBuiltInAndExternal: Bool {
+        control.displays.contains{ $0.method == .builtIn } && control.displays.contains{ $0.method != .builtIn }
+    }
     var body: some View {
         VStack(alignment:.leading,spacing:0) {
             Text(lk("显示器")).font(.system(size:12,weight:.semibold)).foregroundStyle(.secondary).padding(.horizontal,14).padding(.top,4).padding(.bottom,2)
@@ -329,6 +447,16 @@ struct DisplayMenuSection: View {
                     row("sun.min","sun.max",Binding(get:{ d.brightness },set:{ control.setBrightness(d.id,$0) }))
                 }.padding(.horizontal,14).padding(.vertical,6)
                 if i<control.displays.count-1 { Divider().padding(.horizontal,14) }
+            }
+            if hasBuiltInAndExternal {
+                Divider().padding(.horizontal,14)
+                HStack(spacing:6) {
+                    Toggle(lk("外接屏亮度跟随内建屏幕自动变化"),isOn:$control.syncWithBuiltIn)
+                        .toggleStyle(.checkbox)
+                        .controlSize(.small)
+                        .font(.system(size:12))
+                    Spacer(minLength:0)
+                }.padding(.horizontal,14).padding(.vertical,6)
             }
         }.frame(width:320).padding(.vertical,2)
     }
@@ -366,6 +494,8 @@ struct DisplaySettings: View {
                 }
             }
             Section(lk("外接显示器")) {
+                Toggle(lk("外接屏亮度跟随内建屏幕自动变化"),isOn:$control.syncWithBuiltIn)
+                Text(lk("内建屏幕随环境光变亮或变暗时，外接显示器按相同幅度自动增减亮度。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 Toggle(lk("DDC 不可用时使用软件调暗"),isOn:$control.softwareFallback)
                 ForEach(control.displays.filter{ $0.method != .builtIn }) { d in
                     let key=DisplayControl.key(d.id)

@@ -91,4 +91,50 @@ public enum DisplayControlPrefs {
     public static let volumeKeys="displayControl.volumeKeys"
     public static let softwareFallback="displayControl.softwareFallback"
     public static let ddcDisabled="displayControl.ddcDisabled"
+    public static let syncWithBuiltIn="displayControl.syncWithBuiltIn"
+}
+
+/// Propagates built-in display brightness changes (ambient light or user adjustments) as an equal delta to external monitors,
+/// preserving each external monitor's relative brightness offset.
+public enum BuiltInBrightnessSync {
+    public static let threshold: Double = 0.02
+    public static let minExternalDelta: Double = 0.005
+
+    /// Evaluates whether a built-in brightness reading should propagate a delta to external displays.
+    /// - Parameters:
+    ///   - enabled: Whether `syncWithBuiltIn` is turned on.
+    ///   - clamshell: Whether the MacBook lid is closed (`AppleClamshellState`).
+    ///   - previousBuiltIn: The last synced built-in brightness (0...1), or `nil` if not yet established.
+    ///   - currentBuiltIn: The newly read built-in brightness (0...1), or `nil` if no active built-in display.
+    ///   - externalBrightnesses: Current brightness (0...1) for each external display ID.
+    /// - Returns: Updated `baseline` for built-in brightness, and the list of `(id, newBrightness)` updates for external displays whose target changed by at least `0.005`.
+    public static func evaluate(
+        enabled: Bool,
+        clamshell: Bool,
+        previousBuiltIn: Double?,
+        currentBuiltIn: Double?,
+        externalBrightnesses: [(id: UInt32, brightness: Double)]
+    ) -> (baseline: Double?, updates: [(id: UInt32, newBrightness: Double)]) {
+        guard enabled, !clamshell, let rawCurrent = currentBuiltIn else {
+            return (baseline: nil, updates: [])
+        }
+        let clampedCurrent = min(1, max(0, (rawCurrent * 1e6).rounded() / 1e6))
+        guard let rawPrevious = previousBuiltIn else {
+            return (baseline: clampedCurrent, updates: [])
+        }
+        let clampedPrevious = min(1, max(0, (rawPrevious * 1e6).rounded() / 1e6))
+        let delta = clampedCurrent - clampedPrevious
+        guard abs(delta) + 1e-9 >= threshold else {
+            return (baseline: clampedPrevious, updates: [])
+        }
+        var updates: [(id: UInt32, newBrightness: Double)] = []
+        for ext in externalBrightnesses {
+            let curExt = min(1, max(0, ext.brightness))
+            let target = min(1, max(0, ((curExt + delta) * 1e6).rounded() / 1e6))
+            if abs(target - curExt) + 1e-9 >= minExternalDelta {
+                updates.append((id: ext.id, newBrightness: target))
+            }
+        }
+        return (baseline: clampedCurrent, updates: updates)
+    }
 }
