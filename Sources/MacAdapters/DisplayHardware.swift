@@ -40,6 +40,81 @@ public final class DDCService {
         #endif
     }
 
+    /// 0.6.15: the AV service of each given display, found through its framebuffer rather than registry order, so a
+    /// command never reaches the wrong monitor when several are attached. Approach as in m1ddc (MIT; credited in
+    /// THIRD_PARTY_NOTICES.md): the display's `IODisplayLocation` (CoreDisplay info dictionary) names its
+    /// `IOMobileFramebuffer`; the first external `DCPAVServiceProxy` after that framebuffer in the IOService plane is its
+    /// DDC channel. As a cross-check no other display's framebuffer may share a longer registry path prefix with that
+    /// proxy. Displays that fail either check are left out.
+    public static func servicesByDisplay(_ ids: [CGDirectDisplayID]) -> [CGDirectDisplayID:DDCService] {
+        #if arch(arm64)
+        guard let create,let info=infoDictionary,!ids.isEmpty else { return [:] }
+        var wanted=[UInt64:CGDirectDisplayID]()
+        var paths=[CGDirectDisplayID:[String]]()
+        var shared=Set<UInt64>()
+        for id in ids {
+            guard let dict=info(id)?.takeRetainedValue() as? [String:Any],let path=dict["IODisplayLocation"] as? String else { continue }
+            let entry=IORegistryEntryCopyFromPath(kIOMainPortDefault,path as CFString)
+            guard entry != 0 else { continue }
+            defer { IOObjectRelease(entry) }
+            var entryID: UInt64=0
+            guard IORegistryEntryGetRegistryEntryID(entry,&entryID)==KERN_SUCCESS else { continue }
+            if wanted[entryID] != nil { shared.insert(entryID) }   // two displays on one framebuffer: can't tell apart
+            wanted[entryID]=id; paths[id]=pathComponents(path)
+        }
+        for e in shared { if let id=wanted.removeValue(forKey:e) { paths[id]=nil } }
+        guard !wanted.isEmpty else { return [:] }
+        var it=io_iterator_t()
+        let root=IORegistryGetRootEntry(kIOMainPortDefault)
+        defer { IOObjectRelease(root) }
+        guard IORegistryEntryCreateIterator(root,kIOServicePlane,IOOptionBits(kIORegistryIterateRecursively),&it)==KERN_SUCCESS else { return [:] }
+        defer { IOObjectRelease(it) }
+        var current: CGDirectDisplayID?
+        var out=[CGDirectDisplayID:DDCService]()
+        var rejected=Set<CGDirectDisplayID>()
+        while case let s=IOIteratorNext(it),s != 0 {
+            defer { IOObjectRelease(s) }
+            if IOObjectConformsTo(s,"IOMobileFramebuffer") != 0 {
+                var fb: UInt64=0
+                current=IORegistryEntryGetRegistryEntryID(s,&fb)==KERN_SUCCESS ? wanted[fb] : nil
+                continue
+            }
+            var name=[CChar](repeating:0,count:128)
+            guard IORegistryEntryGetName(s,&name)==KERN_SUCCESS,name.withUnsafeBufferPointer({ String(cString:$0.baseAddress!) })=="DCPAVServiceProxy" else { continue }
+            let loc=IORegistryEntryCreateCFProperty(s,"Location" as CFString,nil,0)?.takeRetainedValue() as? String
+            guard loc=="External" else { continue }
+            guard let id=current,out[id] == nil else { continue }
+            current=nil
+            var buf=[CChar](repeating:0,count:512)
+            guard IORegistryEntryGetPath(s,kIOServicePlane,&buf)==KERN_SUCCESS,
+                  pathAllows(pathComponents(buf.withUnsafeBufferPointer{ String(cString:$0.baseAddress!) }),id,paths),
+                  let svc=create(nil,s)?.takeRetainedValue() else { rejected.insert(id); continue }
+            out[id]=DDCService(svc)
+        }
+        for id in rejected { out[id]=nil }
+        return out
+        #else
+        return [:]
+        #endif
+    }
+    /// "IOService:/a/b@1/c" → ["a","b@1","c"]
+    static func pathComponents(_ path: String) -> [String] {
+        let body=path.split(separator:":",maxSplits:1).last.map(String.init) ?? path
+        return body.split(separator:"/").map(String.init)
+    }
+    /// False when another display's framebuffer path shares more leading components with `proxy` than display `id`'s
+    /// does, i.e. the proxy clearly sits on another display's branch. A tie is allowed: on many Macs the framebuffer and
+    /// the proxy are siblings under the same parent, and the registry order then decides.
+    static func pathAllows(_ proxy: [String],_ id: CGDirectDisplayID,_ paths: [CGDirectDisplayID:[String]]) -> Bool {
+        func common(_ a: [String],_ b: [String]) -> Int { var n=0; while n<a.count,n<b.count,a[n]==b[n] { n+=1 }; return n }
+        guard let own=paths[id] else { return false }
+        let mine=common(proxy,own)
+        return !paths.contains{ $0.key != id && common(proxy,$0.value)>mine }
+    }
+    private typealias InfoDictionary = @convention(c) (CGDirectDisplayID) -> Unmanaged<CFDictionary>?
+    private static let coreDisplay=dlopen("/System/Library/Frameworks/CoreDisplay.framework/CoreDisplay",RTLD_LAZY)
+    private static let infoDictionary: InfoDictionary?=dlsym(coreDisplay,"CoreDisplay_DisplayCreateInfoDictionary").map{ unsafeBitCast($0,to:InfoDictionary.self) }
+
     /// Reads a VCP feature (3 tries). Blocking (~50–150 ms); call off the main thread.
     public func readVCP(_ code: UInt8) -> (current: Int,max: Int)? {
         guard let w=Self.write,let r=Self.read else { return nil }
@@ -54,13 +129,14 @@ public final class DDCService {
         }
         return nil
     }
-    @discardableResult public func writeVCP(_ code: UInt8,_ value: UInt16) -> Bool {
+    /// `subAddress` 0x51 normally; 0x50 for the LG alternate input command.
+    @discardableResult public func writeVCP(_ code: UInt8,_ value: UInt16,subAddress: UInt8=DDCPacket.defaultSubAddress) -> Bool {
         guard let w=Self.write else { return false }
         lock.lock(); defer { lock.unlock() }
-        var pkt=DDCPacket.setVCP(code,value)
+        var pkt=DDCPacket.setVCP(code,value,subAddress:subAddress)
         var ok=false
         for _ in 0..<2 where !ok {   // writes are idempotent; one retry
-            ok=pkt.withUnsafeMutableBytes({ w(service,0x37,0x51,$0.baseAddress!,UInt32($0.count)) })==kIOReturnSuccess
+            ok=pkt.withUnsafeMutableBytes({ w(service,0x37,UInt32(subAddress),$0.baseAddress!,UInt32($0.count)) })==kIOReturnSuccess
             if !ok { usleep(20000) }
         }
         return ok

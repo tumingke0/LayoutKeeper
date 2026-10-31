@@ -454,7 +454,45 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case let preset where preset.hasPrefix(StatusMenuModel.arrangementPrefix):
             if debounce(preset) { model.applyArrangement(String(preset.dropFirst(StatusMenuModel.arrangementPrefix.count)),source:"menu") }
         case let layout where layout.hasPrefix("layout."): if let i=Int(layout.dropFirst(7)),debounce("layout") { model.applyConnectedLayout(at:i) }
+        case InputMenu.editID: showSettings(.displays)
+        case let input where input.hasPrefix(InputMenu.prefix):
+            if let target=InputMenu.parse(input),debounce("input") {
+                // After the menu has closed, so the alert isn't drawn under the menu.
+                DispatchQueue.main.async { [weak self] in self?.switchInput(display:target.display,source:target.source) }
+            }
         default: break
+        }
+    }
+    /// 0.6.15: 「切换输入源」. Confirms first (see `InputSwitchPolicy`), then sends one DDC input command.
+    func switchInput(display id: CGDirectDisplayID,source sourceID: String) {
+        let control=model.displayControl
+        guard let d=control.displays.first(where:{ $0.id==id }),let source=control.inputSources(for:id).first(where:{ $0.id==sourceID }) else { return }
+        let key=DisplayControl.key(id)
+        let decision=control.inputDecision(id)
+        switch decision {
+        case .blocked(let why):
+            model.notify?(UserNotice(title:lk("没有切换输入源"),detail:why))
+            return
+        case .confirmStrong, .confirmOnce:
+            let strong=decision == .confirmStrong
+            let alert=NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText=lk("把 %@ 切换到 %@？", d.name, source.name)
+            let general=lk("切换后这块屏幕显示另一台设备的画面，LayoutKeeper 可能无法再切回。请先确认能用显示器上的按键切回这台 Mac。")
+            alert.informativeText=strong ? lk("这是 Mac 现在唯一亮着的屏幕，切换后 Mac 没有画面。")+"\n\n"+general : general
+            alert.addButton(withTitle:lk("切换"))
+            alert.addButton(withTitle:lk("取消"))
+            if !strong { alert.showsSuppressionButton=true; alert.suppressionButton?.title=lk("不再提醒") }
+            NSApplication.shared.activate(ignoringOtherApps:true)
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            if !strong,alert.suppressionButton?.state == .on { control.inputConfirmed.insert(key) }
+        case .go: break
+        }
+        model.logRestore("input: switch requested (\(source.lgAlt ? "alt" : "std") value \(InputValueParser.format(source.value)))")
+        control.switchInput(id,to:source) { [weak self] ok in
+            guard let self else { return }
+            self.model.logRestore("input: write \(ok ? "sent" : "failed")")
+            if !ok { self.model.notify?(UserNotice(title:lk("显示器没有响应切换指令"),detail:d.name)) }
         }
     }
     func menuNeedsUpdate(_ menu: NSMenu) {

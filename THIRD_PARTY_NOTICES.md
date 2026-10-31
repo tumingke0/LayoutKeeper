@@ -106,6 +106,18 @@ Project: https://github.com/lwouis/alt-tab-macos
   MCCS specification; no MonitorControl source code is included. Credit to the MonitorControl authors for documenting
   the approach.
 
+## m1ddc (MIT) — approach only
+
+- Project: https://github.com/waydabber/m1ddc
+- License: MIT, Copyright (c) 2021 waydabber
+- What LayoutKeeper uses (0.6.15): the technique of finding a display's own DDC channel on Apple Silicon by reading its
+  `IODisplayLocation` from the CoreDisplay info dictionary and taking the external `DCPAVServiceProxy` that follows that
+  `IOMobileFramebuffer` in the IOService plane; and the LG alternate input command (VCP 0xF4 on host sub-address 0x50).
+  LayoutKeeper's implementation (`DDCService.servicesByDisplay` in `Sources/MacAdapters/DisplayHardware.swift`,
+  `Sources/LayoutCore/DisplayInput.swift`) was written independently; no m1ddc source code is included. Credit to
+  waydabber for documenting the approach. MonitorControl's audio-device-name matching inspired
+  `Sources/LayoutCore/MonitorAudio.swift` in the same way.
+
 ## BetterDisplay — design inspiration only
 
 The on-screen brightness HUD layout is inspired by BetterDisplay. No BetterDisplay code, images or other assets are used.

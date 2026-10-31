@@ -4,14 +4,22 @@ import Foundation
 
 /// DDC/CI packets (VESA MCCS over I2C, display address 0x37, host sub-address 0x51). Written from the public spec.
 public enum DDCPacket {
-    /// Only brightness is used. Since 0.6.9 the volume keys never send DDC volume (0x62) or mute (0x8D) to a monitor;
-    /// they change the Mac's system output volume.
     public static let brightness: UInt8=0x10
+    /// 0.6.15: speaker volume and mute (1 = muted, 2 = not muted) are sent only to the monitor whose HDMI/DisplayPort
+    /// audio is the current sound output and only when macOS can't change that output's volume (`VolumeKeyRouting`).
+    public static let speakerVolume: UInt8=0x62
+    public static let audioMute: UInt8=0x8D
+    /// Input select (MCCS). Some LG monitors take input changes as VCP 0xF4 on host sub-address 0x50 instead.
+    public static let inputSelect: UInt8=0x60
+    public static let inputSelectAlt: UInt8=0xF4
+    public static let defaultSubAddress: UInt8=0x51
+    public static let altSubAddress: UInt8=0x50
     static func checksum(_ start: UInt8,_ bytes: [UInt8]) -> UInt8 { bytes.reduce(start,^) }
     /// "Get VCP feature" request body (sent to sub-address 0x51); checksum covers 0x6E ^ 0x51 ^ body.
-    public static func getVCP(_ code: UInt8) -> [UInt8] { let b: [UInt8]=[0x82,0x01,code]; return b+[checksum(0x6E^0x51,b)] }
-    public static func setVCP(_ code: UInt8,_ value: UInt16) -> [UInt8] {
-        let b: [UInt8]=[0x84,0x03,code,UInt8(value>>8),UInt8(value & 0xFF)]; return b+[checksum(0x6E^0x51,b)]
+    public static func getVCP(_ code: UInt8) -> [UInt8] { let b: [UInt8]=[0x82,0x01,code]; return b+[checksum(0x6E^defaultSubAddress,b)] }
+    /// "Set VCP feature" body; the checksum starts from 0x6E ^ the sub-address the packet is written to.
+    public static func setVCP(_ code: UInt8,_ value: UInt16,subAddress: UInt8=defaultSubAddress) -> [UInt8] {
+        let b: [UInt8]=[0x84,0x03,code,UInt8(value>>8),UInt8(value & 0xFF)]; return b+[checksum(0x6E^subAddress,b)]
     }
     /// Parses a "VCP feature reply" (as read back from 0x51): 6E 88 02 rc code type maxH maxL curH curL chk.
     public static func parseReply(_ r: [UInt8],code: UInt8) -> (current: Int,max: Int)? {
@@ -73,15 +81,26 @@ public enum MediaKey: Equatable {
     public var isBrightness: Bool { self == .brightnessUp || self == .brightnessDown }
 }
 
-/// 0.6.9: what a volume/mute key does. Always the Mac's system output (the default output device), never a monitor,
-/// whichever screen the mouse is on. The app takes the key (3% steps, ⌥⇧ 1%) only when it is enabled and the device
-/// has a settable volume; otherwise the key goes to macOS untouched.
+/// 0.6.9: what a volume/mute key does. Always the current sound output (the default output device), whichever screen
+/// the mouse is on. The app takes the key (3% steps, ⌥⇧ 1%) only when it is enabled and the device has a settable
+/// volume; otherwise the key goes to macOS untouched.
+/// 0.6.15: when the output is a monitor's HDMI/DisplayPort audio whose volume macOS can't set, and that monitor was
+/// matched (`MonitorAudioMatcher`), all three keys go to the monitor's speakers over DDC instead.
 public enum VolumeKeyRouting: Equatable {
     case systemOutput, passThrough
+    case monitorSpeaker(UInt32)
     public static func route(_ key: MediaKey,enabled: Bool,outputVolumeSettable: Bool,outputMuteSettable: Bool) -> VolumeKeyRouting {
         guard !key.isBrightness,enabled else { return .passThrough }
         if key == .mute { return outputMuteSettable ? .systemOutput : .passThrough }
         return outputVolumeSettable ? .systemOutput : .passThrough
+    }
+    /// `speakerDisplay`: the monitor the output was matched to (nil when none). A settable output always stays on the
+    /// system volume, so one key press never changes two volumes.
+    public static func route(_ key: MediaKey,enabled: Bool,outputVolumeSettable: Bool,outputMuteSettable: Bool,
+                             monitorSpeakerEnabled: Bool,speakerDisplay: UInt32?) -> VolumeKeyRouting {
+        guard !key.isBrightness,enabled else { return .passThrough }
+        if !outputVolumeSettable,monitorSpeakerEnabled,let id=speakerDisplay { return .monitorSpeaker(id) }
+        return route(key,enabled:enabled,outputVolumeSettable:outputVolumeSettable,outputMuteSettable:outputMuteSettable)
     }
 }
 
@@ -92,6 +111,15 @@ public enum DisplayControlPrefs {
     public static let softwareFallback="displayControl.softwareFallback"
     public static let ddcDisabled="displayControl.ddcDisabled"
     public static let syncWithBuiltIn="displayControl.syncWithBuiltIn"
+    /// 0.6.15
+    public static let monitorSpeakerKeys="displayControl.monitorSpeakerKeys"
+    public static let inputMenu="displayControl.inputMenu"
+    /// JSON `[displayKey: [InputSource]]`; a display without an entry uses `InputSourceCatalog.defaults`.
+    public static let inputSources="displayControl.inputSources"
+    /// Display keys whose first-switch confirmation was turned off ("不再提醒").
+    public static let inputConfirmed="displayControl.inputConfirmed"
+    /// `[displayKey: CoreAudio output device name]` chosen by hand; no entry = automatic.
+    public static let audioDeviceOverrides="displayControl.audioDeviceOverrides"
 }
 
 /// Propagates built-in display brightness changes (ambient light or user adjustments) as an equal delta to external monitors,

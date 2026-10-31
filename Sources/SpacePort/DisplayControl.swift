@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 LayoutKeeper contributors
 import AppKit
+import CoreAudio
 import SwiftUI
 import LayoutCore
 import MacAdapters
@@ -13,22 +14,32 @@ struct ControlledDisplay: Identifiable, Equatable {
     var method: Method
     var brightness: Double
     var ddcMax=100
+    /// 0.6.15: the DDC channel is known to belong to this display (resolved through its framebuffer, or the only
+    /// external display). Input switching and speaker volume need it; brightness doesn't.
+    var mappingCertain=false
     var badge: (String,Tone) {
         switch method { case .builtIn: return (lk("内建"),.neutral); case .ddc: return ("DDC",.success); case .software: return (lk("软件调暗"),.warning) }
     }
     static func == (a: ControlledDisplay,b: ControlledDisplay) -> Bool {
-        a.id==b.id && a.name==b.name && a.method==b.method && a.brightness==b.brightness
+        a.id==b.id && a.name==b.name && a.method==b.method && a.brightness==b.brightness && a.mappingCertain==b.mappingCertain
     }
 }
 
 /// Brightness for every display: DDC for external monitors (software dimming when DDC fails), DisplayServices for the
 /// built-in screen. DDC I/O runs on a serial queue; writes are rate limited and coalesced (latest value wins).
-/// The volume keys change the Mac's system output volume (`SystemVolume`), never a monitor's DDC volume.
+/// The volume keys change the current sound output (`SystemVolume`). 0.6.15: when that output is a monitor's HDMI/DP
+/// audio macOS can't set, they change that monitor's speakers over DDC (VCP 0x62 / 0x8D) instead.
+/// 0.6.15: 「切换输入源」 writes VCP 0x60 (or the LG alternate) once, only on a click the user confirmed.
 final class DisplayControl: ObservableObject {
     @Published private(set) var displays: [ControlledDisplay]=[]
     @Published var showInMenu: Bool { didSet { defaults?.set(showInMenu,forKey:DisplayControlPrefs.showInMenu) } }
     @Published var brightnessKeys: Bool { didSet { defaults?.set(brightnessKeys,forKey:DisplayControlPrefs.brightnessKeys); onKeySettingsChanged?() } }
-    @Published var volumeKeys: Bool { didSet { defaults?.set(volumeKeys,forKey:DisplayControlPrefs.volumeKeys); onKeySettingsChanged?() } }
+    @Published var volumeKeys: Bool { didSet { defaults?.set(volumeKeys,forKey:DisplayControlPrefs.volumeKeys); onKeySettingsChanged?(); refreshSpeakers() } }
+    @Published var monitorSpeakerKeys: Bool { didSet { defaults?.set(monitorSpeakerKeys,forKey:DisplayControlPrefs.monitorSpeakerKeys); refreshSpeakers() } }
+    @Published var inputMenu: Bool { didSet { defaults?.set(inputMenu,forKey:DisplayControlPrefs.inputMenu) } }
+    @Published private(set) var inputSourceMap: [String:[InputSource]]
+    @Published var inputConfirmed: Set<String> { didSet { defaults?.set(Array(inputConfirmed),forKey:DisplayControlPrefs.inputConfirmed) } }
+    @Published var audioOverrides: [String:String] { didSet { defaults?.set(audioOverrides,forKey:DisplayControlPrefs.audioDeviceOverrides); refreshSpeakers() } }
     @Published var softwareFallback: Bool { didSet { defaults?.set(softwareFallback,forKey:DisplayControlPrefs.softwareFallback); refresh() } }
     @Published var ddcDisabled: Set<String> { didSet { defaults?.set(Array(ddcDisabled),forKey:DisplayControlPrefs.ddcDisabled); refresh() } }
     @Published var syncWithBuiltIn: Bool {
@@ -45,8 +56,8 @@ final class DisplayControl: ObservableObject {
     var onKeySettingsChanged: (() -> Void)?
     var onSyncSettingsChanged: (() -> Void)?
     var showHUD: ((ControlledDisplay,BrightnessHUD.Kind) -> Void)?
-    /// Volume HUD: output device name, level, muted, and the screen under the mouse to show it on.
-    var showVolumeHUD: ((String,Double,Bool,CGDirectDisplayID?) -> Void)?
+    /// Volume HUD: output device name, level, muted, the screen to show it on, and an optional note ("显示器喇叭").
+    var showVolumeHUD: ((String,Double,Bool,CGDirectDisplayID?,String?) -> Void)?
 
     private let defaults: UserDefaults?
     private let io=DispatchQueue(label:"layoutkeeper.ddc")
@@ -56,6 +67,13 @@ final class DisplayControl: ObservableObject {
     private var draining: Set<String>=[]
     private var refreshing=false
     private var lastSyncedBuiltIn: Double?
+    /// Monitor speaker state per display, from DDC reads and our own writes.
+    struct SpeakerInfo { var state: SpeakerLevel; var max: Int; var hardwareMute: Bool; var readOK: Bool }
+    private var speakers: [CGDirectDisplayID:SpeakerInfo]=[:]
+    private var lastSpeakerKey: [CGDirectDisplayID:Date]=[:]
+    private var readingSpeakers=false
+    /// Displays whose speaker volume couldn't be read; not retried until the output changes or a setting is touched.
+    private var speakerReadFailed=Set<CGDirectDisplayID>()
 
     init(defaults: UserDefaults?=Prefs.store) {
         self.defaults=defaults
@@ -66,6 +84,11 @@ final class DisplayControl: ObservableObject {
         softwareFallback=b(DisplayControlPrefs.softwareFallback,true)
         ddcDisabled=Set(defaults?.stringArray(forKey:DisplayControlPrefs.ddcDisabled) ?? [])
         syncWithBuiltIn=b(DisplayControlPrefs.syncWithBuiltIn,false)
+        monitorSpeakerKeys=b(DisplayControlPrefs.monitorSpeakerKeys,true)
+        inputMenu=b(DisplayControlPrefs.inputMenu,true)
+        inputSourceMap=InputSourceStore.decode(defaults?.data(forKey:DisplayControlPrefs.inputSources))
+        inputConfirmed=Set(defaults?.stringArray(forKey:DisplayControlPrefs.inputConfirmed) ?? [])
+        audioOverrides=(defaults?.dictionary(forKey:DisplayControlPrefs.audioDeviceOverrides) as? [String:String]) ?? [:]
     }
 
     static func onlineDisplays() -> [CGDirectDisplayID] {
@@ -92,9 +115,8 @@ final class DisplayControl: ObservableObject {
         io.async { [weak self] in
             let ids=Self.onlineDisplays()
             let externals=ids.filter { CGDisplayIsBuiltin($0)==0 }
-            let svcs=DDCService.externalServices()
-            var map=[CGDirectDisplayID:DDCService]()
-            if svcs.count==externals.count { for (i,id) in externals.enumerated() { map[id]=svcs[i] } }
+            let (map0,certain)=Self.serviceMap(externals)
+            var map=map0
             var out=[ControlledDisplay]()
             for id in ids {
                 let name=Self.name(id)
@@ -103,7 +125,7 @@ final class DisplayControl: ObservableObject {
                     continue
                 }
                 if !disabled.contains(Self.key(id)),let s=map[id],let b=s.readVCP(DDCPacket.brightness) {
-                    out.append(ControlledDisplay(id:id,name:name,method:.ddc,brightness:BrightnessStep.fromDDC(b.current,max:b.max),ddcMax:b.max))
+                    out.append(ControlledDisplay(id:id,name:name,method:.ddc,brightness:BrightnessStep.fromDDC(b.current,max:b.max),ddcMax:b.max,mappingCertain:certain.contains(id)))
                 } else if fallback {
                     map[id]=nil
                     out.append(ControlledDisplay(id:id,name:name,method:.software,brightness:previous.first{ $0.id==id && $0.method == .software }?.brightness ?? 1))
@@ -112,14 +134,36 @@ final class DisplayControl: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.services=map; self.displays=out; self.refreshing=false
+                let present=Set(out.map(\.id))
+                self.speakers=self.speakers.filter{ present.contains($0.key) }
+                self.speakerReadFailed=self.speakerReadFailed.filter{ present.contains($0) }
+                self.lastSpeakerKey=self.lastSpeakerKey.filter{ present.contains($0.key) }
                 if self.syncWithBuiltIn,!SystemSleepGuard.clamshellState(),let b=out.first(where:{ $0.method == .builtIn })?.brightness {
                     if self.lastSyncedBuiltIn == nil { self.lastSyncedBuiltIn=b }
                 } else {
                     self.lastSyncedBuiltIn=nil
                 }
                 if !fallback { SoftwareDimming.restoreAll() }
+                self.refreshSpeakers(all:false)
             }
         }
+    }
+
+    /// Which AV service drives which external display. Resolved through each display's framebuffer when every external
+    /// display can be resolved that way (all certain). Otherwise the pre-0.6.15 registry-order pairing is kept for
+    /// brightness (only when the counts agree), and only a single external display counts as certain. If that pairing
+    /// isn't possible, the displays that were resolved individually are used.
+    static func serviceMap(_ externals: [CGDirectDisplayID]) -> ([CGDirectDisplayID:DDCService],Set<CGDirectDisplayID>) {
+        guard !externals.isEmpty else { return ([:],[]) }
+        let precise=DDCService.servicesByDisplay(externals)
+        if externals.allSatisfy({ precise[$0] != nil }) { return (precise,Set(externals)) }
+        let svcs=DDCService.externalServices()
+        if svcs.count==externals.count {
+            var map=[CGDirectDisplayID:DDCService]()
+            for (i,id) in externals.enumerated() { map[id]=svcs[i] }
+            return (map,externals.count==1 ? Set(externals) : [])
+        }
+        return (precise,Set(precise.keys))
     }
 
     private func update(_ id: CGDirectDisplayID,_ change: (inout ControlledDisplay) -> Void) -> ControlledDisplay? {
@@ -198,7 +242,7 @@ final class DisplayControl: ObservableObject {
         if key == .mute {
             let muted = !(SystemVolume.muted(output.device) ?? false)
             guard SystemVolume.setMuted(output.device,muted) else { return false }
-            showVolumeHUD?(name,SystemVolume.volume(output.device) ?? 0,muted,screen)
+            showVolumeHUD?(name,SystemVolume.volume(output.device) ?? 0,muted,screen,nil)
             return true
         }
         guard let current=SystemVolume.volume(output.device) else { return false }
@@ -206,7 +250,7 @@ final class DisplayControl: ObservableObject {
         guard SystemVolume.setVolume(output.device,next) else { return false }
         // Like macOS: changing the level unmutes (and volume down to 0 leaves it at 0, not muted).
         if output.muteSettable,SystemVolume.muted(output.device) == true { SystemVolume.setMuted(output.device,false) }
-        showVolumeHUD?(name,SystemVolume.volume(output.device) ?? next,false,screen)
+        showVolumeHUD?(name,SystemVolume.volume(output.device) ?? next,false,screen,nil)
         return true
     }
     /// Coalesced, rate-limited DDC write: only the latest value per (display, feature) is sent, ≥60 ms apart.
@@ -230,15 +274,118 @@ final class DisplayControl: ObservableObject {
         }
     }
 
-    /// Brightness keys: the display under the mouse. Volume keys: the system output. Returns true when the key was consumed.
+    /// Brightness keys: the display under the mouse. Volume keys: the current sound output, wherever the mouse is; a
+    /// monitor's speakers only when that monitor is the output and macOS can't set its volume. Returns true when the key
+    /// was consumed.
     func handle(_ key: MediaKey,fine: Bool) -> Bool {
         if key.isBrightness {
             guard brightnessKeys,let d=displayUnderMouse else { return false }
             setBrightness(d.id,BrightnessStep.next(d.brightness,up:key == .brightnessUp,fine:fine),hud:true)
             return true
         }
-        // Volume keys: always the Mac's system output, wherever the mouse is (never a monitor's DDC volume).
-        return handleSystemVolume(key,fine:fine)
+        guard volumeKeys else { return false }
+        let output=SystemVolume.defaultOutput()
+        let target=output.flatMap{ speakerTarget($0) }
+        switch VolumeKeyRouting.route(key,enabled:volumeKeys,outputVolumeSettable:output?.volumeSettable == true,outputMuteSettable:output?.muteSettable == true,
+                                      monitorSpeakerEnabled:monitorSpeakerKeys,speakerDisplay:target) {
+        case .monitorSpeaker(let id): return handleMonitorSpeaker(id,key,fine:fine)
+        case .systemOutput: return handleSystemVolume(key,fine:fine)
+        case .passThrough:
+            // A monitor output not matched yet (speaker volume not read): read now so the next press can use it.
+            if let output,monitorSpeakerKeys,!output.volumeSettable,MonitorAudioMatcher.isDisplayTransport(output.transport) { refreshSpeakers(all:false) }
+            return false
+        }
+    }
+
+    // MARK: Monitor speakers (0.6.15)
+
+    /// The monitor whose speakers play `output`, or nil (see `MonitorAudioMatcher`).
+    func speakerTarget(_ output: SystemVolume.Output) -> CGDirectDisplayID? {
+        guard monitorSpeakerKeys,!output.volumeSettable,MonitorAudioMatcher.isDisplayTransport(output.transport) else { return nil }
+        let candidates=displays.filter{ $0.method == .ddc && $0.mappingCertain && services[$0.id] != nil }.map { d in
+            MonitorAudioMatcher.Candidate(id:d.id,name:d.name,hasSpeakerVolume:speakers[d.id]?.readOK == true,overrideDevice:audioOverrides[Self.key(d.id)])
+        }
+        let externalCount=Self.onlineDisplays().filter{ CGDisplayIsBuiltin($0)==0 }.count
+        return MonitorAudioMatcher.match(deviceName:output.name,transport:output.transport,volumeSettable:output.volumeSettable,candidates:candidates,externalCount:externalCount)
+    }
+    private func handleMonitorSpeaker(_ id: CGDirectDisplayID,_ key: MediaKey,fine: Bool) -> Bool {
+        guard let d=displays.first(where:{ $0.id==id }),let s=services[id] else { return false }
+        var info=speakers[id] ?? SpeakerInfo(state:SpeakerLevel(level:SpeakerLevel.unknownStart),max:100,hardwareMute:false,readOK:false)
+        let (next,writes)=info.state.press(key,fine:fine,hardwareMute:info.hardwareMute)
+        info.state=next; speakers[id]=info; lastSpeakerKey[id]=Date()
+        for w in writes {
+            switch w {
+            case .volume(let v): enqueue(s,id,DDCPacket.speakerVolume,BrightnessStep.toDDC(v,max:info.max))
+            case .mute(let m): enqueue(s,id,DDCPacket.audioMute,m ? 1 : 2)
+            }
+        }
+        showVolumeHUD?(d.name,next.level,next.muted,id,lk("显示器喇叭"))
+        return true
+    }
+    /// Reads speaker volume (0x62) and mute (0x8D) off the main thread, only while the sound output is a monitor whose
+    /// volume macOS can't set. A failed read keeps what was known; a read that started before a key press is dropped.
+    /// `all`: re-read every monitor (output changed, setting touched). Otherwise (display refresh, menu open) only
+    /// monitors not read yet, so opening the menu doesn't keep the DDC queue busy.
+    func refreshSpeakers(all: Bool=true) {
+        guard !RenderMode.snapshot,volumeKeys,monitorSpeakerKeys,!readingSpeakers else { return }
+        if all { speakerReadFailed.removeAll() }
+        guard let out=SystemVolume.defaultOutput(),!out.volumeSettable,MonitorAudioMatcher.isDisplayTransport(out.transport) else { return }
+        let targets=displays.filter{ d in
+            d.method == .ddc && d.mappingCertain && !speakerReadFailed.contains(d.id) && (all || speakers[d.id]?.readOK != true)
+        }.compactMap{ d in services[d.id].map{ (d.id,$0) } }
+        guard !targets.isEmpty else { return }
+        readingSpeakers=true
+        let started=Date()
+        io.async { [weak self] in
+            var reads: [(CGDirectDisplayID,(current: Int,max: Int)?,(current: Int,max: Int)?)]=[]
+            for (id,s) in targets {
+                let v=s.readVCP(DDCPacket.speakerVolume)
+                reads.append((id,v,v == nil ? nil : s.readVCP(DDCPacket.audioMute)))
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.readingSpeakers=false
+                for (id,v,m) in reads {
+                    guard let v else { self.speakerReadFailed.insert(id); continue }
+                    if let last=self.lastSpeakerKey[id],last >= started { continue }
+                    let hardwareMute=m.map{ $0.current == 1 || $0.current == 2 } ?? false
+                    let state=SpeakerLevel.merged(existing:self.speakers[id]?.state,readLevel:BrightnessStep.fromDDC(v.current,max:v.max),
+                                                  readMuted:m.map{ $0.current == 1 },hardwareMute:hardwareMute)
+                    self.speakers[id]=SpeakerInfo(state:state,max:v.max,hardwareMute:hardwareMute,readOK:true)
+                }
+            }
+        }
+    }
+
+    // MARK: Input source (0.6.15)
+
+    func inputSources(for id: CGDirectDisplayID) -> [InputSource] { InputSourceStore.sources(inputSourceMap,key:Self.key(id)) }
+    func setInputSources(_ list: [InputSource],for id: CGDirectDisplayID) {
+        inputSourceMap=InputSourceStore.setting(inputSourceMap,key:Self.key(id),sources:list)
+        defaults?.set(InputSourceStore.encode(inputSourceMap),forKey:DisplayControlPrefs.inputSources)
+    }
+    /// The 「切换输入源」 submenu, or nil when it is off or no monitor has DDC.
+    func inputMenuModel() -> InputMenu? {
+        guard inputMenu else { return nil }
+        let list=displays.filter{ $0.method == .ddc }.map { d in
+            InputMenu.Display(id:d.id,name:d.name,blocked:d.mappingCertain ? nil : lk("无法确认这台显示器对应的 DDC 通道"),sources:inputSources(for:d.id))
+        }
+        return list.isEmpty ? nil : InputMenu(displays:list)
+    }
+    func inputDecision(_ id: CGDirectDisplayID) -> InputSwitchDecision {
+        guard let d=displays.first(where:{ $0.id==id }) else { return .blocked(lk("这台显示器没有可用的 DDC")) }
+        return InputSwitchPolicy.decide(isBuiltIn:d.method == .builtIn,ddcAvailable:d.method == .ddc && services[id] != nil,mappingCertain:d.mappingCertain,
+                                        isOnlyActiveScreen:Self.onlineDisplays() == [id],confirmedBefore:inputConfirmed.contains(Self.key(id)))
+    }
+    /// One write of the input command (the I2C layer retries once only when the write itself fails). `done(false)`: the
+    /// write didn't go through. A monitor that takes the write and ignores it can't be detected.
+    func switchInput(_ id: CGDirectDisplayID,to source: InputSource,done: @escaping (Bool) -> Void) {
+        guard let d=displays.first(where:{ $0.id==id }),d.method == .ddc,d.mappingCertain,let s=services[id] else { done(false); return }
+        let cmd=source.command
+        io.async {
+            let ok=s.writeVCP(cmd.code,UInt16(source.value),subAddress:cmd.subAddress)
+            DispatchQueue.main.async { done(ok) }
+        }
     }
 }
 
@@ -343,10 +490,12 @@ final class DisplayControlCoordinator {
     private var distributedObservers: [NSObjectProtocol]=[]
     private var syncTimer: Timer?
     private var isSleepingOrLocked=false
+    private var audioListener: AudioObjectPropertyListenerBlock?
     init(control: DisplayControl) { self.control=control }
     func start(trusted: @escaping () -> Bool) {
         control.showHUD={ [weak self] d,k in self?.hud.show(d,kind:k) }
-        control.showVolumeHUD={ [weak self] name,level,muted,screen in self?.hud.show(name:name,percent:level,kind:muted ? .muted : .volume,note:nil,screenID:screen) }
+        control.showVolumeHUD={ [weak self] name,level,muted,screen,note in self?.hud.show(name:name,percent:level,kind:muted ? .muted : .volume,note:note,screenID:screen) }
+        audioListener=SystemVolume.observeDefaultOutput { [weak self] in self?.control.refreshSpeakers() }
         tap.handler={ [weak self] key,fine in self?.control.handle(key,fine:fine) ?? false }
         control.onKeySettingsChanged={ [weak self] in self?.evaluate(trusted:trusted()) }
         control.onSyncSettingsChanged={ [weak self] in self?.updateSyncTimer() }
@@ -418,6 +567,7 @@ final class DisplayControlCoordinator {
     }
     func stop() {
         syncTimer?.invalidate(); syncTimer=nil
+        if let l=audioListener { SystemVolume.stopObserving(l); audioListener=nil }
         tap.uninstall(); SoftwareDimming.restoreAll()
     }
 }
@@ -473,23 +623,34 @@ struct DisplayMenuSection: View {
 struct DisplaySettings: View {
     @ObservedObject var control: DisplayControl
     @ObservedObject var model: Model
+    @State var editing: ControlledDisplay?
+    @State var audioDevices: [String]=[]
+    /// HDMI/DP output devices present now, plus the one chosen before (it may be unplugged).
+    private func deviceChoices(_ key: String) -> [String] {
+        var list=audioDevices
+        if let chosen=control.audioOverrides[key],!list.contains(chosen) { list.append(chosen) }
+        return list.sorted()
+    }
     var body: some View {
         Form {
             ArrangementSettingsSection(model:model)
             Section(lk("菜单栏")) {
                 Toggle(lk("在菜单中显示亮度滑块"),isOn:$control.showInMenu)
+                Toggle(lk("在菜单中显示「切换输入源」"),isOn:$control.inputMenu)
             }
             Section(lk("键盘")) {
                 Toggle(lk("亮度键调节鼠标所在的屏幕"),isOn:$control.brightnessKeys)
                 Toggle(lk("音量键按 3% 一档调节 Mac 的系统音量（关闭则交给 macOS）"),isOn:$control.volumeKeys)
-                Text(lk("不管鼠标在哪块屏上，音量键都调当前的声音输出设备，不会去调外接显示器自己的音量。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                Text(lk("音量键调当前的声音输出设备，和鼠标在哪块屏上无关。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                Toggle(lk("声音从显示器输出时，音量键调显示器喇叭"),isOn:$control.monitorSpeakerKeys).disabled(!control.volumeKeys)
+                Text(lk("只在 macOS 调不了这台显示器的音量时生效，显示器需要支持 DDC 音量。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 if !control.conflicts.isEmpty {
                     Label(lk("%@ 正在运行，暂不接管按键，避免一次按键调两次。退出它后会自动接管，不用重启。", "\(control.conflicts.joined(separator:lk("、")))"),systemImage:"exclamationmark.triangle.fill")
                         .font(.caption).foregroundStyle(Tone.warning.color).fixedSize(horizontal:false,vertical:true)
                 } else if let e=control.keyTapError {
                     Label(e,systemImage:"exclamationmark.triangle.fill").font(.caption).foregroundStyle(Tone.warning.color)
                 } else {
-                    Text(control.keyTapActive ? lk("已接管：亮度键调节鼠标所在的屏幕，音量键按 3% 一档调节系统音量，并显示提示。⌥⇧ + 按键可微调。") : lk("未接管按键。"))
+                    Text(control.keyTapActive ? lk("已接管：亮度键调节鼠标所在的屏幕，音量键按 3% 一档调节当前声音输出，并显示提示。⌥⇧ + 按键可微调。") : lk("未接管按键。"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -499,16 +660,86 @@ struct DisplaySettings: View {
                 Toggle(lk("DDC 不可用时使用软件调暗"),isOn:$control.softwareFallback)
                 ForEach(control.displays.filter{ $0.method != .builtIn }) { d in
                     let key=DisplayControl.key(d.id)
-                    HStack {
-                        Text(d.name); Pill(text:d.badge.0,tone:d.badge.1)
-                        Spacer()
-                        Toggle(lk("使用 DDC"),isOn:Binding(get:{ !control.ddcDisabled.contains(key) },set:{ on in
-                            if on { control.ddcDisabled.remove(key) } else { control.ddcDisabled.insert(key) }
-                        })).toggleStyle(.switch).controlSize(.small)
+                    VStack(alignment:.leading,spacing:6) {
+                        HStack {
+                            Text(d.name); Pill(text:d.badge.0,tone:d.badge.1)
+                            Spacer()
+                            if d.method == .ddc { Button(lk("输入源…")) { editing=d }.controlSize(.small) }
+                            Toggle(lk("使用 DDC"),isOn:Binding(get:{ !control.ddcDisabled.contains(key) },set:{ on in
+                                if on { control.ddcDisabled.remove(key) } else { control.ddcDisabled.insert(key) }
+                            })).toggleStyle(.switch).controlSize(.small)
+                        }
+                        if d.method == .ddc,control.volumeKeys,control.monitorSpeakerKeys,!(audioDevices.isEmpty && control.audioOverrides[key] == nil) {
+                            Picker(lk("声音设备"),selection:Binding(get:{ control.audioOverrides[key] ?? "" },set:{ v in
+                                if v.isEmpty { control.audioOverrides[key]=nil } else { control.audioOverrides[key]=v }
+                            })) {
+                                Text(lk("自动")).tag("")
+                                ForEach(deviceChoices(key),id:\.self) { Text($0).tag($0) }
+                            }.controlSize(.small)
+                        }
                     }
                 }
-                HStack { Text(lk("显示器不响应或数值不对时，可以关掉它的 DDC 改用软件调暗。")).font(.caption).foregroundStyle(.secondary); Spacer(); Button(lk("重新检测")) { control.refresh() }.controlSize(.small) }
+                HStack { Text(lk("显示器不响应或数值不对时，可以关掉它的 DDC 改用软件调暗。")).font(.caption).foregroundStyle(.secondary); Spacer(); Button(lk("重新检测")) { control.refresh(); audioDevices=SystemVolume.displayOutputNames() }.controlSize(.small) }
+                #if !arch(arm64)
+                Text(lk("输入源切换和显示器喇叭音量只支持 Apple 芯片的 Mac。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                #endif
             }
         }.formStyle(.grouped)
+        .onAppear { if !RenderMode.snapshot { audioDevices=SystemVolume.displayOutputNames() } }
+        .sheet(item:$editing) { d in InputSourceEditor(control:control,display:d) { editing=nil } }
+    }
+}
+
+/// 0.6.15: edit one monitor's 「切换输入源」 list. Changes are saved on 「完成」.
+struct InputSourceEditor: View {
+    @ObservedObject var control: DisplayControl
+    let display: ControlledDisplay
+    let close: () -> Void
+    struct Row: Identifiable, Equatable { var source: InputSource; var valueText: String; var id: String { source.id } }
+    @State var rows: [Row]=[]
+    private func load(_ list: [InputSource]) { rows=list.map{ Row(source:$0,valueText:InputValueParser.format($0.value)) } }
+    private func valid(_ r: Row) -> Bool {
+        InputValueParser.parse(r.valueText) != nil && !r.source.name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
+    }
+    private var allValid: Bool { rows.allSatisfy(valid) }
+    var body: some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text(lk("%@ 的输入源", display.name)).font(.headline)
+            Grid(alignment:.leading,horizontalSpacing:10,verticalSpacing:6) {
+                GridRow {
+                    Text(lk("在菜单中显示")); Text(lk("名称")); Text(lk("数值")); Text(lk("LG 备用指令")); Text("")
+                }.font(.caption).foregroundStyle(.secondary)
+                ForEach($rows) { $r in
+                    GridRow {
+                        Toggle("",isOn:$r.source.visible).labelsHidden().toggleStyle(.checkbox)
+                        TextField("",text:$r.source.name).frame(width:150)
+                        TextField("",text:$r.valueText).frame(width:70)
+                            .foregroundStyle(InputValueParser.parse(r.valueText) == nil ? Tone.warning.color : Color.primary)
+                        Toggle("",isOn:$r.source.lgAlt).labelsHidden().toggleStyle(.checkbox)
+                        Button { let id=r.id; DispatchQueue.main.async { rows.removeAll{ $0.id == id } } } label:{ Image(systemName:"minus.circle") }.buttonStyle(.borderless).help(lk("删除"))
+                    }
+                }
+            }
+            Text(lk("数值以显示器说明书为准，可填十进制或 0x 开头的十六进制。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            Text(lk("很多显示器报告的当前输入不准，菜单里不标当前输入。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            HStack {
+                Button(lk("添加")) {
+                    let id=InputMenu.sanitizedSourceID("c"+UUID().uuidString.prefix(8).lowercased())
+                    rows.append(Row(source:InputSource(id:id,name:lk("自定义输入源"),value:0x11),valueText:"0x11"))
+                }
+                Button(lk("恢复默认")) { load(InputSourceCatalog.defaults) }
+                Spacer()
+                Button(lk("取消")) { close() }.keyboardShortcut(.cancelAction)
+                Button(lk("完成")) {
+                    let list=rows.compactMap { r -> InputSource? in
+                        guard let v=InputValueParser.parse(r.valueText) else { return nil }
+                        var s=r.source; s.value=v; s.name=s.name.trimmingCharacters(in:.whitespacesAndNewlines); return s
+                    }
+                    control.setInputSources(list,for:display.id); close()
+                }.keyboardShortcut(.defaultAction).disabled(!allValid)
+            }
+        }
+        .padding(20).frame(minWidth:460)
+        .onAppear { load(control.inputSources(for:display.id)) }
     }
 }

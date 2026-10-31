@@ -42,6 +42,7 @@ extension Model {
         s.pausedUntil=pausedUntil; s.now=Date(); s.hotkeys=hotkeySettings; s.optionHeld=optionHeld
         s.pendingNotice=undeliveredNotice?.title; s.pendingNoticeDetail=undeliveredNotice?.detail
         s.arrangement=arrangementMenu()
+        s.inputMenu=displayControl.inputMenuModel()
         return s
     }
     /// Why save/restore can't run right now (nil when it can).

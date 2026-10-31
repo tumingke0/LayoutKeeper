@@ -27,7 +27,8 @@ LayoutKeeper nằm trên thanh menu và ghi nhớ vị trí từng cửa sổ tr
 - **Hoặc dùng chung một bố cục.** Nếu mỗi lần bạn chỉ cắm một màn hình ngoài, hãy chọn "mọi màn hình ngoài dùng chung một bố cục". Ở công ty hay ở nhà đều có cùng các màn hình nền và cửa sổ. Vị trí được lưu theo tỉ lệ màn hình nên khác độ phân giải vẫn khớp.
 - **Đưa cửa sổ về đúng màn hình nền** (macOS 26 trở lên). Các cửa sổ từng ở chung một màn hình nền sẽ về lại chung một màn hình nền, giữ nguyên thứ tự, và hai nhóm không bao giờ bị dồn vào cùng một màn hình nền. Trên macOS cũ hơn, vị trí và kích thước vẫn được khôi phục trên màn hình nền hiện tại.
 - **Tự thêm màn hình nền** (chế độ dùng chung, bật sẵn). Khi cắm vào, ứng dụng thêm các màn hình nền còn thiếu trong Mission Control. Ứng dụng không xóa màn hình nền nào. Nếu có gì không khớp, nó dừng lại và nhắc bạn làm tay. Không cần tắt SIP.
-- **Phím độ sáng và âm lượng.** Phím độ sáng chỉnh màn hình đang có con trỏ chuột (tích hợp hoặc ngoài) và hiện chỉ báo trong suốt ở phía trên màn hình. Bạn cũng có thể bật "Độ sáng màn hình ngoài tự thay đổi theo màn hình tích hợp" để khi màn hình MacBook tự tăng giảm theo ánh sáng môi trường, màn hình ngoài sẽ tự tăng giảm cùng biên độ mà vẫn giữ độ lệch độ sáng riêng của từng màn hình. Phím âm lượng chỉnh âm lượng hệ thống của máy Mac (thiết bị phát âm thanh hiện tại) theo từng bước 3%, dù con trỏ chuột ở màn hình nào. Điều khiển độ sáng bằng phần cứng (DDC) **chỉ hỗ trợ máy Mac Apple Silicon**. Nếu màn hình không phản hồi, ứng dụng làm tối bằng phần mềm. Khi BetterDisplay, MonitorControl hoặc Lunar đang chạy, LayoutKeeper nhường các phím cho chúng.
+- **Phím độ sáng và âm lượng.** Phím độ sáng chỉnh màn hình đang có con trỏ chuột (tích hợp hoặc ngoài) và hiện chỉ báo trong suốt ở phía trên màn hình. Bạn cũng có thể bật "Độ sáng màn hình ngoài tự thay đổi theo màn hình tích hợp" để khi màn hình MacBook tự tăng giảm theo ánh sáng môi trường, màn hình ngoài sẽ tự tăng giảm cùng biên độ mà vẫn giữ độ lệch độ sáng riêng của từng màn hình. Phím âm lượng chỉnh âm lượng hệ thống của máy Mac (thiết bị phát âm thanh hiện tại) theo từng bước 3%, dù con trỏ chuột ở màn hình nào. Khi âm thanh phát qua HDMI hoặc DisplayPort của màn hình ngoài và macOS không chỉnh được âm lượng, phím âm lượng và phím tắt tiếng sẽ chỉnh loa của màn hình đó qua DDC. Điều khiển độ sáng bằng phần cứng (DDC) **chỉ hỗ trợ máy Mac Apple Silicon**. Nếu màn hình không phản hồi, ứng dụng làm tối bằng phần mềm. Khi BetterDisplay, MonitorControl hoặc Lunar đang chạy, LayoutKeeper nhường các phím cho chúng.
+- **Đổi nguồn vào của màn hình từ thanh menu.** Mục "Chuyển nguồn vào" trong menu gửi lệnh DDC để đổi nguồn vào của màn hình (mặc định có DisplayPort 1/2, HDMI 1/2 và USB-C). Trong Cài đặt → Màn hình, bạn có thể đổi tên, ẩn nguồn vào, nhập giá trị theo sách hướng dẫn của màn hình hoặc dùng lệnh thay thế cho LG. Lần đổi đầu tiên trên mỗi màn hình sẽ hỏi xác nhận, và lần nào đổi màn hình duy nhất đang sáng của Mac cũng hỏi. Nhiều màn hình không nhận lệnh từ nguồn vào đang không dùng, nên có thể bạn cần dùng nút trên màn hình để đổi lại.
 - **Nhiều bố cục có tên cho một màn hình**, ví dụ "Lập trình" và "Họp". Bạn đổi qua lại ngay trên thanh menu.
 - **Lịch sử phiên bản.** Giữ 5 phiên bản gần nhất của mỗi màn hình để bạn quay lại.
 - **Xem trước, hoàn tác bất cứ lúc nào.** Bạn thấy trước từng cửa sổ sẽ di chuyển thế nào, và mọi lần khôi phục đều hoàn tác được bằng một cú nhấp.
@@ -83,7 +84,7 @@ Chi tiết xem [docs/USABILITY.md](docs/USABILITY.md) (tiếng Trung).
 - Việc chuyển cửa sổ giữa các màn hình nền dùng API riêng của macOS, có thể ngừng hoạt động sau khi cập nhật hệ thống. Ứng dụng tự kiểm tra khi khởi động và tắt tính năng này nếu cần. Khôi phục trên cùng màn hình nền không bị ảnh hưởng.
 - Cửa sổ Finder không chuyển được sang màn hình nền khác, nhưng vị trí và kích thước vẫn được khôi phục.
 - Ứng dụng không mở hay thoát ứng dụng khác, không khôi phục tab hay thứ tự chồng cửa sổ. Cửa sổ toàn màn hình, Split View và thu nhỏ sẽ bị bỏ qua.
-- Chỉnh độ sáng bằng phần cứng chỉ có trên Apple Silicon. Một số màn hình, bộ chuyển đổi, dock và cổng HDMI không hỗ trợ DDC.
+- Chỉnh độ sáng bằng phần cứng chỉ có trên Apple Silicon. Một số màn hình, bộ chuyển đổi, dock và cổng HDMI không hỗ trợ DDC. Đổi nguồn vào và âm lượng loa màn hình cũng cần DDC, và một số màn hình không phản hồi các lệnh này.
 
 ## Câu hỏi thường gặp
 
@@ -120,6 +121,7 @@ Hoan nghênh Issue và Pull Request, xem [CONTRIBUTING.md](CONTRIBUTING.md). Khi
 - [AltTab](https://github.com/lwouis/alt-tab-macos) (GPL-3.0): ý tưởng tìm cửa sổ trên các màn hình nền khác. Phần cài đặt là độc lập.
 - [yabai](https://github.com/koekeishiya/yabai) (MIT): ý nghĩa các cờ cửa sổ của WindowServer.
 - [MonitorControl](https://github.com/MonitorControl/MonitorControl) (MIT): tham khảo cho điều khiển DDC.
+- [m1ddc](https://github.com/waydabber/m1ddc) (MIT): tham khảo cách ghép màn hình với kênh DDC và lệnh nguồn vào của LG.
 - SnapBack: ý tưởng khôi phục khi cắm màn hình.
 
 Xem thêm [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

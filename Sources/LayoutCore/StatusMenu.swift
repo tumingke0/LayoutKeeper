@@ -94,6 +94,8 @@ public struct MenuState {
     /// Latest notice macOS could not show (notifications off or not allowed). Kept in the menu so it is not lost.
     public var pendingNotice: String?
     public var pendingNoticeDetail: String?
+    /// 0.6.15: 「切换输入源」; nil hides it.
+    public var inputMenu: InputMenu?
     public init() {}
 }
 
@@ -168,6 +170,7 @@ public enum StatusMenuModel {
             items.append(MenuItemModel(kind:.submenu,id:"layouts",title:lk("切换版式"),symbol:"square.stack.3d.up",children:children))
         }
         if let a=s.arrangement { items.append(arrangementMenu(a)) }
+        if let input=s.inputMenu?.menuItem { items.append(input) }
         items.append(.separator("sep1"))
         var modes=AutoRestoreMode.allCases.map { mode in
             MenuItemModel(kind:.action,id:"mode.\(mode.rawValue)",title:mode.title,checked:s.globalMode == mode)

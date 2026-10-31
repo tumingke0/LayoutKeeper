@@ -27,7 +27,8 @@ LayoutKeeper lives in the menu bar. It remembers where each window was on your e
 - **Or one shared layout.** If you only ever use one external monitor at a time, switch to "all external monitors share one layout". Office or home, you get the same desktops and windows. Positions are stored relative to the screen, so different resolutions still line up.
 - **Puts windows back on the right desktop** (macOS 26 or later). Windows that shared a desktop go back onto one desktop, in their original order, and two groups are never piled onto the same desktop. Older systems still get position and size restored on the current desktop.
 - **Adds missing desktops for you** (shared mode, on by default). When you plug in, it adds any missing desktops in Mission Control. It never deletes desktops. It stops and asks you to finish by hand if anything doesn't look right. No need to disable SIP.
-- **Brightness and volume keys for external monitors.** The brightness keys adjust the screen your mouse is on, built-in or external, and show a translucent indicator at the top of the screen. You can also turn on **Sync external brightness with built-in display** so external monitors automatically change by the same amount when the MacBook's built-in screen adjusts to ambient light, while keeping each screen's relative brightness offset. The volume keys change your Mac's system volume (the current sound output) in 3% steps, wherever the mouse is. Hardware brightness control (DDC) works on **Apple Silicon Macs only**. If a monitor doesn't respond, LayoutKeeper falls back to software dimming. If BetterDisplay, MonitorControl or Lunar is running, LayoutKeeper leaves the keys alone.
+- **Brightness and volume keys for external monitors.** The brightness keys adjust the screen your mouse is on, built-in or external, and show a translucent indicator at the top of the screen. You can also turn on **Sync external brightness with built-in display** so external monitors automatically change by the same amount when the MacBook's built-in screen adjusts to ambient light, while keeping each screen's relative brightness offset. The volume keys change your Mac's system volume (the current sound output) in 3% steps, wherever the mouse is. When sound plays through an external monitor's HDMI or DisplayPort audio and macOS can't change its volume, the volume and mute keys control that monitor's speakers over DDC instead. Hardware brightness control (DDC) works on **Apple Silicon Macs only**. If a monitor doesn't respond, LayoutKeeper falls back to software dimming. If BetterDisplay, MonitorControl or Lunar is running, LayoutKeeper leaves the keys alone.
+- **Switch a monitor's input from the menu bar.** **Input Source** in the menu sends the monitor a DDC input command (DisplayPort 1/2, HDMI 1/2 and USB-C by default). In Settings → Displays you can rename or hide inputs, enter the value from the monitor's manual, or use the LG alternate command. The first switch on each monitor asks for confirmation, and switching the Mac's only active screen always does. Many monitors stop taking commands from an inactive input, so you may need the monitor's own buttons to switch back.
 - **Several named layouts per monitor**, for example "Coding" and "Meeting". You can switch between them from the menu bar.
 - **Version history.** It keeps the last 5 versions of each monitor's layout, so you can go back.
 - **Preview first, undo anytime.** You can see how each window will move before you restore, and any restore can be undone in one click.
@@ -83,7 +84,7 @@ More details: [docs/USABILITY.md](docs/USABILITY.md) (Chinese).
 - Moving windows between desktops uses private macOS APIs, which may stop working after a system update. LayoutKeeper checks for this at launch and turns the feature off if needed. Restoring position and size on the current desktop keeps working.
 - Finder windows can't be moved to another desktop. Their position and size are still restored.
 - It doesn't launch or quit apps, and it doesn't restore tabs or stacking order. Full-screen, Split View and minimized windows are skipped.
-- Hardware brightness works on Apple Silicon only, and some monitors, adapters, docks and HDMI ports don't support DDC.
+- Hardware brightness works on Apple Silicon only, and some monitors, adapters, docks and HDMI ports don't support DDC. Input switching and display speaker volume need DDC too, and some monitors ignore those commands.
 
 ## FAQ
 
@@ -120,6 +121,7 @@ Issues and pull requests are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md). Wh
 - [AltTab](https://github.com/lwouis/alt-tab-macos) (GPL-3.0): the idea for finding windows on other desktops. Our implementation is independent.
 - [yabai](https://github.com/koekeishiya/yabai) (MIT): what the WindowServer window flags mean.
 - [MonitorControl](https://github.com/MonitorControl/MonitorControl) (MIT): reference for DDC control.
+- [m1ddc](https://github.com/waydabber/m1ddc) (MIT): reference for matching displays to their DDC channel and for the LG input command.
 - SnapBack: the idea for restoring when a monitor is connected.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

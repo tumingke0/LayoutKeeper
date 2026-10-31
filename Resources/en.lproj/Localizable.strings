@@ -818,10 +818,10 @@
 "⌃↑ 快捷键" = "the ⌃↑ shortcut";
 "。重新保存一次布局后就不再提示。" = ". Save the layout again and this won't come up any more.";
 "不管接的是哪块外接屏，都用同一套桌面和窗口。窗口按所在的桌面和相对位置保存，分辨率不同也能对上；原来同一个桌面上的窗口放回同一个桌面，顺序不变，桌面不够时先自动补，补不上的那几组窗口不移动，并提示你还缺几个。只在接一块外接屏时生效，接两块以上时自动按每块屏单独记。原来各屏的记录都保留。" = "Whichever external display is connected, you get the same desktops and windows. Windows are saved with their desktop and relative position, so different resolutions still line up. Windows that shared a desktop go back onto one desktop, in the same order; if there are too few desktops, more are added first, and any group that still has no desktop stays where it is while you're told how many are missing. Only applies with one external display; with two or more it switches to one layout per display. Each display's existing records are kept.";
-"不管鼠标在哪块屏上，音量键都调当前的声音输出设备，不会去调外接显示器自己的音量。" = "Wherever the mouse is, the volume keys change the current sound output device, never the external monitor's own volume.";
+"音量键调当前的声音输出设备，和鼠标在哪块屏上无关。" = "Volume keys change the current sound output, wherever the mouse is.";
 "保存的部分窗口已关闭" = "Some saved windows are closed";
 "在菜单中显示亮度滑块" = "Show brightness sliders in the menu";
-"已接管：亮度键调节鼠标所在的屏幕，音量键按 3% 一档调节系统音量，并显示提示。⌥⇧ + 按键可微调。" = "Active: brightness keys adjust the screen under the mouse, volume keys change the system volume in 3% steps, with an on-screen indicator. Hold ⌥⇧ for fine steps.";
+"已接管：亮度键调节鼠标所在的屏幕，音量键按 3% 一档调节当前声音输出，并显示提示。⌥⇧ + 按键可微调。" = "Active: brightness keys adjust the screen under the mouse, volume keys change the current sound output in 3% steps, with an on-screen indicator. Hold ⌥⇧ for fine steps.";
 "拔屏前记下的这个窗口已关闭" = "This window, recorded before the display was unplugged, has been closed";
 "拔屏时在这块屏的桌面上，跟同一组窗口一起恢复" = "Was on this display's desktop at unplug; restored with the rest of its group";
 "有 %@ 个窗口在预览之后关闭了。" = "%@ windows were closed after the preview.";
@@ -974,3 +974,33 @@
 "防休眠：合盖断电不休眠" = "Keep Awake: Closed on Battery";
 "外接屏亮度跟随内建屏幕自动变化" = "Sync external brightness with built-in display";
 "内建屏幕随环境光变亮或变暗时，外接显示器按相同幅度自动增减亮度。" = "When the built-in display adjusts to ambient light, external monitors change by the same amount.";
+
+/* 0.6.15: input source and display speakers */
+"切换输入源" = "Input Source";
+"编辑输入源…" = "Edit Input Sources…";
+"无法确认这台显示器对应的 DDC 通道" = "Can't match this display to its DDC channel";
+"这台显示器没有可用的 DDC" = "DDC isn't available on this display";
+"内建屏幕没有输入源" = "The built-in display has no input sources";
+"没有显示在菜单中的输入源" = "No input sources are shown in the menu";
+"显示器没有响应切换指令" = "The display didn't accept the command";
+"没有切换输入源" = "Input not switched";
+"把 %@ 切换到 %@？" = "Switch %@ to %@?";
+"切换后这块屏幕显示另一台设备的画面，LayoutKeeper 可能无法再切回。请先确认能用显示器上的按键切回这台 Mac。" = "The screen will show the other device, and LayoutKeeper may not be able to switch it back. Make sure you can switch back to this Mac with the display's own buttons.";
+"这是 Mac 现在唯一亮着的屏幕，切换后 Mac 没有画面。" = "This is the Mac's only active screen. After switching, the Mac will have no picture.";
+"不再提醒" = "Don't ask again";
+"在菜单中显示「切换输入源」" = "Show \"Input Source\" in the menu";
+"输入源…" = "Input Sources…";
+"%@ 的输入源" = "Input Sources for %@";
+"在菜单中显示" = "Show in menu";
+"数值" = "Value";
+"LG 备用指令" = "LG alternate command";
+"添加" = "Add";
+"数值以显示器说明书为准，可填十进制或 0x 开头的十六进制。" = "Use the value from the display's manual, in decimal or in hex starting with 0x.";
+"很多显示器报告的当前输入不准，菜单里不标当前输入。" = "Many displays report the current input incorrectly, so the menu doesn't mark it.";
+"声音从显示器输出时，音量键调显示器喇叭" = "Volume keys control the display's speakers when sound plays through it";
+"只在 macOS 调不了这台显示器的音量时生效，显示器需要支持 DDC 音量。" = "Only when macOS can't change this display's volume. The display needs DDC volume support.";
+"声音设备" = "Sound device";
+"自动" = "Automatic";
+"输入源切换和显示器喇叭音量只支持 Apple 芯片的 Mac。" = "Input switching and display speaker volume need a Mac with Apple silicon.";
+"显示器喇叭" = "Display speakers";
+"自定义输入源" = "Custom input";
