@@ -114,6 +114,10 @@ public enum DisplayControlPrefs {
     /// 0.6.15
     public static let monitorSpeakerKeys="displayControl.monitorSpeakerKeys"
     public static let inputMenu="displayControl.inputMenu"
+    /// 0.6.15: both are experimental and off until the user turns them on (new installs and upgrades alike), so the
+    /// volume keys behave exactly as in 0.6.14 by default.
+    public static let monitorSpeakerKeysDefault=false
+    public static let inputMenuDefault=false
     /// JSON `[displayKey: [InputSource]]`; a display without an entry uses `InputSourceCatalog.defaults`.
     public static let inputSources="displayControl.inputSources"
     /// Display keys whose first-switch confirmation was turned off ("不再提醒").

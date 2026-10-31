@@ -998,7 +998,8 @@
 "数值以显示器说明书为准，可填十进制或 0x 开头的十六进制。" = "Use the value from the display's manual, in decimal or in hex starting with 0x.";
 "很多显示器报告的当前输入不准，菜单里不标当前输入。" = "Many displays report the current input incorrectly, so the menu doesn't mark it.";
 "声音从显示器输出时，音量键调显示器喇叭" = "Volume keys control the display's speakers when sound plays through it";
-"只在 macOS 调不了这台显示器的音量时生效，显示器需要支持 DDC 音量。" = "Only when macOS can't change this display's volume. The display needs DDC volume support.";
+"实验功能，默认关闭。只在 macOS 调不了这台显示器的音量时生效，显示器需要支持 DDC 音量。" = "Experimental, off by default. Works only when macOS can't change this display's volume. The display needs DDC volume support.";
+"实验功能，默认关闭。很多显示器切走后不再接受这台 Mac 的指令，要用显示器上的按键切回来。" = "Experimental, off by default. Many displays stop taking commands from this Mac after switching away, so use the display's own buttons to switch back.";
 "声音设备" = "Sound device";
 "自动" = "Automatic";
 "输入源切换和显示器喇叭音量只支持 Apple 芯片的 Mac。" = "Input switching and display speaker volume need a Mac with Apple silicon.";

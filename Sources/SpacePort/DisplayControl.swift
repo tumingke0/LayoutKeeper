@@ -84,8 +84,8 @@ final class DisplayControl: ObservableObject {
         softwareFallback=b(DisplayControlPrefs.softwareFallback,true)
         ddcDisabled=Set(defaults?.stringArray(forKey:DisplayControlPrefs.ddcDisabled) ?? [])
         syncWithBuiltIn=b(DisplayControlPrefs.syncWithBuiltIn,false)
-        monitorSpeakerKeys=b(DisplayControlPrefs.monitorSpeakerKeys,true)
-        inputMenu=b(DisplayControlPrefs.inputMenu,true)
+        monitorSpeakerKeys=b(DisplayControlPrefs.monitorSpeakerKeys,DisplayControlPrefs.monitorSpeakerKeysDefault)
+        inputMenu=b(DisplayControlPrefs.inputMenu,DisplayControlPrefs.inputMenuDefault)
         inputSourceMap=InputSourceStore.decode(defaults?.data(forKey:DisplayControlPrefs.inputSources))
         inputConfirmed=Set(defaults?.stringArray(forKey:DisplayControlPrefs.inputConfirmed) ?? [])
         audioOverrides=(defaults?.dictionary(forKey:DisplayControlPrefs.audioDeviceOverrides) as? [String:String]) ?? [:]
@@ -637,13 +637,14 @@ struct DisplaySettings: View {
             Section(lk("菜单栏")) {
                 Toggle(lk("在菜单中显示亮度滑块"),isOn:$control.showInMenu)
                 Toggle(lk("在菜单中显示「切换输入源」"),isOn:$control.inputMenu)
+                Text(lk("实验功能，默认关闭。很多显示器切走后不再接受这台 Mac 的指令，要用显示器上的按键切回来。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
             }
             Section(lk("键盘")) {
                 Toggle(lk("亮度键调节鼠标所在的屏幕"),isOn:$control.brightnessKeys)
                 Toggle(lk("音量键按 3% 一档调节 Mac 的系统音量（关闭则交给 macOS）"),isOn:$control.volumeKeys)
                 Text(lk("音量键调当前的声音输出设备，和鼠标在哪块屏上无关。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 Toggle(lk("声音从显示器输出时，音量键调显示器喇叭"),isOn:$control.monitorSpeakerKeys).disabled(!control.volumeKeys)
-                Text(lk("只在 macOS 调不了这台显示器的音量时生效，显示器需要支持 DDC 音量。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                Text(lk("实验功能，默认关闭。只在 macOS 调不了这台显示器的音量时生效，显示器需要支持 DDC 音量。")).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
                 if !control.conflicts.isEmpty {
                     Label(lk("%@ 正在运行，暂不接管按键，避免一次按键调两次。退出它后会自动接管，不用重启。", "\(control.conflicts.joined(separator:lk("、")))"),systemImage:"exclamationmark.triangle.fill")
                         .font(.caption).foregroundStyle(Tone.warning.color).fixedSize(horizontal:false,vertical:true)

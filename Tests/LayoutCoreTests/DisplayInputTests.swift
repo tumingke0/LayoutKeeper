@@ -155,6 +155,20 @@ final class MonitorAudioMatcherTests: XCTestCase {
 }
 
 final class MonitorSpeakerRoutingTests: XCTestCase {
+    func testExperimentalFeaturesDefaultOff() {
+        XCTAssertFalse(DisplayControlPrefs.monitorSpeakerKeysDefault)
+        XCTAssertFalse(DisplayControlPrefs.inputMenuDefault)
+    }
+    /// With the default (off), every key and output state routes exactly as the 0.6.14 four-argument route.
+    func testDefaultOffMatchesPreviousRouting() {
+        for key in [MediaKey.volumeUp,.volumeDown,.mute,.brightnessUp,.brightnessDown] {
+            for enabled in [true,false] { for vol in [true,false] { for mute in [true,false] { for target: UInt32? in [nil,9] {
+                XCTAssertEqual(VolumeKeyRouting.route(key,enabled:enabled,outputVolumeSettable:vol,outputMuteSettable:mute,
+                                                      monitorSpeakerEnabled:DisplayControlPrefs.monitorSpeakerKeysDefault,speakerDisplay:target),
+                               VolumeKeyRouting.route(key,enabled:enabled,outputVolumeSettable:vol,outputMuteSettable:mute))
+            } } } }
+        }
+    }
     func testRouting() {
         for key in [MediaKey.volumeUp,.volumeDown,.mute] {
             XCTAssertEqual(VolumeKeyRouting.route(key,enabled:true,outputVolumeSettable:false,outputMuteSettable:false,monitorSpeakerEnabled:true,speakerDisplay:9),.monitorSpeaker(9))
