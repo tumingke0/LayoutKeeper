@@ -56,7 +56,7 @@ public enum SystemVolume {
         guard AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject),&a,DispatchQueue.main,block)==noErr else { return nil }
         return block
     }
-    public static func stopObserving(_ block: AudioObjectPropertyListenerBlock) {
+    public static func stopObserving(_ block: @escaping AudioObjectPropertyListenerBlock) {
         var a=address(kAudioHardwarePropertyDefaultOutputDevice,kAudioObjectPropertyScopeGlobal)
         AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject),&a,DispatchQueue.main,block)
     }
