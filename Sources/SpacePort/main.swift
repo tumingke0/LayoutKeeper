@@ -257,6 +257,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         DispatchQueue.main.asyncAfter(deadline:.now()+1.5) { [weak self] in self?.model.beginSelfTest(trigger:"url") }
     }
     let spaceWatcher=SharedSpaceWatcher()
+    let usagePinger=UsagePinger()
     lazy var displayCoordinator=DisplayControlCoordinator(control:model.displayControl)
     func applicationDidFinishLaunching(_ notification: Notification) {
         MonitorRecognition.layoutMode=model.layoutMode
@@ -344,6 +345,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
         authorizationTimer=timer
         RunLoop.main.add(timer,forMode:.common)
+        // Anonymous daily count (see UsagePing); asynchronous, failures ignored.
+        usagePinger.start()
         if let index=CommandLine.arguments.firstIndex(of:"--approved-fixture-test"),CommandLine.arguments.count > index+1 {
             let url=URL(fileURLWithPath:CommandLine.arguments[index+1])
             let phaseIndex=CommandLine.arguments.firstIndex(of:"--test-phase")

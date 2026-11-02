@@ -156,7 +156,7 @@ struct OnboardingView: View {
     private var permission: some View {
         VStack(alignment:.leading,spacing:16) {
             header("hand.raised.fill",lk("允许 LayoutKeeper 读取和移动窗口"),
-                   lk("macOS 的“辅助功能”权限用于读取窗口的位置、大小和标题，并把窗口放回原处。布局只保存在本机，不读取窗口内容；唯一的联网是可关闭的 GitHub 更新检查。"))
+                   lk("macOS 的“辅助功能”权限用于读取窗口的位置、大小和标题，并把窗口放回原处。布局只保存在本机，不读取窗口内容。联网只有可关闭的 GitHub 更新检查和每天一次的匿名计数。"))
             if flow.permissionGranted {
                 Label(controller.justGranted ? lk("已获得权限，继续下一步…") : lk("已获得权限"),systemImage:"checkmark.circle.fill")
                     .font(.body.weight(.medium)).foregroundStyle(Tone.success.color)

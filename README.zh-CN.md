@@ -88,7 +88,7 @@ LayoutKeeper 常驻菜单栏，记住外接屏上每个窗口的位置，**包�
 
 ## 常见问题
 
-**会收集数据吗？** 不会。唯一的网络访问是检查更新，只连接 GitHub，可以在设置里关掉。布局只保存在你的 Mac 上：`~/Library/Application Support/LayoutKeeper/`。
+**会收集数据吗？** 只有一个匿名的每日计数。应用每天向 GoatCounter 发一次请求，内容是应用版本和构建号、芯片类型、macOS 版本、屏幕数量（1、2 或 3 块以上）和本机随机生成的编号，不含窗口标题、应用名称、布局、显示器名称和序列号。另外的网络访问只有检查更新，只连接 GitHub，可以在设置里关掉。布局只保存在你的 Mac 上：`~/Library/Application Support/LayoutKeeper/`。
 
 **为什么有的窗口显示「需要确认」？** 同一个应用有多个同名窗口，LayoutKeeper 不会乱猜，请在预览里选。
 

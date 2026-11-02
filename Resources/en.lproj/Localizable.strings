@@ -85,7 +85,7 @@
 "macOS %@ 具备所需的系统接口，但还没有在这个版本上运行过一键自检。仍然可以使用；每个窗口移动后都会回读确认，失败会回滚。建议先在「设置 → 诊断」运行一次自检。" = "macOS %@ has the required system interfaces, but the self-test hasn't been run on this version yet. You can still use it; every moved window is read back to confirm, and rolled back on failure. Consider running the self-test in Settings → Diagnostics first.";
 "macOS %@ 已通过一键自检。每个窗口移动后都会回读确认，失败会回滚。" = "macOS %@ passed the self-test. Every moved window is read back to confirm, and rolled back on failure.";
 "macOS %@ 缺少跨桌面移动所需的系统接口（%@），已关闭。" = "macOS %@ lacks the system interfaces needed to move windows between desktops (%@), so this is turned off.";
-"macOS 的“辅助功能”权限用于读取窗口的位置、大小和标题，并把窗口放回原处。布局只保存在本机，不读取窗口内容；唯一的联网是可关闭的 GitHub 更新检查。" = "macOS Accessibility permission lets LayoutKeeper read window positions, sizes and titles, and put windows back. Your layouts stay on this Mac, and it never reads window contents. The only network access is the optional update check on GitHub.";
+"macOS 的“辅助功能”权限用于读取窗口的位置、大小和标题，并把窗口放回原处。布局只保存在本机，不读取窗口内容。联网只有可关闭的 GitHub 更新检查和每天一次的匿名计数。" = "macOS Accessibility permission lets LayoutKeeper read window positions, sizes and titles, and put windows back. Your layouts stay on this Mac, and it never reads window contents. Network access is limited to the optional update check on GitHub and an anonymous daily count.";
 "· %@ 个窗口未打开或无法恢复" = "· %@ windows not open or can't be restored";
 "· %@ 个需确认" = "· %@ need confirmation";
 "• 同桌面：%@ —「%@」（外屏桌面 %@，当前桌面）：位置/大小微调约 40 像素，再用恢复功能复原。" = "• Same desktop: %@ — \"%@\" (external desktop %@, current): nudge position/size by about 40 px, then put it back with restore.";

@@ -88,7 +88,7 @@ Chi tiết xem [docs/USABILITY.md](docs/USABILITY.md) (tiếng Trung).
 
 ## Câu hỏi thường gặp
 
-**Ứng dụng có thu thập dữ liệu không?** Không. Truy cập mạng duy nhất là kiểm tra cập nhật, chỉ kết nối tới GitHub và có thể tắt trong Cài đặt. Bố cục chỉ lưu trên máy Mac của bạn tại `~/Library/Application Support/LayoutKeeper/`.
+**Ứng dụng có thu thập dữ liệu không?** Chỉ một lượt đếm ẩn danh mỗi ngày. Mỗi ngày một lần, ứng dụng gửi một yêu cầu tới GoatCounter gồm phiên bản và số bản dựng, loại chip, phiên bản macOS, số màn hình (1, 2 hoặc từ 3 trở lên) và một mã ngẫu nhiên tạo trên máy Mac của bạn. Ứng dụng không gửi tiêu đề cửa sổ, tên ứng dụng, bố cục, tên màn hình hay số sê-ri. Truy cập mạng còn lại chỉ là kiểm tra cập nhật, chỉ kết nối tới GitHub và có thể tắt trong Cài đặt. Bố cục chỉ lưu trên máy Mac của bạn tại `~/Library/Application Support/LayoutKeeper/`.
 
 **Vì sao có cửa sổ bị đánh dấu "cần xác nhận"?** Một ứng dụng có nhiều cửa sổ cùng tiêu đề, và LayoutKeeper không đoán. Hãy chọn đúng cửa sổ trong phần xem trước.
 

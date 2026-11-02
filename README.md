@@ -88,7 +88,7 @@ More details: [docs/USABILITY.md](docs/USABILITY.md) (Chinese).
 
 ## FAQ
 
-**Does it collect data?** No. The only network access is the update check, which talks to GitHub only. You can turn it off in Settings. Layouts are stored on your Mac in `~/Library/Application Support/LayoutKeeper/`.
+**Does it collect data?** Only an anonymous daily count. Once a day the app sends one request to GoatCounter with the app version and build, the CPU type, the macOS version, the number of screens (1, 2 or 3+) and a random ID made on your Mac. It sends no window titles, app names, layouts, display names or serial numbers. The only other network access is the update check, which talks to GitHub only. You can turn the update check off in Settings. Layouts are stored on your Mac in `~/Library/Application Support/LayoutKeeper/`.
 
 **Why are some windows marked "needs confirmation"?** An app has several windows with the same title, and LayoutKeeper won't guess which is which. Pick the right one in the preview.
 
