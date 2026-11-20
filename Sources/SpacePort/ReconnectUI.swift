@@ -151,7 +151,7 @@ final class ReconnectCoordinator {
         model.warmUpSavedApps(record)
         model.windows.patientReads=true
         let read: Snapshot?
-        do { read=try model.externalLayoutSnapshot() } catch { read=nil; model.logRestore("attach #\(id): window scan error \(String(describing:error).prefix(120))") }
+        do { read=try model.currentLayoutSnapshot() } catch { read=nil; model.logRestore("attach #\(id): window scan error \(String(describing:error).prefix(120))") }
         model.windows.patientReads=false
         model.logRestore(String(format:"attach #\(id): warm-up + first scan took %.2fs, scan issues=%d",Date().timeIntervalSince(started),model.windows.issues.count))
         guard let snapshot=read else { model.logRestore("attach #\(id): window scan failed, restoring anyway"); finishAuto(monitor,id:id); return }

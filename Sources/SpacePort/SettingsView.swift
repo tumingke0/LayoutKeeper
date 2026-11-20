@@ -188,7 +188,7 @@ struct DiagnosticsSettings: View {
                     VStack(alignment:.leading,spacing:8) {
                         HStack {
                             Button(model.checkingCapture ? lk("正在检查…") : lk("检查可保存窗口")) { model.inspectExternalCapture() }
-                                .disabled(model.currentExternalMonitor==nil || !model.trusted || model.restoring || model.checkingCapture)
+                                .disabled(model.currentConfiguration==nil || !model.trusted || model.restoring || model.checkingCapture)
                             Spacer()
                         }
                         if !model.captureInspectionMessage.isEmpty { Text(model.captureInspectionMessage).font(.caption).foregroundStyle(.secondary) }

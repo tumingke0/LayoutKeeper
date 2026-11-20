@@ -12,10 +12,12 @@ extension Model {
             emptyWindowTrial=trial;layoutStorageOverride=trial?.root
         } catch { trialConfigurationError=lk("验收配置不合法，已阻止界面读写。请正常退出后检查验收目录。") }
     }
-    func externalLayoutSnapshot(inspectionBudget:TimeInterval?=nil) throws -> Snapshot {
+    func currentLayoutSnapshot(inspectionBudget:TimeInterval?=nil) throws -> Snapshot {
         guard trialConfigurationError.isEmpty else { throw LayoutError.invalidProfile }
         let ids=fixtures.filter{$0.isVisible && !$0.isMiniaturized && $0.title=="LayoutKeeper Fixture 1"}.map(\.windowNumber)
-        let selected=currentExternalMonitor?.runtimeDisplayToken
+        // The display the current configuration lives on (the external monitor's
+        // token, or the built-in screen's when no external monitor is attached).
+        let selected=currentConfiguration?.displayToken
         return try EmptyWindowTrial.capture(trial:emptyWindowTrial,createdWindowIDs:ids,regular:{ try windows.scan(selectedDisplayToken:selected,inspectionBudget:inspectionBudget) },owned:{ trial,ids in
             var snapshot=try windows.scan(onlyPID:getpid(),selectedDisplayToken:selected,inspectionBudget:inspectionBudget)
             snapshot.windows=snapshot.windows.filter{trial.accepts(token:$0.token,title:$0.selector.title,pid:getpid(),createdWindowIDs:ids)}

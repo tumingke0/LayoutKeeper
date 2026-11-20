@@ -9,14 +9,14 @@ import LayoutCore
 extension Model {
     var screenLibrary: ScreenLibrary? { layoutDirectory.map { ScreenLibrary(root:$0.appendingPathComponent("screens",isDirectory:true)) } }
     var selectedScreen: SavedScreen? { savedScreens.first { $0.key==selectedScreenKey } }
-    var selectedIsConnected: Bool { selectedScreen?.connected == true && selectedScreenKey == currentExternalMonitor?.identity.key }
+    var selectedIsConnected: Bool { selectedScreen?.connected == true && selectedScreenKey == currentConfiguration?.identity.key }
     /// The record the card shows: a previewed version, else the selected screen's current layout.
     var displayRecord: MonitorLayoutRecord? { previewRecord ?? (selectedIsConnected ? externalRecord : selectedRecord) }
     static func isUnsaved(_ s: SavedScreen) -> Bool { s.savedAt == .distantPast }
 
     func reloadLibrary() {
         guard !RenderMode.snapshot,let library=screenLibrary else { return }
-        let connected=currentExternalMonitor?.identity
+        let connected=currentConfiguration?.identity
         var list=library.screens(connectedKey:connected?.key) { [monitorPreferences] in monitorPreferences.displayName($0) }
         if let connected,!list.contains(where:{ $0.key==connected.key }) {
             list.insert(SavedScreen(key:connected.key,monitor:connected,name:monitorPreferences.displayName(connected),savedAt:.distantPast,windowCount:0,desktopCount:0,connected:true),at:0)
@@ -108,7 +108,7 @@ extension Model {
     /// One click: make the 版式 current (it becomes the default for auto-restore) and, when connected, put the windows back. 撤销 reverts both.
     func applyNamedLayout(_ layout: NamedLayout,key explicitKey: String? = nil) {
         guard let library=screenLibrary,let key=explicitKey ?? selectedScreenKey,!restoring else { return }
-        guard key == currentExternalMonitor?.identity.key else { actionNote=ActionNote(icon:"powerplug",text:lk("这块屏幕未连接，接上后才能应用版式"),tone:.neutral); return }
+        guard key == currentConfiguration?.identity.key else { actionNote=ActionNote(icon:"powerplug",text:key == MonitorIdentity.builtInOnlyKey ? lk("内屏现在不是当前配置（已接外接屏），拔掉外接屏后才能应用版式") : lk("这块屏幕未连接，接上后才能应用版式"),tone:.neutral); return }
         do {
             let undo=try library.apply(layout.url,key:key)
             previewVersion=nil; previewRecord=nil
@@ -132,9 +132,9 @@ extension Model {
             actionNote=ActionNote(icon:"arrow.uturn.backward",text:lk("已撤销切换"),tone:.neutral)
         } catch { fail(lk("无法撤销"),error) }
     }
-    /// Menu bar 「切换版式」: the connected screen's named layouts, in the same order as the menu.
+    /// Menu bar 「切换版式」: the current configuration's named layouts, in the same order as the menu.
     func applyConnectedLayout(at index: Int) {
-        guard let key=currentExternalMonitor?.identity.key,let library=screenLibrary else { return }
+        guard let key=currentConfiguration?.identity.key,let library=screenLibrary else { return }
         let list=library.namedLayouts(key)
         guard list.indices.contains(index) else { return }
         applyNamedLayout(list[index],key:key)

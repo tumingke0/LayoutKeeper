@@ -8,8 +8,11 @@ public struct MonitorIdentity: Codable, Equatable {
     public var serial: UInt32
     public var name: String
     public init(vendor: UInt32, model: UInt32, serial: UInt32, name: String) { self.vendor=vendor; self.model=model; self.serial=serial; self.name=name }
-    public var key: String { isSharedExternal ? Self.sharedExternalKey : "monitor-\(vendor)-\(model)-\(serial)" }
+    public var key: String { isSharedExternal ? Self.sharedExternalKey : isBuiltInOnly ? Self.builtInOnlyKey : "monitor-\(vendor)-\(model)-\(serial)" }
     public var identifiesDevice: Bool { vendor != 0 && model != 0 && serial != 0 }
+    /// The display role a layout for this identity records: built-in windows for the
+    /// built-in-only configuration, external windows for any real (or shared) external monitor.
+    public var layoutRole: DisplayRole { isBuiltInOnly ? .builtIn : .external }
 }
 public struct MonitorLayoutRecord: Codable {
     public var schemaVersion=1
@@ -27,7 +30,7 @@ public struct MonitorLayoutRecord: Codable {
     public var occupiedDesks: [UInt64]?
     public init(monitor: MonitorIdentity, savedAt: Date = Date(), profile: Profile) { self.monitor=monitor; self.savedAt=savedAt; self.profile=profile }
     public func validate() throws {
-        guard schemaVersion==1,monitor.vendor != 0,monitor.model != 0,profile.windows.allSatisfy({$0.displayRole == .external}) else { throw LayoutError.invalidProfile }
+        guard schemaVersion==1,monitor.vendor != 0,monitor.model != 0,profile.windows.allSatisfy({$0.displayRole == monitor.layoutRole}) else { throw LayoutError.invalidProfile }
         try profile.validate()
         if let captureReport {try captureReport.validate(capturedCount:profile.windows.count);guard completeness==captureReport.completeness else{throw LayoutError.invalidProfile}}
     }
@@ -57,7 +60,10 @@ public enum ExternalLayoutCapture {
     /// ("captured" or a CaptureReason raw value). Decisions are never stored in the record.
     public static func assess(monitor: MonitorIdentity, displayToken: String, snapshot: Snapshot,report measurement:CapturePipelineReport?=nil) throws -> (record:MonitorLayoutRecord,issues:[String],decisions:[String:String]) {
         var decisions=[String:String]()
-        guard snapshot.displays.filter({$0.token==displayToken && $0.role == .external}).count==1 else { throw LayoutError.unsupported }
+        // The target display is the one this layout records: the external monitor for a real
+        // (or shared) monitor, the built-in display for the built-in-only configuration.
+        let role=monitor.layoutRole
+        guard snapshot.displays.filter({$0.token==displayToken && $0.role == role}).count==1 else { throw LayoutError.unsupported }
         var report=measurement ?? CapturePipelineReport()
         report.resetCaptureStages()
         let ordinary=snapshot.spaces.filter{$0.displayToken==displayToken && $0.kind == .ordinary}
@@ -91,7 +97,7 @@ public enum ExternalLayoutCapture {
             guard selected.filter({w.selector.matches($0.selector)}).count==1 else{reject(.ambiguousSelector);continue}
             report.increment(.uniqueSelector,bundleID:bundle)
             let label=labels[source.id] ?? lk("窗口组-%@", "\(UUID().uuidString)");labels[source.id]=label
-            saved.append(SavedWindow(selector:w.selector,displayRole:.external,desktopLabel:label,normalizedFrame:normalized,desktopIndex:slot+1,desktopID:source.id,desktopUUID:source.uuid))
+            saved.append(SavedWindow(selector:w.selector,displayRole:role,desktopLabel:label,normalizedFrame:normalized,desktopIndex:slot+1,desktopID:source.id,desktopUUID:source.uuid))
             report.noteCaptured(bundleID:bundle,spaceIndex:slot+1);decisions[w.token]="captured"
         }
         let profile=Profile(location:monitor.name,windows:saved)

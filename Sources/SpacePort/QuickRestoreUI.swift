@@ -19,37 +19,36 @@ extension Model {
         }
         appNameCache[bundleID]=name; return name
     }
-    /// Reads the saved layout for the current external monitor and builds the one-click preview. Never moves windows.
+    /// Reads the saved layout for the current display configuration and builds the one-click preview. Never moves windows.
     @discardableResult func prepareQuickRestore() -> Bool {
         guard !restoring,!selfTestRunning else { logRestore("prepare: exit — busy (restoring=\(restoring) selfTest=\(selfTestRunning))"); return false }
         quickPlan=nil; quickResults=[:]; quickChoices=[:]; quickSnapshot=nil; quickRecord=nil; quickContext=nil
         refreshAuthorization()
         guard trusted else { quickMessage=accessState.guidance; logRestore("prepare: exit — Accessibility permission missing"); return false }
-        guard let monitor=currentExternalMonitor else { logRestore("prepare: exit — no single external monitor (externals=\(externalMonitors.count))"); quickMessage=externalMonitors.isEmpty ? lk("没有检测到外接屏。") : lk("目前只支持同时连接一块外接屏。"); return false }
+        guard let config=currentConfiguration else { logRestore("prepare: exit — no current display configuration (externals=\(externalMonitors.count))"); quickMessage=externalMonitors.isEmpty ? lk("没有检测到显示屏。") : lk("目前只支持同时连接一块外接屏。"); return false }
         do {
-            let url=try monitorRecordURL(monitor.identity)
+            let url=try monitorRecordURL(config.identity)
             var saved: MonitorLayoutRecord?
             if FileManager.default.fileExists(atPath:url.path) {
                 let record=try MonitorLayoutStore.load(from:url)
-                guard record.monitor.key==monitor.identity.key else { logRestore("prepare: exit — layout file key \(record.monitor.key) != monitor \(monitor.identity.key)"); throw LayoutError.invalidProfile }
-                logRestore("prepare: layout \(url.lastPathComponent) key=\(record.monitor.key) savedAt=\(record.savedAt) windows=\(record.profile.windows.count) display=\(RestoreLog.d(monitor.runtimeDisplayToken))")
+                guard record.monitor.key==config.identity.key else { logRestore("prepare: exit — layout file key \(record.monitor.key) != configuration \(config.identity.key)"); throw LayoutError.invalidProfile }
+                logRestore("prepare: layout \(url.lastPathComponent) key=\(record.monitor.key) savedAt=\(record.savedAt) windows=\(record.profile.windows.count) display=\(RestoreLog.d(config.displayToken))")
                 saved=record
             }
-            let arrival=activeArrival(for:monitor.identity,saved:saved)
+            let arrival=activeArrival(for:config.identity,saved:saved)
             guard saved != nil || arrival != nil else {
-                logRestore("prepare: exit — no layout file for \(monitor.identity.key) (\(url.lastPathComponent)) and no live record")
-                quickMessage=lk("这块屏幕（%@）还没有保存过布局。先把窗口摆好，再点「保存布局」。", "\(monitor.identity.name)"); return false
+                logRestore("prepare: exit — no layout file for \(config.identity.key) (\(url.lastPathComponent)) and no live record")
+                quickMessage=config.identity.isBuiltInOnly ? lk("内屏还没有保存过布局。先把窗口摆好，再点「保存布局」。") : lk("这块屏幕（%@）还没有保存过布局。先把窗口摆好，再点「保存布局」。", "\(config.identity.name)"); return false
             }
             let warm=(saved?.profile.windows ?? [])+(arrival?.record.windows ?? [])
-            warmUpSavedApps(MonitorLayoutRecord(monitor:monitor.identity,profile:Profile(location:monitor.identity.name,windows:warm)))
+            warmUpSavedApps(MonitorLayoutRecord(monitor:config.identity,profile:Profile(location:config.identity.name,windows:warm)))
             windows.patientReads=true; defer { windows.patientReads=false }
-            let snapshot=try externalLayoutSnapshot()
-            let current=MonitorRecognition.externalMonitors()
-            guard current.count==1,current[0].identity.key==monitor.identity.key,current[0].runtimeDisplayToken==monitor.runtimeDisplayToken else { logRestore("prepare: exit — monitor changed during scan (now \(current.map{ "\($0.identity.key)@\(RestoreLog.d($0.runtimeDisplayToken))" }))"); throw LayoutError.readbackUnavailable }
-            logRestore("prepare: scanned windows=\(snapshot.windows.count) issues=\(windows.issues.count) crossSpace=\(crossSpaceEnabled) shared=\(monitor.identity.isSharedExternal)")
-            guard let effective=effectiveLayout(monitor:monitor.identity,saved:saved,snapshot:snapshot) else { throw LayoutError.invalidProfile }
+            let snapshot=try currentLayoutSnapshot()
+            guard configurationStillCurrent(config) else { logRestore("prepare: exit — configuration changed during scan"); throw LayoutError.readbackUnavailable }
+            logRestore("prepare: scanned windows=\(snapshot.windows.count) issues=\(windows.issues.count) crossSpace=\(crossSpaceEnabled) shared=\(config.identity.isSharedExternal)")
+            guard let effective=effectiveLayout(monitor:config.identity,saved:saved,snapshot:snapshot) else { throw LayoutError.invalidProfile }
             logRestore("prepare: restoring from \(arrival == nil ? "saved layout" : "live record + saved layout") windows=\(effective.record.profile.windows.count)")
-            quickRecord=effective.record; quickContext=effective.context; quickSnapshot=snapshot; quickDisplayToken=monitor.runtimeDisplayToken; quickMonitor=monitor.identity
+            quickRecord=effective.record; quickContext=effective.context; quickSnapshot=snapshot; quickDisplayToken=config.displayToken; quickMonitor=config.identity
             replanQuick()
             return quickPlan != nil
         } catch { quickMessage=lk("无法生成恢复预览，没有移动任何窗口：%@", "\(error)"); logRestore("prepare: exit — error \(String(describing:error).prefix(160))"); return false }
@@ -88,9 +87,8 @@ extension Model {
         windows.patientReads=true; defer { windows.patientReads=false }
         let fresh: Snapshot
         do {
-            fresh=try externalLayoutSnapshot()
-            let current=MonitorRecognition.externalMonitors()
-            guard current.count==1,current[0].identity.key==monitor.key,current[0].runtimeDisplayToken==display else { logRestore("execute: exit — monitor changed before execution"); throw LayoutError.readbackUnavailable }
+            fresh=try currentLayoutSnapshot()
+            guard configurationStillCurrent((identity: monitor, displayToken: display)) else { logRestore("execute: exit — configuration changed before execution"); throw LayoutError.readbackUnavailable }
         } catch { quickMessage=lk("执行前重新读取窗口失败，没有移动任何窗口：%@", "\(error)"); logRestore("execute: re-read failed (\(String(describing:error).prefix(80)))"); return (0,0) }
         _=record
         // Identification happened once, in the preview. Here only check that each chosen window still exists.

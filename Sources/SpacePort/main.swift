@@ -434,7 +434,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         case "mode.off": model.autoRestoreMode = .off
         case "mode.ask": model.autoRestoreMode = .ask
         case "mode.auto": model.autoRestoreMode = .auto
-        case "mode.forget": if let key=model.currentExternalMonitor?.identity.key { model.monitorPreferences.setRestore(nil,for:key) }
+        case "mode.forget": if let key=model.currentConfiguration?.identity.key { model.monitorPreferences.setRestore(nil,for:key) }
         case "keepAwake.off": model.keepAwakeMode = .off
         case "keepAwake.systemOnly": model.keepAwakeMode = .systemOnly
         case "keepAwake.systemAndDisplay": model.keepAwakeMode = .systemAndDisplay

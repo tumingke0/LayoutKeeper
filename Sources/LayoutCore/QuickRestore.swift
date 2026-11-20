@@ -364,7 +364,7 @@ public enum QuickRestorePlanner {
                             choices: [Int:QuickChoice] = [:], allowCrossSpace: Bool, crossSpaceBlockReason: String = lk("当前系统版本未验证跨桌面移动"),
                             browserProfiles: [String:String] = [:],pinnedMatches: [Int:PinnedMatch] = [:],context: RestoreContext? = nil) throws -> QuickRestorePlan {
         try record.validate()
-        guard record.monitor.key==monitor.key,let display=s.displays.first(where:{$0.token==displayToken && $0.role == .external}),display.visible.valid else { throw LayoutError.unsupported }
+        guard record.monitor.key==monitor.key,let display=s.displays.first(where:{$0.token==displayToken && $0.role == monitor.layoutRole}),display.visible.valid else { throw LayoutError.unsupported }
         let ordinary=s.spaces.filter{$0.displayToken==displayToken && $0.kind == .ordinary}
         let windows=record.profile.windows
         let sources=windows.indices.map{ context?.source($0) ?? .saved }

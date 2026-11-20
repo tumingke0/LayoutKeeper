@@ -85,7 +85,7 @@ final class OnboardingController: ObservableObject {
     func skip() { flow.skip(); finish() }
     private func finish() { stopPolling(); onFinish(flow) }
     func saveNow() {
-        switch model.saveExternalLayout() {
+        switch model.saveCurrentLayout() {
         case .saved(let count,_): saveNote=(lk("已保存 %@ 个窗口。以后用菜单栏或 ⌃⌥⌘R 恢复。", "\(count)"),true)
         case .failed(let why): saveNote=(why,false)
         case .cancelled: break
@@ -185,9 +185,9 @@ struct OnboardingView: View {
     }
     private var firstLayout: some View {
         VStack(alignment:.leading,spacing:16) {
-            if let monitor=model.currentExternalMonitor {
+            if let config=model.currentConfiguration {
                 header("square.and.arrow.down",lk("保存第一份布局"),
-                       lk("把「%@」上各个桌面的窗口摆好，然后保存。以后接上这块屏幕，就能一键恢复（菜单栏或 ⌃⌥⌘R）。", "\(model.monitorPreferences.displayName(monitor.identity))"))
+                       config.identity.isBuiltInOnly ? lk("把内屏上各个桌面的窗口摆好，然后保存。以后拔掉外接屏回到内屏时，就能一键恢复（菜单栏或 ⌃⌥⌘R）。") : lk("把「%@」上各个桌面的窗口摆好，然后保存。以后接上这块屏幕，就能一键恢复（菜单栏或 ⌃⌥⌘R）。", "\(model.monitorPreferences.displayName(config.identity))"))
                 if let note=controller.saveNote {
                     Label(note.text,systemImage:note.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .font(.callout).foregroundStyle(note.ok ? Tone.success.color : Tone.warning.color).fixedSize(horizontal:false,vertical:true)
@@ -201,7 +201,7 @@ struct OnboardingView: View {
                     }
                 }
             } else {
-                header("display",lk("接上外接屏后保存"),lk("现在没有连接外接屏。LayoutKeeper 按屏幕记住布局，接上后摆好窗口，用菜单栏“保存当前布局”或 ⌃⌥⌘S 保存。"))
+                header("display",lk("接上外接屏后保存"),lk("现在没有可用的显示配置。LayoutKeeper 按显示配置记住布局：只用内屏时保存内屏布局，接上外接屏后摆好窗口，用菜单栏“保存当前布局”或 ⌃⌥⌘S 保存。"))
                 if controller.reminderSet {
                     Label(lk("好的，下次接上没有保存过布局的外接屏时会提醒你"),systemImage:"bell.badge").font(.callout).foregroundStyle(Tone.success.color)
                 } else {
