@@ -96,6 +96,8 @@ public struct MenuState {
     public var pendingNoticeDetail: String?
     /// 0.6.15: 「切换输入源」; nil hides it.
     public var inputMenu: InputMenu?
+    /// 「清理键盘」 is running (the item can't be chosen again).
+    public var keyboardCleaning=false
     public init() {}
 }
 
@@ -185,6 +187,7 @@ public enum StatusMenuModel {
             MenuItemModel(kind:.action,id:"keepAwake.\(mode.rawValue)",title:mode.title,reason:mode.subtitle,checked:s.keepAwakeMode == mode)
         }
         items.append(MenuItemModel(kind:.submenu,id:"keepAwake",title:s.keepAwakeMode.menuTitle,symbol:s.keepAwakeMode == .off ? "moon.zzz" : "bolt.shield.fill",children:keepAwakeItems))
+        items.append(MenuItemModel(kind:.action,id:"keyboardClean",title:lk("清理键盘"),symbol:"keyboard",enabled:s.trusted && !s.keyboardCleaning,reason:s.trusted ? nil : lk("需要辅助功能权限")))
         items.append(.separator("sep2"))
         items.append(MenuItemModel(kind:.action,id:"open",title:lk("打开 LayoutKeeper…"),symbol:"macwindow"))
         items.append(MenuItemModel(kind:.action,id:"checkUpdates",title:lk("检查更新…"),symbol:"arrow.down.circle"))

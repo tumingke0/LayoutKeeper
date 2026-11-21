@@ -154,6 +154,9 @@ final class Model: ObservableObject {
     /// 显示器排列预设. Changing them re-registers the hotkeys (a preset can carry one).
     @Published var arrangementPresets=Prefs.arrangementPresets() { didSet { Prefs.save(arrangementPresets,key:Prefs.arrangementPresetsKey); applyHotkeys?() } }
     @Published var portArrangementRules=Prefs.portArrangementRules() { didSet { Prefs.save(portArrangementRules,key:Prefs.portArrangementRulesKey) } }
+    /// 「清理键盘」: lock duration and whether clicks are blocked too.
+    @Published var keyboardCleanSettings=Prefs.keyboardClean() { didSet { Prefs.save(keyboardCleanSettings,key:Prefs.keyboardCleanKey) } }
+    @Published var keyboardCleaning=false
     var lastAutoAppliedPortKey: String?
     @Published var arrangementHotkeyStatus: [String:HotkeyStatus]=[:]
     @Published var recordingPresetHotkey: String?
@@ -239,6 +242,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     var updater: AppUpdater?
     let hotkeys=GlobalHotkeys()
     let arrangementPanel=ArrangementConfirmPanel()
+    let keyboardCleaner=KeyboardCleaner()
+    private var savedMediaKeyHandler: ((MediaKey,Bool) -> Bool)?
     private var liveTimer: Timer?
     private var lastAction: [String:Date]=[:]
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -378,6 +383,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
         }
     }
     func applyHotkeys() {
+        // Paused while the keyboard is locked for cleaning; re-applied when it ends.
+        if keyboardCleaner.isLocked { return }
         let result=hotkeys.apply(model.hotkeySettings,presets:model.arrangementPresets)
         model.hotkeyStatus=result.actions; model.arrangementHotkeyStatus=result.presets
     }
@@ -444,6 +451,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
             let notice=model.undeliveredNotice; model.undeliveredNotice=nil
             if let open=notice?.open { open() } else { show() }
         case "settings": showSettings(.general)
+        // After the menu has closed, so the overlay can take focus.
+        case "keyboardClean": if debounce(id) { DispatchQueue.main.async { [weak self] in self?.startKeyboardClean() } }
         case "checkUpdates": updater?.checkForUpdates()
         case "quit": NSApplication.shared.terminate(nil)
         case "arrange.port.bind": if debounce(id) { model.bindCurrentPortArrangement() }
@@ -464,6 +473,34 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
                 DispatchQueue.main.async { [weak self] in self?.switchInput(display:target.display,source:target.source) }
             }
         default: break
+        }
+    }
+    /// 「清理键盘」: lock the keyboard (and optionally clicks) for the chosen time. Our own global hotkeys are off while
+    /// locked, and the brightness/volume key takeover is told to swallow keys if its tap ever gets ahead of the lock.
+    func startKeyboardClean() {
+        guard !keyboardCleaner.isLocked else { return }
+        keyboardCleaner.log={ [weak self] line in self?.model.logRestore(line) }
+        keyboardCleaner.onStart={ [weak self] in
+            guard let self else { return }
+            self.model.keyboardCleaning=true
+            self.hotkeys.unregisterAll()
+            self.savedMediaKeyHandler=self.displayCoordinator.tap.handler
+            self.displayCoordinator.tap.handler={ _,_ in true }
+        }
+        keyboardCleaner.onEnd={ [weak self] reason in
+            guard let self else { return }
+            self.model.keyboardCleaning=false
+            self.displayCoordinator.tap.handler=self.savedMediaKeyHandler; self.savedMediaKeyHandler=nil
+            guard reason != .quit else { return }
+            self.applyHotkeys()
+            if reason.needsNotice { self.notifier.show(UserNotice(title:lk("清理键盘"),detail:lk("系统停掉了按键拦截，键盘已提前解锁。"),duration:8)) }
+        }
+        switch keyboardCleaner.start(settings:model.keyboardCleanSettings) {
+        case .started, .alreadyLocked: break
+        case .notTrusted: showOnboarding(.missingPermission)
+        case .tapFailed:
+            model.logRestore("keyboard clean: tap could not be created")
+            notifier.show(UserNotice(title:lk("清理键盘"),detail:lk("锁不住键盘。请到 系统设置 › 隐私与安全性 › 辅助功能，把 LayoutKeeper 关掉再打开。"),duration:0))
         }
     }
     /// 0.6.15: 「切换输入源」. Confirms first (see `InputSwitchPolicy`), then sends one DDC input command.
@@ -577,6 +614,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowD
     /// Only our own activation re-checks (not every app switch): the check is a read-only scan on the main thread.
     func applicationDidBecomeActive(_ notification: Notification) { model.refreshExternalMonitor(); notifier.refreshPermission(); scheduleLiveCheck(after:0.6) }
     func applicationWillTerminate(_ notification: Notification) {
+        // The tap goes away with the process anyway; this also puts Caps Lock back.
+        keyboardCleaner.finish(.quit)
         // macOS undoes an app-only preview itself when we exit; revert explicitly too, so the log says so.
         model.revertArrangement(reason:"quit")
         model.sleepGuard.releaseAll()

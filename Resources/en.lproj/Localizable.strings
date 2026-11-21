@@ -1005,3 +1005,25 @@
 "输入源切换和显示器喇叭音量只支持 Apple 芯片的 Mac。" = "Input switching and display speaker volume need a Mac with Apple silicon.";
 "显示器喇叭" = "Display speakers";
 "自定义输入源" = "Custom input";
+
+/* 清理键盘 */
+"清理键盘" = "Clean Keyboard";
+"键盘已锁住" = "Keyboard Locked";
+"可以擦了，触控板和鼠标照常能用。" = "Go ahead and wipe. Trackpad and mouse still work.";
+"可以擦了，键盘和触控板都已锁住。" = "Go ahead and wipe. Keyboard and trackpad are locked.";
+"%@ 后自动解锁" = "Unlocks in %@";
+"已挡住 %@ 次按键" = "Keys blocked: %@";
+"按住 Esc 3 秒也能解锁" = "Or hold Esc for 3 seconds";
+"按住 Esc 3 秒解锁" = "Hold Esc for 3 seconds to unlock";
+"继续按住 Esc…" = "Keep holding Esc…";
+"电源键和 Touch ID 锁不住，擦的时候避开。" = "The power button and Touch ID can't be locked. Avoid them.";
+"有应用开着安全输入，部分按键可能漏过去。" = "An app has secure input on, so some keys may get through.";
+"系统停掉了按键拦截，键盘已提前解锁。" = "macOS stopped the key block, so the keyboard was unlocked early.";
+"锁不住键盘。请到 系统设置 › 隐私与安全性 › 辅助功能，把 LayoutKeeper 关掉再打开。" = "Couldn't lock the keyboard. In System Settings › Privacy & Security › Accessibility, turn LayoutKeeper off and on again.";
+"锁定时长" = "Lock duration";
+"30 秒" = "30 seconds";
+"1 分钟" = "1 minute";
+"2 分钟" = "2 minutes";
+"5 分钟" = "5 minutes";
+"同时锁住触控板和鼠标点击" = "Also block trackpad and mouse clicks";
+"打开后光标还能动，但点不了「完成」，用 Esc 长按或等倒计时解锁。" = "The pointer still moves but can't click Done. Hold Esc or wait for the timer.";

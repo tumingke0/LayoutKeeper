@@ -43,6 +43,7 @@ extension Model {
         s.pendingNotice=undeliveredNotice?.title; s.pendingNoticeDetail=undeliveredNotice?.detail
         s.arrangement=arrangementMenu()
         s.inputMenu=displayControl.inputMenuModel()
+        s.keyboardCleaning=keyboardCleaning
         return s
     }
     /// Why save/restore can't run right now (nil when it can).

@@ -98,6 +98,14 @@ struct GeneralSettings: View {
                     }
                 }
             }
+            Section(lk("清理键盘")) {
+                Picker(lk("锁定时长"),selection:$model.keyboardCleanSettings.duration) {
+                    ForEach(KeyboardCleanDuration.allCases,id:\.self) { Text($0.title).tag($0) }
+                }
+                Toggle(lk("同时锁住触控板和鼠标点击"),isOn:$model.keyboardCleanSettings.blockPointer)
+                Text(lk("打开后光标还能动，但点不了「完成」，用 Esc 长按或等倒计时解锁。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            }
             Section(lk("通知")) {
                 Text(lk("结果和提示用 macOS 通知显示：点一下打开 LayoutKeeper，向右划掉即可关闭。"))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)

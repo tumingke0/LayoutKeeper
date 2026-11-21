@@ -10,6 +10,7 @@ enum Prefs {
     static let hotkeysKey="globalHotkeys"
     static let arrangementPresetsKey="displayArrangementPresets"
     static let portArrangementRulesKey="displayPortArrangementRules"
+    static let keyboardCleanKey=KeyboardCleanSettings.preferenceKey
     /// nil while rendering snapshots: sample data must never read or write the user's real preferences.
     static var store: UserDefaults? { RenderMode.snapshot ? nil : UserDefaults.standard }
     static func load<T: Decodable>(_ type: T.Type,key: String) -> T? {
@@ -22,6 +23,7 @@ enum Prefs {
     static func hotkeys() -> HotkeySettings { load(HotkeySettings.self,key:hotkeysKey) ?? .defaults }
     static func arrangementPresets() -> [ArrangementPreset] { load([ArrangementPreset].self,key:arrangementPresetsKey) ?? [] }
     static func portArrangementRules() -> [PortArrangementRule] { load([PortArrangementRule].self,key:portArrangementRulesKey) ?? [] }
+    static func keyboardClean() -> KeyboardCleanSettings { load(KeyboardCleanSettings.self,key:keyboardCleanKey) ?? .defaults }
 }
 
 struct RestoreSummary: Equatable {
