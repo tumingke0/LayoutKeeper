@@ -16,6 +16,12 @@ extension MonitorIdentity {
     public static let sharedExternal=MonitorIdentity(vendor:0x4C4B,model:0x5348,serial:1,name:lk("共用外接屏"))
     public var isSharedExternal: Bool { vendor==0x4C4B && model==0x5348 && serial==1 }
     public static let sharedExternalKey="shared-external"
+    /// Virtual identity of the built-in-only configuration (no external monitor attached).
+    /// Stored as `screens/builtin-only.json` with the usual history and 版式, like any other screen.
+    /// Same "LK" vendor prefix as the shared layout, model 0x4249 ("BI").
+    public static let builtInOnly=MonitorIdentity(vendor:0x4C4B,model:0x4249,serial:1,name:lk("仅内屏"))
+    public var isBuiltInOnly: Bool { vendor==0x4C4B && model==0x4249 && serial==1 }
+    public static let builtInOnlyKey="builtin-only"
 }
 
 public enum SharedLayout {

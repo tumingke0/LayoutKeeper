@@ -101,7 +101,7 @@ final class SelfTestRun {
             monitor=connected.identity; displayToken=connected.runtimeDisplayToken
             report.externalDisplayToken=displayToken; report.externalMonitorName=connected.identity.name
             let started=now
-            let snapshot=try model.externalLayoutSnapshot()
+            let snapshot=try model.currentLayoutSnapshot()
             let current=MonitorRecognition.externalMonitors()
             guard current.count==1,current[0].identity.key==connected.identity.key,current[0].runtimeDisplayToken==displayToken else { throw LayoutError.readbackUnavailable }
             let assessed=try ExternalLayoutCapture.assess(monitor:connected.identity,displayToken:displayToken,snapshot:snapshot,report:model.windows.latestCaptureReport)

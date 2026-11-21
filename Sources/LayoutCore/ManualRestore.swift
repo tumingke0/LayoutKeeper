@@ -6,9 +6,9 @@ public enum MonitorRestorePlanner {
     public static func plan(record: MonitorLayoutRecord, monitor: MonitorIdentity, displayToken: String, snapshot: Snapshot, groupSpaces: [String:UInt64], allowCrossSpace: Bool = false) throws -> RestorePlan {
         try record.validate()
         guard record.monitor.key==monitor.key,
-              snapshot.displays.filter({$0.role == .external}).count==1,
-              snapshot.displays.contains(where:{$0.token==displayToken && $0.role == .external}) else { throw LayoutError.unsupported }
-        let bindings=groupSpaces.map { DesktopBinding(label:$0.key,role:.external,spaceID:$0.value,snapshot:snapshot) }.filter { binding in
+              snapshot.displays.filter({$0.role == monitor.layoutRole}).count==1,
+              snapshot.displays.contains(where:{$0.token==displayToken && $0.role == monitor.layoutRole}) else { throw LayoutError.unsupported }
+        let bindings=groupSpaces.map { DesktopBinding(label:$0.key,role:monitor.layoutRole,spaceID:$0.value,snapshot:snapshot) }.filter { binding in
             snapshot.spaces.contains{$0.id==binding.spaceID && $0.kind == .ordinary && $0.displayToken==displayToken}
         }
         var plan=try Planner.plan(profile:record.profile,snapshot:snapshot,bindings:bindings,canMoveSpaces:true)

@@ -39,19 +39,19 @@ extension Model {
             out.append("\(label) currentSpace=\(all.filter(\.active).map{ "\($0.id)@\(RestoreLog.d($0.displayToken))" }.joined(separator:",")) fullScreenOrUnknownSpaces=\(all.filter{ $0.kind != .ordinary }.count)")
         } else { out.append("\(label) spaces unreadable") }
         let physical=MonitorRecognition.physicalExternalMonitors()
-        out.append("\(label) layoutMode=\(layoutMode) physicalExternal=\(physical.map{ "\($0.identity.key)@\(RestoreLog.d($0.runtimeDisplayToken))" }) effective=\(RestoreLog.key(currentExternalMonitor?.identity.key)) shared=\(currentExternalMonitor?.identity.isSharedExternal == true)")
+        out.append("\(label) layoutMode=\(layoutMode) physicalExternal=\(physical.map{ "\($0.identity.key)@\(RestoreLog.d($0.runtimeDisplayToken))" }) effective=\(RestoreLog.key(currentConfiguration?.identity.key)) shared=\(currentConfiguration?.identity.isSharedExternal == true)")
         out.append("\(label) layout=\(layoutChoiceText)")
-        let perMonitor=currentExternalMonitor.flatMap{ monitorPreferences.restore($0.identity.key) }
+        let perMonitor=currentConfiguration.flatMap{ monitorPreferences.restore($0.identity.key) }
         out.append("\(label) trusted=\(trusted) globalMode=\(autoRestoreMode) perMonitor=\(perMonitor.map{"\($0)"} ?? "-") pausedUntil=\(pausedUntil.map{"\($0)"} ?? "-") busy=\(busyText) separateSpaces=\(SeparateSpaces.enabled) crossSpace=\(crossSpaceEnabled) autoAddSpaces=\(autoAddSpaces) autoRemoveSpaces=\(AutoSpaces.removeLogValue(stored:autoRemoveSpacesStored)) notifications=\(notificationPermission.rawValue) keepAwake=\(keepAwakeMode.rawValue) pendingSpacesNeeded=\(pendingSpacesNeeded.map(String.init) ?? "-")")
         return out
     }
     /// Which saved layout is used now and why (per-monitor key vs the shared "office/home" layout).
     var layoutChoiceText: String {
-        guard let m=currentExternalMonitor else { return "none (no single external monitor; externals=\(externalMonitors.count))" }
-        let why=m.identity.isSharedExternal ? "sharedExternal mode: one layout for every external monitor" : "perMonitor mode: layout of this monitor"
-        guard let r=externalRecord else { return "\(m.identity.key) (\(why)) — NO saved layout file" }
+        guard let config=currentConfiguration else { return "none (no current display configuration; externals=\(externalMonitors.count))" }
+        let why=config.identity.isSharedExternal ? "sharedExternal mode: one layout for every external monitor" : config.identity.isBuiltInOnly ? "builtInOnly mode: one layout for the built-in screen alone" : "perMonitor mode: layout of this monitor"
+        guard let r=externalRecord else { return "\(config.identity.key) (\(why)) — NO saved layout file" }
         let desks=Set(r.profile.windows.compactMap(\.desktopIndex))
-        return "\(m.identity.key) (\(why)) savedAt=\(r.savedAt) windows=\(r.profile.windows.count) desktopsUsed=\(desks.sorted()) apps=\(Set(r.profile.windows.map(\.selector.bundleID)).sorted())"
+        return "\(config.identity.key) (\(why)) savedAt=\(r.savedAt) windows=\(r.profile.windows.count) desktopsUsed=\(desks.sorted()) apps=\(Set(r.profile.windows.map(\.selector.bundleID)).sorted())"
     }
     var busyText: String { "restoring=\(restoring) selfTest=\(selfTestRunning) checkingCapture=\(checkingCapture) quickPanel=\(showingQuickRestore) autoSpacesRunning=\(autoSpaces.running) arrangementConfirm=\(arrangementPreview != nil)" }
     func logPlanDetail(trigger: String,plan: QuickRestorePlan,record: MonitorLayoutRecord?,snapshot: Snapshot?,displayToken: String?) {

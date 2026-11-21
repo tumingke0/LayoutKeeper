@@ -27,7 +27,7 @@ extension Model {
     /// One status line at the bottom of the main window.
     var mainStatus: (icon: String,text: String,tone: Tone,needsPermission: Bool) {
         if !trusted { return ("exclamationmark.triangle.fill",lk("需要辅助功能权限"),.warning,true) }
-        guard currentExternalMonitor != nil else { return ("display",externalMonitors.count>1 ? lk("目前只支持一块外接屏") : lk("未连接外接屏"),.neutral,false) }
+        guard currentConfiguration != nil else { return ("display",externalMonitors.count>1 ? lk("目前只支持一块外接屏") : lk("没有检测到显示屏"),.neutral,false) }
         if let note=actionNote { return (note.icon,note.text,note.tone,false) }
         if let r=lastRestoreSummary {
             var text=lk("上次恢复 %@ · %@ 个窗口", "\(RelativeTime.clock(r.at))", "\(r.restored)")
@@ -37,6 +37,7 @@ extension Model {
         }
         if let record=externalRecord,record.profile.windows.contains(where:{$0.desktopIndex==nil}) { return ("arrow.clockwise.circle.fill",lk("布局来自旧版本，请重新保存一次"),.warning,false) }
         if crossSpaceSupport.isUntested { return ("checkmark.seal",lk("此系统版本建议在设置 → 诊断里自检一次"),.neutral,false) }
+        if currentConfiguration?.identity.isBuiltInOnly == true { return ("display",lk("仅内屏"),.neutral,false) }
         return ("checkmark.seal",lk("接上屏幕时：%@", "\(currentExternalMonitor.flatMap{ monitorPreferences.restore($0.identity.key) }?.title ?? autoRestoreMode.title)"),.neutral,false)
     }
 }
@@ -61,7 +62,7 @@ struct MainView: View {
         }
         .frame(width:900,height:700)
         .windowBackdrop()
-        .onChange(of:model.currentExternalMonitor?.identity.key) { model.actionNote=nil }
+        .onChange(of:model.currentConfiguration?.identity.key) { model.actionNote=nil }
     }
 
     // MARK: Sidebar
@@ -349,7 +350,7 @@ struct MainView: View {
         }
     }
     private var saveButton: some View {
-        Button { model.saveExternalLayout(); model.requestLiveCheck?() } label: {
+        Button { model.saveCurrentLayout(); model.requestLiveCheck?() } label: {
             Label(lk("保存布局"),systemImage:"square.and.arrow.down").frame(maxWidth:.infinity).padding(.vertical,4)
         }
     }

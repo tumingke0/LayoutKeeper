@@ -25,7 +25,7 @@ enum SaveOutcome { case saved(count: Int, replaced: Bool), cancelled, failed(Str
 
 /// Actions shared by the menu bar, global hotkeys, the main window and the reconnect flow.
 extension Model {
-    var currentMonitorName: String? { currentExternalMonitor.map{ monitorPreferences.displayName($0.identity) } }
+    var currentMonitorName: String? { currentConfiguration.map{ monitorPreferences.displayName($0.identity) } }
     var busy: Bool { restoring || selfTestRunning || checkingCapture || arrangementPreview != nil }
     func menuState(optionHeld: Bool) -> MenuState {
         var s=MenuState()
@@ -35,7 +35,7 @@ extension Model {
         s.globalMode=autoRestoreMode
         s.monitorChoice=currentExternalMonitor.flatMap{ monitorPreferences.restore($0.identity.key) }
         s.keepAwakeMode=keepAwakeMode
-        if let key=currentExternalMonitor?.identity.key {
+        if let key=currentConfiguration?.identity.key {
             let list=selectedScreenKey==key ? namedLayouts : (screenLibrary?.namedLayouts(key) ?? [])
             s.layouts=list.map { MenuLayout(name:$0.name,active:$0.isActive) }
         }
@@ -48,9 +48,9 @@ extension Model {
     }
     /// Why save/restore can't run right now (nil when it can).
     func quickBlocker(needsLayout: Bool) -> String? {
-        if currentExternalMonitor == nil { return externalMonitors.count>1 ? lk("目前只支持一块外接屏") : lk("未连接外接屏") }
+        guard let config=currentConfiguration else { return externalMonitors.count>1 ? lk("目前只支持一块外接屏") : lk("没有检测到显示屏") }
         if !trusted { return lk("需要辅助功能权限") }
-        if needsLayout && externalRecord == nil && currentExternalMonitor.flatMap({ activeArrival(for:$0.identity,saved:nil) }) == nil { return lk("这块屏幕尚未保存布局") }
+        if needsLayout && externalRecord == nil && activeArrival(for:config.identity,saved:nil) == nil { return config.identity.isBuiltInOnly ? lk("内屏还没有保存布局") : lk("这块屏幕尚未保存布局") }
         if busy { return lk("正在处理上一个操作") }
         return nil
     }
@@ -58,7 +58,7 @@ extension Model {
     func quickSave() {
         refreshExternalMonitor()
         if let why=quickBlocker(needsLayout:false) { notify?(UserNotice(title:lk("没有保存"),detail:why)); return }
-        switch saveExternalLayout(confirmOverwrite:false) {
+        switch saveCurrentLayout(confirmOverwrite:false) {
         case .saved(let count,let replaced):
             notify?(UserNotice(title:lk("已保存 %@ 个窗口", "\(count)"),detail:replaced ? lk("旧版本已存入历史") : nil))
         case .failed(let why): notify?(UserNotice(title:lk("没有保存"),detail:why,duration:4))
@@ -189,24 +189,24 @@ extension Model {
     }
     var mainState: MainWindowState {
         let key=liveKey
-        return MainWindowState.derive(hasMonitor:currentExternalMonitor != nil,trusted:trusted,hasLayout:externalRecord != nil,plan:key != nil && key == livePlanKey ? livePlan : nil)
+        return MainWindowState.derive(hasMonitor:currentConfiguration != nil,trusted:trusted,hasLayout:externalRecord != nil,plan:key != nil && key == livePlanKey ? livePlan : nil)
     }
     var liveKey: String? {
-        guard let m=currentExternalMonitor,let r=externalRecord else { return nil }
-        return "\(m.identity.key)|\(m.runtimeDisplayToken)|\(r.savedAt.timeIntervalSince1970)"
+        guard let config=currentConfiguration,let r=externalRecord else { return nil }
+        return "\(config.identity.key)|\(config.displayToken)|\(r.savedAt.timeIntervalSince1970)"
     }
     static var loggedLaunchPlan=false
     /// Read-only: scans with the separate status reader and plans; never writes or moves anything.
     func refreshLiveState() {
-        guard emptyWindowTrial == nil,trialConfigurationError.isEmpty,!busy,trusted,let monitor=currentExternalMonitor,let record=externalRecord,let key=liveKey else { return }
+        guard emptyWindowTrial == nil,trialConfigurationError.isEmpty,!busy,trusted,let config=currentConfiguration,let record=externalRecord,let key=liveKey else { return }
         do {
-            let snapshot=try statusWindows.scan(selectedDisplayToken:monitor.runtimeDisplayToken,inspectionBudget:2)
+            let snapshot=try statusWindows.scan(selectedDisplayToken:config.displayToken,inspectionBudget:2)
             // During an attach the status reflects the layout the attach restores from (composed by the restore itself).
-            let effective=activeArrival(for:monitor.identity,saved:record)?.effective
-            livePlan=try QuickRestorePlanner.plan(record:effective?.record ?? record,monitor:monitor.identity,displayToken:monitor.runtimeDisplayToken,snapshot:snapshot,allowCrossSpace:crossSpaceEnabled,browserProfiles:ChromeProfiles.load()?.map(snapshot.windows) ?? [:],context:effective?.context)
+            let effective=activeArrival(for:config.identity,saved:record)?.effective
+            livePlan=try QuickRestorePlanner.plan(record:effective?.record ?? record,monitor:config.identity,displayToken:config.displayToken,snapshot:snapshot,allowCrossSpace:crossSpaceEnabled,browserProfiles:ChromeProfiles.load()?.map(snapshot.windows) ?? [:],context:effective?.context)
             livePlanKey=key
             // Once per launch: log the read-only plan (Chrome profile resolution + auto eligibility per window).
-            if !Self.loggedLaunchPlan,let plan=livePlan { Self.loggedLaunchPlan=true; logPlanDetail(trigger:"launch-dry",plan:plan,record:record,snapshot:snapshot,displayToken:monitor.runtimeDisplayToken) }
+            if !Self.loggedLaunchPlan,let plan=livePlan { Self.loggedLaunchPlan=true; logPlanDetail(trigger:"launch-dry",plan:plan,record:record,snapshot:snapshot,displayToken:config.displayToken) }
         } catch { livePlan=nil; livePlanKey=nil }
     }
 }

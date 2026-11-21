@@ -8,60 +8,82 @@ import MacAdapters
 
 extension Model {
     var currentExternalMonitor: ConnectedMonitor? { externalMonitors.count==1 ? externalMonitors[0] : nil }
+    /// The display configuration this app saves/restores for right now: the single
+    /// external monitor when one is attached, else the built-in screen alone
+    /// (identity `.builtInOnly`, key "builtin-only"). Nil only with two or more
+    /// external monitors (unsupported, as before) or no built-in display.
+    var currentConfiguration: (identity: MonitorIdentity, displayToken: String)? {
+        if let m=currentExternalMonitor { return (m.identity,m.runtimeDisplayToken) }
+        guard externalMonitors.isEmpty,let token=builtInDisplayToken else { return nil }
+        return (.builtInOnly,token)
+    }
+    /// The same target display must still be present, including in built-in-only mode.
+    func configurationStillCurrent(_ config: (identity: MonitorIdentity, displayToken: String)) -> Bool {
+        let current=MonitorRecognition.externalMonitors()
+        if config.identity.isBuiltInOnly { return current.isEmpty && builtInDisplayToken==config.displayToken }
+        return current.count==1 && current[0].identity.key==config.identity.key && current[0].runtimeDisplayToken==config.displayToken
+    }
     func monitorRecordURL(_ monitor: MonitorIdentity) throws -> URL {
         guard let directory=layoutDirectory else { throw LayoutError.unsupported }
         return directory.appendingPathComponent("screens",isDirectory:true).appendingPathComponent("\(monitor.key).json")
     }
+    /// Refreshes the record for the current display configuration (see
+    /// `currentConfiguration`). `externalRecord` keeps its name but now holds that
+    /// configuration's record: the external monitor's, or the built-in-only layout's.
     func refreshExternalMonitor() {
         externalMonitors=MonitorRecognition.externalMonitors(); refreshAuthorization(); externalRecord=nil
         defer { reloadLibrary() }
-        guard let monitor=currentExternalMonitor else {captureInspection=nil;captureInspectionMessage="";captureInspectionMonitorKey=nil;externalMessage=externalMonitors.isEmpty ? lk("接上外接屏后，我会自动识别它。") : lk("当前版本只支持内置屏加一个外接屏，请只连接一个外接屏。");return}
-        if captureInspectionMonitorKey != monitor.identity.key {captureInspection=nil;captureInspectionMessage="";captureInspectionMonitorKey=nil}
+        guard let config=currentConfiguration else {captureInspection=nil;captureInspectionMessage="";captureInspectionMonitorKey=nil;externalMessage=externalMonitors.isEmpty ? lk("接上外接屏后，我会自动识别它。") : lk("当前版本只支持内置屏加一个外接屏，请只连接一个外接屏。");return}
+        let identity=config.identity
+        if captureInspectionMonitorKey != identity.key {captureInspection=nil;captureInspectionMessage="";captureInspectionMonitorKey=nil}
         do {
-            let url=try monitorRecordURL(monitor.identity)
+            let url=try monitorRecordURL(identity)
             if FileManager.default.fileExists(atPath:url.path) {
                 let record=try MonitorLayoutStore.load(from:url)
-                guard record.monitor.key==monitor.identity.key else { throw LayoutError.invalidProfile }
+                guard record.monitor.key==identity.key else { throw LayoutError.invalidProfile }
                 externalRecord=record
                 externalMessage=record.captureSummary + (record.profile.windows.contains{$0.desktopIndex==nil} ? lk("\n这份布局由旧版本保存，缺少桌面顺序：请重新保存一次，才能一键恢复。") : "")
-            } else { externalMessage=lk("这块屏幕（%@）还没有保存过布局。先把窗口摆好，再点「保存布局」。记录跟随屏幕硬件识别，不需要选择家或公司。", "\(monitor.identity.name)") }
-        } catch { externalMessage=lk("这份布局暂时无法读取，可以重新保存。"); message=lk("外接屏布局读取：%@", "\(error)") }
+            } else if identity.isBuiltInOnly { externalMessage=lk("仅用内屏，还没有保存过内屏布局。先把窗口摆好，再点「保存布局」。") }
+            else { externalMessage=lk("这块屏幕（%@）还没有保存过布局。先把窗口摆好，再点「保存布局」。记录跟随屏幕硬件识别，不需要选择家或公司。", "\(identity.name)") }
+        } catch { externalMessage=lk("这份布局暂时无法读取，可以重新保存。"); message=lk("布局读取：%@", "\(error)") }
     }
     func inspectExternalCapture() {
-        guard !restoring,!checkingCapture,let monitor=currentExternalMonitor else{return}
+        guard !restoring,!checkingCapture,let config=currentConfiguration else{return}
         refreshAuthorization();guard trusted else{captureInspectionMessage=accessState.guidance;return}
         checkingCapture=true;let started=Date();defer{checkingCapture=false;refreshAuthorization()}
         captureInspectionMessage=lk("正在只读检查可保存窗口…")
         do {
-            let snapshot=try externalLayoutSnapshot(inspectionBudget:10)
-            let current=MonitorRecognition.externalMonitors()
-            guard current.count==1,current[0].identity.key==monitor.identity.key,current[0].runtimeDisplayToken==monitor.runtimeDisplayToken else{throw LayoutError.readbackUnavailable}
-            let assessed=try ExternalLayoutCapture.assess(monitor:monitor.identity,displayToken:monitor.runtimeDisplayToken,snapshot:snapshot,report:windows.latestCaptureReport)
+            let snapshot=try currentLayoutSnapshot(inspectionBudget:10)
+            guard configurationStillCurrent(config) else{throw LayoutError.readbackUnavailable}
+            let assessed=try ExternalLayoutCapture.assess(monitor:config.identity,displayToken:config.displayToken,snapshot:snapshot,report:windows.latestCaptureReport)
             guard let report=assessed.record.captureReport else{throw LayoutError.readbackUnavailable}
             windows.applyCaptureDecisions(assessed.decisions);captureTrace=windows.captureTrace
-            captureInspection=report;captureInspectionMonitorKey=monitor.identity.key;captureInspectionMessage=lk("只读检查完成，没有保存布局。")+report.summary
+            captureInspection=report;captureInspectionMonitorKey=config.identity.key;captureInspectionMessage=lk("只读检查完成，没有保存布局。")+report.summary
             message=report.json()+traceText
         } catch {
             var report=windows.latestCaptureReport
             if report.measuredAt<started {report=CapturePipelineReport();report.globalReasons["checkFailedBeforeScan"]=1;report.finish()}
             captureTrace=windows.captureTrace
-            captureInspection=report;captureInspectionMonitorKey=monitor.identity.key;captureInspectionMessage=lk("只读检查未完成。")+ExternalSaveMessage.failure(error:error,phase:.readWindows)
+            captureInspection=report;captureInspectionMonitorKey=config.identity.key;captureInspectionMessage=lk("只读检查未完成。")+ExternalSaveMessage.failure(error:error,phase:.readWindows)
             message=report.json()+traceText
         }
     }
     /// `confirmOverwrite` false (menu bar / hotkey) skips the dialog; overwriting still archives the old version in history.
-    @discardableResult func saveExternalLayout(confirmOverwrite: Bool = true) -> SaveOutcome {
-        guard !restoring,!checkingCapture,let monitor=currentExternalMonitor else { return .failed(currentExternalMonitor == nil ? lk("未连接外接屏") : lk("正在处理上一个操作")) }
+    /// Saves the current display configuration: the external monitor's layout when one is
+    /// attached, else the built-in screen's layout ("builtin-only").
+    @discardableResult func saveCurrentLayout(confirmOverwrite: Bool = true) -> SaveOutcome {
+        guard !restoring,!checkingCapture else { return .failed(lk("正在处理上一个操作")) }
+        guard let config=currentConfiguration else { return .failed(lk("没有可保存的显示配置（目前只支持内置屏加一个外接屏）")) }
         refreshAuthorization()
         guard trusted else { externalMessage=accessState.guidance; return .failed(lk("需要辅助功能权限")) }
         defer { refreshAuthorization() }
         var replaced=false
         do {
-            let url=try monitorRecordURL(monitor.identity)
+            let url=try monitorRecordURL(config.identity)
             if FileManager.default.fileExists(atPath:url.path) {
                 replaced=true
                 if confirmOverwrite {
-                    let alert=NSAlert(); alert.messageText=lk("更新这块屏幕的布局？")
+                    let alert=NSAlert(); alert.messageText=config.identity.isBuiltInOnly ? lk("更新内屏布局？") : lk("更新这块屏幕的布局？")
                     alert.informativeText=lk("新布局会成为当前版本，旧版本存入「历史版本」（保留最近 10 个）。保存只读取窗口，不会恢复或移动窗口。")
                     alert.addButton(withTitle:lk("更新布局")); alert.addButton(withTitle:lk("取消"))
                     guard alert.runModal() == .alertFirstButtonReturn else { return .cancelled }
@@ -71,29 +93,28 @@ extension Model {
         captureInspection=nil;captureInspectionMessage=""
         var phase=ExternalSavePhase.readWindows
         do {
-            let s=try externalLayoutSnapshot()
+            let s=try currentLayoutSnapshot()
             phase = .validateScreen
-            let current=MonitorRecognition.externalMonitors()
-            guard current.count==1,current[0].identity.key==monitor.identity.key,current[0].runtimeDisplayToken==monitor.runtimeDisplayToken else { throw LayoutError.readbackUnavailable }
+            guard configurationStillCurrent(config) else { throw LayoutError.readbackUnavailable }
             phase = .capture
-            let assessed=try ExternalLayoutCapture.assess(monitor:monitor.identity,displayToken:monitor.runtimeDisplayToken,snapshot:s,report:windows.latestCaptureReport)
+            let assessed=try ExternalLayoutCapture.assess(monitor:config.identity,displayToken:config.displayToken,snapshot:s,report:windows.latestCaptureReport)
             windows.applyCaptureDecisions(assessed.decisions);captureTrace=windows.captureTrace
             var record=assessed.record
             if let chrome=ChromeProfiles.load() { record.profile.windows=chrome.tag(record.profile.windows) }
-            captureInspection=record.captureReport;captureInspectionMonitorKey=monitor.identity.key
+            captureInspection=record.captureReport;captureInspectionMonitorKey=config.identity.key
             guard !record.profile.windows.isEmpty else {
                 actionNote=ActionNote(icon:"exclamationmark.triangle.fill",text:lk("没有读到可保存的窗口"),tone:.warning)
-                externalMessage=windows.issues.isEmpty ? lk("没有读到可保存的外接屏窗口。请在外接屏打开普通软件窗口，再保存。") : lk("没有读到可保存的外接屏窗口。本次有窗口信息读取失败，可以稍后重试。")
+                externalMessage=windows.issues.isEmpty ? (config.identity.isBuiltInOnly ? lk("没有读到可保存的内屏窗口。请在内屏打开普通软件窗口，再保存。") : lk("没有读到可保存的外接屏窗口。请在外接屏打开普通软件窗口，再保存。")) : lk("没有读到可保存的外接屏窗口。本次有窗口信息读取失败，可以稍后重试。")
                 message=record.captureReport?.json() ?? "{}";return .failed(lk("没有读到可保存的窗口"))
             }
             phase = .writeRecord
-            let url=try monitorRecordURL(monitor.identity)
+            let url=try monitorRecordURL(config.identity)
             try FileManager.default.createDirectory(at:url.deletingLastPathComponent(),withIntermediateDirectories:true)
             record.coverage?.readIssueCount=windows.issues.count
-            guard let library=screenLibrary,library.currentURL(monitor.identity.key)==url else { throw LayoutError.unsupported }
+            guard let library=screenLibrary,library.currentURL(config.identity.key)==url else { throw LayoutError.unsupported }
             try library.save(record)
             externalRecord=record
-            selectedScreenKey=monitor.identity.key; reloadLibrary()
+            selectedScreenKey=config.identity.key; reloadLibrary()
             externalMessage=record.captureSummary
             message=record.captureReport?.json() ?? "{}"
             actionNote=ActionNote(icon:"checkmark.circle.fill",text:lk("已保存 %@ 个窗口", "\(record.profile.windows.count)")+(replaced ? lk(" · 旧版本已存入历史") : ""),tone:.success)
@@ -101,7 +122,7 @@ extension Model {
         } catch {
             externalMessage=ExternalSaveMessage.failure(error:error,phase:phase)
             actionNote=ActionNote(icon:"exclamationmark.triangle.fill",text:externalMessage,tone:.warning)
-            message=([lk("外接屏保存：%@", "\(error)")]+windows.issues).joined(separator:"\n")
+            message=([lk("保存布局：%@", "\(error)")]+windows.issues).joined(separator:"\n")
             return .failed(externalMessage)
         }
     }
